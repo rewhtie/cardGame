@@ -1,0 +1,15 @@
+[package]
+name = "card-fire"
+version = "0.1.0"
+description = "CardFire - a Slay the Spire like card game"
+edition = "2021"
+
+[lib]
+name = "card_fire_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
