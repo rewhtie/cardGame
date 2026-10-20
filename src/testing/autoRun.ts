@@ -86,7 +86,9 @@ export function describeEvent(state: BattleState, e: GameEvent): string | null {
           ? `攻击 ${i.damage}`
           : i.type === 'defend'
             ? `防御 ${i.block}`
-            : `${i.type === 'debuff' ? '给玩家' : '给自己'} ${i.stacks} 层${statusName(i.status)}`
+            : i.type === 'debuff' || i.type === 'buff'
+              ? `${i.type === 'debuff' ? '给玩家' : '给自己'} ${i.stacks} 层${statusName(i.status)}`
+              : { addCards: '塞牌', idle: '蓄力', summon: '召唤', steal: '偷金币', flee: '逃跑' }[i.type]
       return `${who(state, 'enemy', e.enemyIndex)} ${detail}`
     }
     case 'battleEnded':
@@ -185,7 +187,7 @@ export function traceCard(cardId: string, opts: AutoRunOptions = {}): Trace {
   record('战斗开始', state, created.events, state)
   const playable = (id: string) => {
     const c = state.cards[id]
-    return !!c && (c.cost === 'X' || c.cost <= state.player.energy)
+    return !!c && !c.unplayable && (c.cost === 'X' || c.cost <= state.player.energy)
   }
   const playFirst = (id: string) => {
     const handIndex = state.hand.indexOf(id)

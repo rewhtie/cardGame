@@ -1,12 +1,16 @@
 import {
+  addCardsToDiscard,
   addStatus,
   applyBlock,
+  clearTurnEndStatuses,
   applyDamage,
   draft,
   drawCards,
   firstLivingEnemy,
   isAlive,
+  loseHp,
   resolveEffect,
+  spawnEnemy,
   runTurnTriggers,
   tickStatuses,
 } from './effects'
@@ -29,6 +33,11 @@ function startPlayerTurn(s: BattleState, events: GameEvent[]) {
   events.push({ type: 'turnStarted', turn: s.turn })
   runTurnTriggers(s, 'player', 0, 'onTurnStart', events)
   if (s.player.hp <= 0) return
+  const beak = s.player.statuses.plagueBeak ?? 0
+  if (beak > 0) {
+    const wounds = s.discardPile.filter((c) => c === 'wound').length
+    addStatus(s, 'player', 0, 'strength', Math.floor(wounds / 3) * beak, events)
+  }
   fireRelics(s, 'onTurnStart', events)
   drawCards(s, s.handSize, events)
 }
@@ -70,7 +79,7 @@ export function createBattle(config: BattleConfig): DispatchResult {
       hp: def.maxHp,
       block: 0,
       intentIndex: 0,
-      statuses: {},
+      statuses: { ...def.startStatuses },
     })),
     cards: resolveCards(config.cards, deck),
     drawPile,
@@ -79,8 +88,9 @@ export function createBattle(config: BattleConfig): DispatchResult {
     exhaustPile: [],
     handSize: config.handSize ?? DEFAULT_HAND_SIZE,
     relics,
-    relicState: {},
+    relicState: { ...config.relicState },
     rngState,
+    gold: config.playerGold ?? 0,
   }
   const events: GameEvent[] = []
   fireRelics(s, 'onBattleStart', events)
@@ -98,6 +108,7 @@ function playCard(state: BattleState, handIndex: number, target?: number): Dispa
   if (!Number.isInteger(handIndex) || cardId === undefined) return invalid(state, '手牌索引无效')
   const card = state.cards[cardId]
   if (!card) return invalid(state, `未知卡牌 ${cardId}`)
+  if (card.unplayable) return invalid(state, '这张牌无法打出')
   if (card.cost !== 'X' && card.cost > state.player.energy) return invalid(state, '能量不足')
 
   // 单体攻击牌：未指定目标时打第一只存活的敌人
@@ -136,6 +147,12 @@ function endTurn(state: BattleState): DispatchResult {
   const s = draft(state)
   const events: GameEvent[] = []
 
+  for (const id of s.hand) {
+    const lose = s.cards[id]?.endTurnLoseHp
+    if (!lose) continue
+    events.push({ type: 'cardTriggered', cardId: id })
+    loseHp(s, 'player', 0, lose, events)
+  }
   events.push({ type: 'handDiscarded', count: s.hand.length })
   s.discardPile.push(...s.hand)
   s.hand = []
@@ -143,6 +160,7 @@ function endTurn(state: BattleState): DispatchResult {
   runTurnTriggers(s, 'player', 0, 'onTurnEnd', events)
   fireRelics(s, 'onTurnEnd', events)
   tickStatuses(s, 'player', 0, events)
+  clearTurnEndStatuses(s, events)
 
   s.phase = 'enemy'
   s.enemies.forEach((enemy, enemyIndex) => {
@@ -152,21 +170,58 @@ function endTurn(state: BattleState): DispatchResult {
     if (!isAlive(enemy)) return
     // 敌人在意图之前衰减：圆盾在意图里加的易伤才能撑过下一个玩家回合
     tickStatuses(s, 'enemy', enemyIndex, events)
+    if (enemy.statuses.stunned) {
+      delete enemy.statuses.stunned
+      events.push({ type: 'statusRemoved', target: 'enemy', status: 'stunned', enemyIndex })
+      return
+    }
     const intent = enemy.def.intents[enemy.intentIndex]
     if (!intent) return
     events.push({ type: 'enemyActed', intent, enemyIndex })
-    if (intent.type === 'attack') {
-      const dmg = calcAttack(intent.damage, enemy.statuses, s.player.statuses)
-      const perfect = dmg > 0 && s.player.block >= dmg
-      applyDamage(s, 'player', intent.damage, events, 0, { source: { side: 'enemy', enemyIndex } })
-      if (perfect) {
-        events.push({ type: 'perfectBlock' })
-        fireRelics(s, 'onPerfectBlock', events, enemyIndex)
+    switch (intent.type) {
+      case 'attack': {
+        const dmg = calcAttack(intent.damage, enemy.statuses, s.player.statuses)
+        const perfect = dmg > 0 && s.player.block >= dmg
+        applyDamage(s, 'player', intent.damage, events, 0, { source: { side: 'enemy', enemyIndex } })
+        if (perfect) {
+          events.push({ type: 'perfectBlock' })
+          fireRelics(s, 'onPerfectBlock', events, enemyIndex)
+          if (enemy.statuses.carapace) addStatus(s, 'enemy', enemyIndex, 'stunned', 1, events)
+        }
+        if (intent.addCards) addCardsToDiscard(s, intent.addCards.cardId, intent.addCards.count, events)
+        break
       }
-    } else if (intent.type === 'defend') applyBlock(s, 'enemy', intent.block, events, enemyIndex)
-    else if (intent.type === 'debuff')
-      addStatus(s, 'player', 0, intent.status, intent.stacks, events)
-    else addStatus(s, 'enemy', enemyIndex, intent.status, intent.stacks, events)
+      case 'defend':
+        applyBlock(s, 'enemy', intent.block, events, enemyIndex)
+        break
+      case 'debuff':
+        addStatus(s, 'player', 0, intent.status, intent.stacks, events)
+        break
+      case 'buff':
+        addStatus(s, 'enemy', enemyIndex, intent.status, intent.stacks, events)
+        break
+      case 'addCards':
+        addCardsToDiscard(s, intent.cardId, intent.count, events)
+        break
+      case 'idle':
+        break
+      case 'summon':
+        spawnEnemy(s, intent.enemy, events)
+        break
+      case 'steal': {
+        const amount = Math.min(s.gold, intent.amount)
+        s.gold -= amount
+        enemy.stolenGold = (enemy.stolenGold ?? 0) + amount
+        events.push({ type: 'goldStolen', amount, enemyIndex })
+        break
+      }
+      case 'flee':
+        enemy.hp = 0
+        enemy.fled = true
+        events.push({ type: 'enemyFled', enemyIndex })
+        if (!s.enemies.some(isAlive)) s.escaped = true
+        break
+    }
     if (isAlive(enemy)) runTurnTriggers(s, 'enemy', enemyIndex, 'onTurnEnd', events)
     enemy.intentIndex = (enemy.intentIndex + 1) % enemy.def.intents.length
   })

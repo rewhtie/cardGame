@@ -324,3 +324,10 @@ describe('Card 构建器', () => {
     expect(state.cards[id]!.text).toBe('获得 3 层力量')
   })
 })
+
+describe('脆弱', () => {
+  it('格挡 ×0.75，与敏捷先加后乘', () => {
+    expect(calcBlock(10, { frail: 1 })).toBe(7)
+    expect(calcBlock(10, { frail: 1, dexterity: 2 })).toBe(9)
+  })
+})

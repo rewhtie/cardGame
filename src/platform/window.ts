@@ -2,6 +2,12 @@ import { isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import type { DisplayMode, Resolution } from '@/settings/settings'
 
+/** 退出游戏：Tauri 下关闭原生窗口，浏览器下尝试关闭标签页 */
+export async function quitApp() {
+  if (isTauri()) await getCurrentWindow().close()
+  else window.close()
+}
+
 /** 应用显示模式：Tauri 下控制原生窗口，浏览器下退化为 Fullscreen API */
 export async function applyWindowMode(mode: DisplayMode, resolution: Resolution) {
   if (isTauri()) {

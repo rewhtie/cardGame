@@ -5,8 +5,8 @@ import CardView from './CardView.vue'
 
 defineProps<{
   card: CardDef
-  /** 升级后的牌面 */
-  upgraded: CardDef
+  /** 升级后的牌面；诅咒牌没有升级版，不传 */
+  upgraded?: CardDef
 }>()
 
 /** 右键：弹出升级前 / 升级后的对比 */
@@ -14,12 +14,12 @@ const comparing = ref(false)
 </script>
 
 <template>
-  <div class="w-36 h-52" @contextmenu.prevent="comparing = true">
+  <div class="w-36 h-52" @contextmenu.prevent="comparing = !!upgraded">
     <CardView :card="card" :playable="true" />
 
     <!-- stage 带 transform，fixed 实际相对舞台铺满，不受外层滚动区裁剪 -->
     <div
-      v-if="comparing"
+      v-if="comparing && upgraded"
       class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center gap-12"
       @click.stop="comparing = false"
       @contextmenu.prevent.stop="comparing = false"

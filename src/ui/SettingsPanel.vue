@@ -3,14 +3,28 @@ import { computed, ref } from 'vue'
 import { useRun } from '@/composables/useRun'
 import { useSettings } from '@/composables/useSettings'
 import { RESOLUTIONS, type DisplayMode } from '@/settings/settings'
+import { quitApp } from '@/platform/window'
 import CodexView from './CodexView.vue'
 
-defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: [] }>()
 
 const { settings, setMode, setResolution } = useSettings()
-const { run, seedInput } = useRun()
+const { run, seedInput, savedGame, continueGame, quit } = useRun()
+
+/** 回到主菜单（存档保留） */
+function toMenu() {
+  quit()
+  emit('close')
+}
+/** 快速重启：丢弃当前进度，重新读取存档 */
+function quickRestart() {
+  continueGame()
+  emit('close')
+}
 
 const showCodex = ref(false)
+/** 种子已移到对局右上角；设置里的种子板块暂时隐藏（代码保留，改成 true 即可恢复） */
+const SHOW_SEED = false
 /** 设置内的页面：主列表 / 画面设置 */
 const page = ref<'main' | 'display'>('main')
 const copied = ref(false)
@@ -68,7 +82,7 @@ function isCurrent(width: number, height: number) {
             <span class="chev">›</span>
           </button>
 
-          <section class="plaque">
+          <section v-if="SHOW_SEED" class="plaque">
             <div class="plaque-head">
               <span class="row-title">种子</span>
               <span class="row-sub">{{ run ? '这一局的种子' : '留空则随机，下一局生效' }}</span>
@@ -94,6 +108,32 @@ function isCurrent(width: number, height: number) {
               <div class="hint">输入相同的种子，就会得到相同的地图和战斗。</div>
             </template>
           </section>
+
+          <button v-if="run" class="row" @click="toMenu">
+            <span class="badge">🏠</span>
+            <span class="row-text">
+              <span class="row-title">回到主菜单</span>
+              <span class="row-sub">存档保留，可从主菜单继续</span>
+            </span>
+            <span class="chev">›</span>
+          </button>
+
+          <button v-if="run && savedGame" class="row" @click="quickRestart">
+            <span class="badge">↻</span>
+            <span class="row-text">
+              <span class="row-title">快速重启</span>
+              <span class="row-sub">放弃当前进度，回到上次存档</span>
+            </span>
+            <span class="chev">›</span>
+          </button>
+
+          <button class="row" @click="quitApp">
+            <span class="badge">⏻</span>
+            <span class="row-text">
+              <span class="row-title">退出游戏</span>
+            </span>
+            <span class="chev">›</span>
+          </button>
         </template>
 
         <template v-else>
@@ -142,7 +182,7 @@ function isCurrent(width: number, height: number) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at 50% 45%, rgba(30, 20, 10, 0.78), rgba(0, 0, 0, 0.88));
+  background: radial-gradient(circle at 50% 45%, rgba(28, 16, 10, 0.78), rgba(0, 0, 0, 0.88));
 }
 
 /* 与卡牌一致的渐变金属外框 */
@@ -162,10 +202,10 @@ function isCurrent(width: number, height: number) {
   gap: 0.75rem;
   padding: 2.6rem 1.25rem 1.25rem;
   border-radius: 11px;
-  color: #e2e8f0;
+  color: #f1e6d4;
   background:
     repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0 6px, transparent 6px 12px),
-    #1a1d29;
+    #241812;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.7);
 }
 
@@ -205,25 +245,28 @@ function isCurrent(width: number, height: number) {
   align-items: center;
   justify-content: center;
   font-size: 0.9rem;
-  color: #fff;
+  color: #fde68a;
   cursor: pointer;
-  background: radial-gradient(circle at 35% 30%, #fca5a5, #b91c1c 70%);
-  border: 2px solid #fee2e2;
+  background: #24170f;
+  border: 1px solid rgba(251, 191, 36, 0.5);
   border-radius: 50%;
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.6),
-    inset 0 -3px 5px rgba(0, 0, 0, 0.3);
-  transition: transform 0.15s;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+  transition:
+    color 0.15s,
+    background 0.15s,
+    transform 0.15s;
 }
 .orb:hover {
-  transform: scale(1.1);
+  color: #1c1917;
+  background: #fbbf24;
+  transform: rotate(90deg);
 }
 
 .back {
   align-self: flex-start;
   padding: 0.1rem 0.2rem;
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: #b09c86;
   background: none;
   border: 0;
   cursor: pointer;
@@ -242,8 +285,8 @@ function isCurrent(width: number, height: number) {
   text-align: left;
   color: inherit;
   cursor: pointer;
-  background: linear-gradient(90deg, rgba(51, 65, 85, 0.7), rgba(30, 41, 59, 0.7));
-  border: 1px solid #334155;
+  background: linear-gradient(90deg, rgba(74, 56, 44, 0.7), rgba(45, 34, 28, 0.7));
+  border: 1px solid #4a3b30;
   border-radius: 10px;
   transition:
     border-color 0.15s,
@@ -261,7 +304,7 @@ function isCurrent(width: number, height: number) {
   align-items: center;
   justify-content: center;
   font-size: 1.4rem;
-  background: radial-gradient(circle at 50% 40%, #0f766e, #042f2e 80%);
+  background: radial-gradient(circle at 50% 40%, #b45309, #451a03 80%);
   border: 2px solid #fcd34d;
   border-radius: 50%;
 }
@@ -278,7 +321,7 @@ function isCurrent(width: number, height: number) {
 }
 .row-sub {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: #b09c86;
 }
 .chev {
   font-size: 1.5rem;
@@ -291,8 +334,8 @@ function isCurrent(width: number, height: number) {
   flex-direction: column;
   gap: 0.6rem;
   padding: 0.8rem 0.9rem;
-  background: rgba(15, 23, 42, 0.65);
-  border: 1px solid #334155;
+  background: rgba(24, 16, 12, 0.65);
+  border: 1px solid #4a3b30;
   border-radius: 10px;
 }
 .plaque-head {
@@ -302,7 +345,7 @@ function isCurrent(width: number, height: number) {
 }
 .hint {
   font-size: 0.75rem;
-  color: #64748b;
+  color: #8a7562;
 }
 
 .seed-line {
@@ -317,8 +360,8 @@ function isCurrent(width: number, height: number) {
   font-size: 1.15rem;
   letter-spacing: 0.22em;
   color: #fcd34d;
-  background: #0b1020;
-  border: 1px solid #475569;
+  background: #140d0a;
+  border: 1px solid #6b5a4c;
   border-radius: 8px;
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
   outline: none;
@@ -331,7 +374,7 @@ function isCurrent(width: number, height: number) {
   text-transform: uppercase;
 }
 .seed-input::placeholder {
-  color: #475569;
+  color: #6b5a4c;
   letter-spacing: 0.1em;
 }
 .seed-input:focus {
@@ -342,10 +385,10 @@ function isCurrent(width: number, height: number) {
 .chip {
   padding: 0.45rem 0.9rem;
   font-size: 0.9rem;
-  color: #e2e8f0;
+  color: #f1e6d4;
   cursor: pointer;
-  background: #1e293b;
-  border: 1px solid #475569;
+  background: #2d221c;
+  border: 1px solid #6b5a4c;
   border-radius: 8px;
   transition:
     border-color 0.15s,
@@ -370,10 +413,10 @@ function isCurrent(width: number, height: number) {
   flex: 1;
   padding: 0.55rem 0;
   font-size: 1rem;
-  color: #cbd5e1;
+  color: #d8c8b0;
   cursor: pointer;
-  background: #1e293b;
-  border: 1px solid #475569;
+  background: #2d221c;
+  border: 1px solid #6b5a4c;
   border-radius: 8px;
   transition: border-color 0.15s;
 }

@@ -9,13 +9,15 @@ withDefaults(
     hint?: string
     color?: string
     align?: 'center' | 'left'
+    /** 为 true 时强制隐藏提示（如右键菜单打开时） */
+    suppress?: boolean
   }>(),
   { color: '#fbbf24', align: 'center' },
 )
 </script>
 
 <template>
-  <span class="tip-host" :class="{ 'is-left': align === 'left' }">
+  <span class="tip-host" :class="{ 'is-left': align === 'left', 'is-off': suppress }">
     <slot />
     <span class="tip" :style="{ '--tip-color': color }">
       <span class="tip-title">
@@ -67,11 +69,11 @@ withDefaults(
   left: 0;
   transform: translate(0, -4px);
 }
-.tip-host:hover .tip {
+.tip-host:hover:not(.is-off) .tip {
   opacity: 1;
   transform: translate(-50%, 0);
 }
-.is-left:hover .tip {
+.is-left:hover:not(.is-off) .tip {
   transform: translate(0, 0);
 }
 /* 小三角 */
@@ -106,7 +108,7 @@ withDefaults(
   font-size: 0.65rem;
   font-weight: 600;
   letter-spacing: 0.1em;
-  color: #0f172a;
+  color: #18100c;
   background: var(--tip-color);
   border-radius: 999px;
 }
@@ -115,7 +117,7 @@ withDefaults(
   margin-top: 0.35rem;
   padding-top: 0.35rem;
   line-height: 1.45;
-  color: #e2e8f0;
+  color: #f1e6d4;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 .tip-hint {

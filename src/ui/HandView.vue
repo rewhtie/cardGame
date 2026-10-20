@@ -19,7 +19,7 @@ const emit = defineEmits<{ press: [handIndex: number, event: PointerEvent] }>()
 const items = computed(() =>
   props.hand.flatMap((id, index) => {
     const card = props.cards[id]
-    return card ? [{ card, index, playable: card.cost === 'X' || card.cost <= props.energy }] : []
+    return card ? [{ card, index, playable: !card.unplayable && (card.cost === 'X' || card.cost <= props.energy) }] : []
   }),
 )
 </script>

@@ -28,6 +28,16 @@ export const rawId = (id: string) => {
   return b.endsWith(UPGRADE_SUFFIX) ? b.slice(0, -1) : b
 }
 
+/**
+ * 这张牌能否被锻造 / 升级：已升级的牌、诅咒牌和状态牌都不行。
+ * 这两类牌没有升级版，强行锻造只会得到一张"伤口+"之类的怪牌。
+ */
+export function isForgeable(cards: Readonly<Record<string, CardDef>>, id: string): boolean {
+  if (isUpgraded(id)) return false
+  const def = cards[rawId(id)]
+  return !!def && def.rarity !== 'curse' && def.rarity !== 'status'
+}
+
 /** 牌组 -> 战斗用的牌实例 id：附魔牌按牌组位置编号 */
 export const toInstanceIds = (deck: readonly string[]) =>
   deck.map((id, i) => (isEnchanted(id) ? `${id}#${i}` : id))
@@ -45,6 +55,10 @@ function bumpEffect(e: Effect): Effect {
       return { ...e, count: e.count + 1 }
     case 'applyStatus':
       return { ...e, stacks: e.stacks + 1 }
+    case 'loseHp':
+    case 'addWound':
+    case 'exhaustWounds':
+      return e
   }
 }
 
@@ -86,11 +100,23 @@ function upgradeEffect(e: Effect): Effect {
       return { ...e, count: e.count + n }
     case 'applyStatus':
       return { ...e, stacks: e.stacks + n }
+    case 'loseHp':
+    case 'addWound':
+    case 'exhaustWounds':
+      return e
   }
 }
 
 const effectNumber = (e: Effect) =>
-  e.type === 'draw' ? e.count : e.type === 'applyStatus' ? e.stacks : e.amount
+  e.type === 'draw'
+    ? e.count
+    : e.type === 'applyStatus'
+      ? e.stacks
+      : e.type === 'addWound'
+        ? e.count
+        : e.type === 'exhaustWounds'
+          ? e.per
+          : e.amount
 
 /**
  * 火堆锻造：卡面数值提升，名字后加 +。

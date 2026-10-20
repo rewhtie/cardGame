@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { STATUSES } from '@/engine/statuses'
+import { STATUSES, statusTip } from '@/engine/statuses'
 
-const props = defineProps<{ statuses: Record<string, number> }>()
+const props = defineProps<{ statuses: Record<string, number>; vertical?: boolean }>()
 
 /** 按注册表顺序显示，层数为 0 的不显示 */
 const items = computed(() =>
   STATUSES.filter((d) => (props.statuses[d.id] ?? 0) > 0).map((d) => ({
     def: d,
     stacks: props.statuses[d.id]!,
-    text: d.text.replaceAll('N', String(props.statuses[d.id])),
+    tip: statusTip(d, props.statuses[d.id]),
   })),
 )
 </script>
 
 <template>
-  <div v-if="items.length" class="flex flex-wrap justify-center gap-1.5">
+  <div v-if="items.length" class="flex gap-1.5" :class="vertical ? 'flex-col flex-wrap items-start max-h-56' : 'flex-wrap justify-center'">
     <!-- 自定义提示：悬浮立即出现，不走浏览器 title 的延迟 -->
     <div
       v-for="item in items"
@@ -36,7 +36,14 @@ const items = computed(() =>
           <span>{{ item.def.name }}</span>
           <span class="tip-kind">{{ item.def.kind === 'buff' ? '增益' : '减益' }}</span>
         </div>
-        <div class="tip-text">{{ item.text }}</div>
+        <div class="tip-text">
+          <template v-if="item.tip.perLayer !== item.def.text"><b>每层：</b></template
+          >{{ item.tip.perLayer }}
+        </div>
+        <div v-if="item.tip.total !== undefined" class="tip-text tip-total">
+          <b>当前 {{ item.stacks }} 层：</b>{{ item.tip.total }}
+        </div>
+        <div class="tip-duration">{{ item.tip.duration }}</div>
       </div>
     </div>
   </div>
@@ -44,7 +51,7 @@ const items = computed(() =>
 
 <style scoped>
 .tip-host {
-  background: radial-gradient(circle at 50% 35%, #334155, #0f172a 85%);
+  background: radial-gradient(circle at 50% 35%, #4a3b30, #18100c 85%);
 }
 .is-buff {
   border-color: #34d399;
@@ -116,7 +123,7 @@ const items = computed(() =>
   font-size: 0.65rem;
   font-weight: 600;
   letter-spacing: 0.1em;
-  color: #0f172a;
+  color: #18100c;
   background: var(--tip-color);
   border-radius: 999px;
 }
@@ -125,7 +132,17 @@ const items = computed(() =>
   padding-top: 0.35rem;
   font-size: 0.8rem;
   line-height: 1.45;
-  color: #e2e8f0;
+  color: #f1e6d4;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.tip-total {
+  margin-top: 0.2rem;
+  padding-top: 0;
+  border-top: 0;
+}
+.tip-duration {
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--tip-color);
 }
 </style>

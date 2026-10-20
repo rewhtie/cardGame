@@ -9,7 +9,8 @@ import {
   twoSlimes,
 } from './cardHarness'
 
-const skillIds = cardIdsOfKind('skill')
+// 无法打出的诅咒牌另在 curseCards.test.ts 里测
+const skillIds = cardIdsOfKind('skill').filter((id) => !cards[id]!.unplayable)
 const blockOf = (id: string) =>
   cards[id]!.effects.reduce((n, e) => n + (e.type === 'block' && !e.perX ? e.amount : 0), 0)
 const has = (id: string, type: string) => cards[id]!.effects.some((e) => e.type === type)

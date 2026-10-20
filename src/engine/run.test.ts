@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { cards, starterDeck } from '@/data/cards'
-import { slime } from '@/data/enemies'
+import { slime, slimeBoss } from '@/data/enemies'
 import type { GameMap } from './map'
 import { createRun, dispatchRun, reachableIds, type RunState } from './run'
 
@@ -226,9 +226,9 @@ describe('先古房', () => {
 
   it('训练指南：先选牌附魔，选完才获得遗物，牌组中该牌变为附魔版', () => {
     let run = send(atAncient(), { type: 'chooseAncient', id: 'trainingGuide' })
-    expect(run.screen).toBe('enchant')
+    expect(run.screen).toBe('pick')
     expect(run.relics).toEqual([])
-    run = send(run, { type: 'enchantCard', deckIndex: 0 })
+    run = send(run, { type: 'pickCards', deckIndexes: [0] })
     expect(run.screen).toBe('map')
     expect(run.relics).toEqual(['trainingGuide'])
     expect(run.content.deck[0]).toBe('strike*')
@@ -257,7 +257,7 @@ describe('先古房', () => {
   it('作弊获得训练指南：有牌可附魔需在地图上选牌；无牌可附魔直接获得', () => {
     const map = { ...atAncient(), screen: 'map' as const }
     const picking = send(map, { type: 'cheatGrant', kind: 'relic', id: 'trainingGuide' })
-    expect(picking.screen).toBe('enchant')
+    expect(picking.screen).toBe('pick')
     const deck = map.content.deck.map((c) => `${c}*`)
     const done = send(
       { ...map, content: { ...map.content, deck } },
@@ -276,9 +276,9 @@ describe('先古房', () => {
       rewards: [{ type: 'relic', id: 'trainingGuide' }],
     }
     let run = send(rewarding, { type: 'claimReward', index: 0 })
-    expect(run.screen).toBe('enchant')
+    expect(run.screen).toBe('pick')
     expect(run.relics).toEqual([])
-    run = send(run, { type: 'enchantCard', deckIndex: 0 })
+    run = send(run, { type: 'pickCards', deckIndexes: [0] })
     expect(run.screen).toBe('reward')
     expect(run.rewards).toEqual([])
     expect(run.relics).toEqual(['trainingGuide'])
@@ -288,6 +288,23 @@ describe('先古房', () => {
   it('非法选择被拒绝', () => {
     const run = atAncient()
     expect(dispatchRun(run, { type: 'chooseAncient', id: 'nope' }).state).toBe(run)
-    expect(dispatchRun(run, { type: 'enchantCard', deckIndex: 0 }).state).toBe(run)
+    expect(dispatchRun(run, { type: 'pickCards', deckIndexes: [0] }).state).toBe(run)
+  })
+})
+
+describe('Boss 节点出怪', () => {
+  it('配置了 boss 时 Boss 节点只出这一只', () => {
+    const run = {
+      ...createRun({ seed: 'TEST', cards, deck: starterDeck, enemy: slime, boss: slimeBoss }),
+      map: testMap,
+    }
+    const r = send(run, { type: 'chooseNode', id: 'boss', god: true })
+    expect(r.battle!.enemies).toHaveLength(1)
+    expect(r.battle!.enemies[0]!.def.id).toBe('slime-boss')
+    expect(r.battle!.enemies[0]!.statuses.split).toBe(1)
+  })
+  it('没配置 boss 时仍用原来的敌人', () => {
+    const r = send(newRun(), { type: 'chooseNode', id: 'boss', god: true })
+    expect(r.battle!.enemies[0]!.def.id).toBe('slime')
   })
 })

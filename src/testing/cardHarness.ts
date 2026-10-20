@@ -63,6 +63,14 @@ export function smokeCheck(cardId: string): string[] {
   const before = setupScenario({ hand: [cardId], energy: 3 })
   const { state, events } = playCard(before, cardId)
 
+  // 无法打出的牌（诅咒）：必须被拒绝，且牌和能量原样保留
+  if (def.unplayable) {
+    if (!events.some((e) => e.type === 'invalidAction')) problems.push('无法打出的牌应被拒绝')
+    if (!state.hand.includes(cardId)) problems.push('被拒绝后牌应留在手牌中')
+    if (state.player.energy !== 3) problems.push('被拒绝后不应扣能量')
+    return problems
+  }
+
   const invalid = events.find((e) => e.type === 'invalidAction')
   if (invalid) problems.push(`打出被拒绝：${'reason' in invalid ? invalid.reason : ''}`)
 
@@ -126,18 +134,22 @@ export function effectSnapshot(cardId: string): { actual: Snapshot; expected: Sn
     enemyStatuses: before.enemies.map(() => ({})),
   }
   const stack = (to: Record<string, number>, id: string, n: number) => (to[id] = (to[id] ?? 0) + n)
-  for (const e of def.effects) {
-    if (e.type === 'damage') expected.enemyHp[0]! -= e.perX ? e.amount * x : e.amount
-    else if (e.type === 'block') expected.playerBlock += e.perX ? e.amount * x : e.amount
-    else if (e.type === 'draw') expected.handSize += e.count
-    else if (e.type === 'heal')
-      expected.playerHp = Math.min(before.player.maxHp, expected.playerHp + e.amount)
-    else if (e.type === 'applyStatus') {
-      if (e.to === 'self') stack(expected.playerStatuses, e.status, e.stacks)
-      else if (e.to === 'target') stack(expected.enemyStatuses[0]!, e.status, e.stacks)
-      else expected.enemyStatuses.forEach((st) => stack(st, e.status, e.stacks))
+  // 无法打出的牌：打出被拒绝，状态不变，牌仍在手里
+  if (def.unplayable) expected.handSize = 1
+  else
+    for (const e of def.effects) {
+      if (e.type === 'damage') expected.enemyHp[0]! -= e.perX ? e.amount * x : e.amount
+      else if (e.type === 'block') expected.playerBlock += e.perX ? e.amount * x : e.amount
+      else if (e.type === 'draw') expected.handSize += e.count
+      else if (e.type === 'loseHp') expected.playerHp -= e.amount
+      else if (e.type === 'heal')
+        expected.playerHp = Math.min(before.player.maxHp, expected.playerHp + e.amount)
+      else if (e.type === 'applyStatus') {
+        if (e.to === 'self') stack(expected.playerStatuses, e.status, e.stacks)
+        else if (e.to === 'target') stack(expected.enemyStatuses[0]!, e.status, e.stacks)
+        else expected.enemyStatuses.forEach((st) => stack(st, e.status, e.stacks))
+      }
     }
-  }
   const actual: Snapshot = {
     enemyHp: after.enemies.map((e) => e.hp),
     playerBlock: after.player.block,

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 const props = defineProps<{
-  kind: 'draw' | 'discard' | 'exhaust'
-  count: number
+  kind: 'draw' | 'discard' | 'exhaust' | 'map'
+  /** 角标数字；地图按钮不传则不显示角标 */
+  count?: number
   label: string
   /** 悬浮文字位置，默认在上方 */
   tip?: 'top' | 'bottom'
@@ -21,7 +22,7 @@ const props = defineProps<{
         ? 'bg-transparent border-0 p-0 cursor-pointer'
         : 'bg-slate-800/80 hover:bg-slate-700 border border-slate-600 hover:border-amber-400',
     ]"
-    :aria-label="`${label} ${count}`"
+    :aria-label="`${label}${count !== undefined ? ` ${count}` : ''}`"
   >
     <svg
       viewBox="0 0 48 48"
@@ -90,8 +91,8 @@ const props = defineProps<{
             width="20"
             height="27"
             rx="3"
-            fill="#475569"
-            stroke="#94a3b8"
+            fill="#6b5a4c"
+            stroke="#b09c86"
             stroke-width="1.5"
           />
         </g>
@@ -102,23 +103,37 @@ const props = defineProps<{
             width="20"
             height="27"
             rx="3"
-            fill="#64748b"
-            stroke="#cbd5e1"
+            fill="#8a7562"
+            stroke="#d8c8b0"
             stroke-width="1.5"
           />
           <path
             d="M28 14v10m-4-4l4 4 4-4"
-            stroke="#e2e8f0"
+            stroke="#f1e6d4"
             stroke-width="1.8"
             stroke-linecap="round"
           />
         </g>
         <path
           d="M6 33v7a2 2 0 002 2h32a2 2 0 002-2v-7"
-          stroke="#94a3b8"
+          stroke="#b09c86"
           stroke-width="2"
           stroke-linecap="round"
         />
+      </g>
+
+      <!-- 地图：折叠的路线图 -->
+      <g v-else-if="kind === 'map'">
+        <path
+          d="M7 12l10-4 14 5 10-4v28l-10 4-14-5-10 4z"
+          fill="#132a1f"
+          stroke="#34d399"
+          stroke-width="1.5"
+          stroke-linejoin="round"
+        />
+        <path d="M17 8v28M31 13v28" stroke="#34d399" stroke-width="1.2" opacity="0.7" />
+        <circle cx="24" cy="21" r="3.2" fill="#fcd34d" stroke="#fef3c7" stroke-width="1" />
+        <path d="M24 24v7" stroke="#fcd34d" stroke-width="1.6" stroke-linecap="round" />
       </g>
 
       <!-- 消耗牌堆：燃烧的牌 -->
@@ -148,6 +163,7 @@ const props = defineProps<{
     </svg>
 
     <span
+      v-if="count !== undefined"
       class="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-amber-400 text-slate-900 text-xs font-bold leading-5 text-center shadow"
     >
       {{ count }}

@@ -6,9 +6,9 @@
   <svg viewBox="0 0 64 64" fill="none" stroke-linejoin="round" stroke-linecap="round">
     <defs>
       <linearGradient id="av-iron" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#cbd5e1" />
-        <stop offset="0.35" stop-color="#64748b" />
-        <stop offset="1" stop-color="#1e293b" />
+        <stop offset="0" stop-color="#d8c8b0" />
+        <stop offset="0.35" stop-color="#8a7562" />
+        <stop offset="1" stop-color="#2d221c" />
       </linearGradient>
     </defs>
 
@@ -21,10 +21,10 @@
     <path
       d="M5 25c9 0 14-3 17-3h36c0 8-6 13-14 13h-5c0 4 1 8 5 10v6H14v-6c4-2 5-6 5-10h-2C11 35 6 31 5 25z"
       fill="url(#av-iron)"
-      stroke="#0f172a"
+      stroke="#18100c"
       stroke-width="1.5"
     />
-    <path d="M22 22h36" stroke="#e2e8f0" stroke-width="1.5" opacity="0.7" />
-    <path d="M14 51h36" stroke="#0f172a" stroke-width="1.5" opacity="0.6" />
+    <path d="M22 22h36" stroke="#f1e6d4" stroke-width="1.5" opacity="0.7" />
+    <path d="M14 51h36" stroke="#18100c" stroke-width="1.5" opacity="0.6" />
   </svg>
 </template>

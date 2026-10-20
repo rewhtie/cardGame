@@ -1,23 +1,31 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { fxBatch } from '@/composables/useFx'
-import { isUpgraded, resolveCards } from '@/engine/enchant'
+import { fxBatch, fxTimes, lag } from '@/composables/useFx'
+import type { CardDef } from '@/engine/types'
+import CardAddFx from './CardAddFx.vue'
+import { isForgeable, resolveCards } from '@/engine/enchant'
 import { findNode, type NodeType } from '@/engine/map'
-import type { RunAction, RunState } from '@/engine/run'
+import { maxPotions, type RunAction, type RunState } from '@/engine/run'
 import { cards } from '@/data/cards'
+import { relics } from '@/data/items'
+import { relicPickSpec } from '@/engine/relics'
 import AncientView from './AncientView.vue'
 import BattleView from './BattleView.vue'
-import EnchantView from './EnchantView.vue'
+import CardPickView from './CardPickView.vue'
 import EndView from './EndView.vue'
+import EventView from './EventView.vue'
 import ForgeView from './ForgeView.vue'
 import MapView from './MapView.vue'
 import HealFx from './HealFx.vue'
+import HurtFx from './HurtFx.vue'
 import PileButton from './PileButton.vue'
 import PileModal from './PileModal.vue'
+import PotionOfferModal from './PotionOfferModal.vue'
 import PlaceholderView from './PlaceholderView.vue'
 import RelicReveal from './RelicReveal.vue'
 import RestView from './RestView.vue'
 import RewardView from './RewardView.vue'
+import ShopView from './ShopView.vue'
 import RunHud from './RunHud.vue'
 
 const props = defineProps<{ run: RunState }>()
@@ -25,7 +33,6 @@ const emit = defineEmits<{ send: [action: RunAction]; menu: []; retry: [] }>()
 
 const REST_HEAL_RATIO = 0.3
 const PLACEHOLDERS: Partial<Record<NodeType, { icon: string; label: string }>> = {
-  shop: { icon: '🛒', label: '商店' },
   event: { icon: '❓', label: '事件' },
   treasure: { icon: '🎁', label: '宝箱' },
 }
@@ -35,11 +42,13 @@ const placeholder = computed(() => {
   return (node && PLACEHOLDERS[node.type]) ?? { icon: '❔', label: '未知房间' }
 })
 const healAmount = computed(() => Math.floor(props.run.player.maxHp * REST_HEAL_RATIO))
-const canForge = computed(() => props.run.content.deck.some((id) => !isUpgraded(id)))
+const canForge = computed(() =>
+  props.run.content.deck.some((id) => isForgeable(props.run.content.cards, id)),
+)
 /** 战斗中以战斗里的实时生命为准，其余界面用整局生命 */
 const hudHp = computed(() =>
   props.run.screen === 'battle' && props.run.battle
-    ? props.run.battle.player.hp
+    ? Math.max(0, props.run.battle.player.hp + lag.playerHp)
     : props.run.player.hp,
 )
 /** 战斗中的玩家回合才能使用药水 */
@@ -49,7 +58,15 @@ const canUsePotion = computed(
 const livingEnemies = computed(() => props.run.battle?.enemies.filter((e) => e.hp > 0).length ?? 0)
 /** 拖拽药水时瞄准的敌人，交给战斗界面高亮 */
 const aimEnemy = ref<number | null>(null)
+const pickSpec = computed(() =>
+  props.run.pendingRelic ? relicPickSpec(props.run.pendingRelic.id) : undefined,
+)
 const showDeck = ref(false)
+/** 非地图界面从状态栏打开的地图预览 */
+const showMap = ref(false)
+const eventDef = computed(() =>
+  props.run.content.events?.find((e) => e.id === props.run.event?.id),
+)
 const deckCards = computed(() => resolveCards(cards, props.run.content.deck))
 const showHud = computed(() => props.run.screen !== 'victory' && props.run.screen !== 'defeat')
 
@@ -66,6 +83,51 @@ watch(fxBatch, (b) => {
   clearTimeout(healTimer)
   healTimer = setTimeout(() => (heal.value.amount = 0), 1100)
 })
+
+// 战斗外失去生命（事件代价 / 结果）统一播放全屏受伤特效；战斗内扣血由 BattleView 演出
+const hurt = ref({ key: 0, amount: 0 })
+let hurtTimer: ReturnType<typeof setTimeout> | undefined
+watch(fxBatch, (b) => {
+  const amount = b.events.reduce((sum, e) => (e.type === 'hpLost' ? sum + e.amount : sum), 0)
+  if (amount <= 0) return
+  hurt.value = { key: hurt.value.key + 1, amount }
+  clearTimeout(hurtTimer)
+  hurtTimer = setTimeout(() => (hurt.value.amount = 0), 900)
+})
+
+// 塞入状态牌 / 诅咒牌（敌人攻击、事件结果等）：卡牌弹出再飞向牌堆，让玩家感知到
+const ADD_STAGGER_MS = 90
+const ADD_FX_MS = 1400
+const addFx = ref<{
+  key: number
+  items: { card: CardDef; delay: number; to: 'deck' | 'discard'; index: number }[]
+}>({
+  key: 0,
+  items: [],
+})
+let addTimer: ReturnType<typeof setTimeout> | undefined
+watch(fxBatch, (b) => {
+  const times = fxTimes(b.events)
+  const inBattle = props.run.screen === 'battle'
+  const pool = props.run.battle?.cards ?? props.run.content.cards
+  const items: { card: CardDef; delay: number; to: 'deck' | 'discard'; index: number }[] = []
+  b.events.forEach((e, i) => {
+    if (e.type !== 'cardAdded') return
+    const card = pool[e.cardId] ?? props.run.content.cards[e.cardId]
+    if (!card) return
+    for (let k = 0; k < e.count; k++) {
+      const index = items.length
+      items.push({ card, delay: (times[i] ?? 0) + index * ADD_STAGGER_MS, to: inBattle ? 'discard' : 'deck', index })
+    }
+  })
+  if (!items.length) return
+  addFx.value = { key: addFx.value.key + 1, items }
+  clearTimeout(addTimer)
+  addTimer = setTimeout(
+    () => (addFx.value.items = []),
+    Math.max(...items.map((x) => x.delay)) + ADD_FX_MS + 100,
+  )
+})
 </script>
 
 <template>
@@ -80,11 +142,32 @@ watch(fxBatch, (b) => {
       :choices="run.ancientChoices"
       @choose="(id) => emit('send', { type: 'chooseAncient', id })"
     />
-    <EnchantView
-      v-else-if="run.screen === 'enchant'"
+    <CardPickView
+      v-else-if="run.screen === 'pick' && pickSpec && run.pendingRelic"
+      :title="`${relics[run.pendingRelic.id]?.icon ?? ''} ${relics[run.pendingRelic.id]?.name ?? ''}`"
+      :hint="pickSpec.hint"
       :deck="run.content.deck"
       :cards="cards"
-      @pick="(deckIndex) => emit('send', { type: 'enchantCard', deckIndex })"
+      :count="pickSpec.count"
+      :eligible="pickSpec.eligible"
+      @confirm="(deckIndexes) => emit('send', { type: 'pickCards', deckIndexes })"
+    />
+    <CardPickView
+      v-else-if="run.screen === 'eventPick' && run.event?.pick"
+      :title="run.event.pick === 'remove' ? '删除一张牌' : '升级一张牌'"
+      :hint="run.event.pick === 'remove' ? '选择一张牌从牌组中永久删除' : '选择一张牌升级'"
+      :deck="run.content.deck"
+      :cards="cards"
+      :count="1"
+      :eligible="(id: string) => run.event?.pick === 'remove' || isForgeable(run.content.cards, id)"
+      @confirm="(deckIndexes) => emit('send', { type: 'eventPickCard', deckIndex: deckIndexes[0] ?? -1 })"
+    />
+    <EventView
+      v-else-if="run.screen === 'event' && eventDef"
+      :run="run"
+      :def="eventDef"
+      @choose="(index) => emit('send', { type: 'chooseEventOption', index })"
+      @leave="emit('send', { type: 'leave' })"
     />
     <BattleView
       v-else-if="run.screen === 'battle' && run.battle"
@@ -117,6 +200,13 @@ watch(fxBatch, (b) => {
       @pick="(deckIndex) => emit('send', { type: 'forgeCard', deckIndex })"
       @back="emit('send', { type: 'leave' })"
     />
+    <ShopView
+      v-else-if="run.screen === 'shop' && run.shop"
+      :run="run"
+      @buy="(kind, index) => emit('send', { type: 'buyShop', kind, index })"
+      @remove="(deckIndex) => emit('send', { type: 'shopRemove', deckIndex })"
+      @leave="emit('send', { type: 'leave' })"
+    />
     <PlaceholderView
       v-else-if="run.screen === 'placeholder'"
       :icon="placeholder.icon"
@@ -135,17 +225,20 @@ watch(fxBatch, (b) => {
       v-if="showHud"
       :hp="hudHp"
       :max-hp="run.player.maxHp"
-      :gold="run.gold"
+      :gold="run.screen === 'battle' && run.battle ? run.battle.gold : run.gold"
       :potions="run.potions"
       :relics="run.relics"
+      :relic-state="run.battle?.relicState ?? run.relicState"
       :can-use="canUsePotion"
+      :in-battle="run.screen === 'battle'"
       :living-enemies="livingEnemies"
+      :seed="run.seed"
       @use="(index, target) => emit('send', { type: 'usePotion', index, target })"
+      @discard="(index) => emit('send', { type: 'discardPotion', index })"
       @aim="(i) => (aimEnemy = i)"
     >
-      <!-- 地图上可查看牌组，位于状态栏最右（设置按钮左侧） -->
+      <!-- 牌组始终可查看；不在地图上时额外提供地图预览 -->
       <PileButton
-        v-if="run.screen === 'map'"
         kind="draw"
         label="查看牌堆"
         tip="bottom"
@@ -154,18 +247,71 @@ watch(fxBatch, (b) => {
         :count="run.content.deck.length"
         @click="showDeck = true"
       />
+      <PileButton
+        v-if="run.screen !== 'map'"
+        kind="map"
+        label="查看地图"
+        tip="bottom"
+        borderless
+        small
+        @click="showMap = true"
+      />
     </RunHud>
 
+    <PotionOfferModal
+      v-if="run.potionOffer?.length && run.screen !== 'battle'"
+      :offer="run.potionOffer"
+      :held="run.potions"
+      :capacity="maxPotions(run.relics)"
+      @take="(index) => emit('send', { type: 'takePotion', index })"
+      @skip="(index) => emit('send', { type: 'skipPotion', index })"
+    />
     <RelicReveal :cards="cards" />
     <HealFx v-if="heal.amount > 0" :key="heal.key" :amount="heal.amount" />
+    <HurtFx v-if="hurt.amount > 0" :key="hurt.key" :amount="hurt.amount" />
+    <template v-if="addFx.items.length">
+      <CardAddFx
+        v-for="(it, i) in addFx.items"
+        :key="`${addFx.key}-${i}`"
+        :card="it.card"
+        :to="it.to"
+        :delay="it.delay"
+        :index="it.index"
+        :total="addFx.items.length"
+      />
+    </template>
 
-    <div v-if="showDeck && run.screen === 'map'" @pointerdown.stop @wheel.stop>
+    <div v-if="showDeck" @pointerdown.stop @wheel.stop>
       <PileModal
         title="我的牌堆"
         :pile="run.content.deck"
         :cards="deckCards"
         @close="showDeck = false"
       />
+    </div>
+
+    <!-- 地图预览：只读，可拖动查看，不响应选点 -->
+    <div
+      v-if="showMap"
+      class="absolute inset-0 z-[55] bg-black/85 flex items-center justify-center p-8"
+      @pointerdown.stop
+      @wheel.stop
+    >
+      <div
+        class="relative w-full h-full max-w-[1280px] max-h-[720px] overflow-hidden rounded-xl border-2 border-amber-700/70 shadow-[0_0_60px_rgba(0,0,0,0.9)]"
+      >
+        <MapView :run="run" readonly />
+        <button
+          class="absolute top-2 right-2 z-20 flex items-center justify-center w-8 h-8 p-0 rounded-full cursor-pointer text-amber-100 bg-slate-900/85 border border-amber-500/60 hover:text-slate-900 hover:bg-amber-400 hover:rotate-90 transition"
+          title="关闭"
+          aria-label="关闭"
+          @click="showMap = false"
+        >
+          <svg viewBox="0 0 16 16" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M3 3l10 10M13 3L3 13" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
     </div>
   </div>
 </template>

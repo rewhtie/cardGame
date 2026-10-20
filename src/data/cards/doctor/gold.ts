@@ -1,0 +1,70 @@
+import { Card } from '../card'
+
+/** 鸦嘴医生 · 金卡；新增卡牌在末尾追加 */
+export const doctorGold: Card[] = [
+  Card.gold('pusBlood', '脓血')
+    .icon('🧫')
+    .cost(2)
+    .power()
+    .applyStatus('pus', 1)
+    .reward()
+    .upgrade((u) => u.cost(1)),
+  Card.gold('plagueBeak', '瘟疫之喙')
+    .icon('🐦‍⬛')
+    .cost(2)
+    .power()
+    .applyStatus('plagueBeak', 1)
+    .reward()
+    .upgrade((u) => u.cost(1)),
+  Card.gold('plagueApostle', '瘟疫使徒')
+    .icon('☠️')
+    .cost(3)
+    .targetSelf()
+    .applyStatus('poison', 6, 'allEnemies')
+    .addWound(2)
+    .exhaust()
+    .reward()
+    .upgrade((u) => u.applyStatus('poison', 8, 'allEnemies').addWound(2)),
+  Card.gold('undyingCrow', '不死之鸦')
+    .icon('🪽')
+    .cost(2)
+    .targetSelf()
+    .heal(10)
+    .block(8)
+    .exhaust()
+    .reward()
+    .upgrade((u) => u.heal(14).block(12)),
+  Card.gold('bigPurge', '大清创')
+    .icon('🧹')
+    .cost(2)
+    .targetSelf()
+    .exhaustWounds('discard', 'draw', 1)
+    .exhaust()
+    .reward()
+    .upgrade((u) => u.cost(1)),
+  Card.gold('immunity', '免疫')
+    .icon('🛡️')
+    .cost(2)
+    .power()
+    .applyStatus('metallicize', 2)
+    .applyStatus('regen', 2)
+    .reward()
+    .upgrade((u) => u.applyStatus('metallicize', 3).applyStatus('regen', 3)),
+  Card.gold('witheringTouch', '腐朽之触')
+    .icon('🥀')
+    .cost(2)
+    .targetEnemy()
+    .applyStatus('poison', 10, 'target')
+    .applyStatus('gash', 3, 'target')
+    .exhaust()
+    .reward()
+    .upgrade((u) => u.applyStatus('poison', 14, 'target').applyStatus('gash', 4, 'target')),
+  Card.gold('doctorsOath', '医者仁心')
+    .icon('📜')
+    .cost(2)
+    .power()
+    .applyStatus('dexterity', 1)
+    .applyStatus('pus', 1)
+    .reward()
+    .upgrade((u) => u.cost(1)),
+]

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import CardPanel from './CardPanel.vue'
 import CardView from './CardView.vue'
 import type { CardDef } from '@/engine/types'
 
@@ -23,18 +24,24 @@ const items = computed(() => {
 
 <template>
   <div
-    class="absolute inset-0 z-20 bg-black/80 flex flex-col items-center gap-4 p-8"
+    class="absolute inset-0 z-[55] bg-black/80 flex items-center justify-center p-8"
     @click.self="emit('close')"
   >
-    <div class="text-2xl font-bold">{{ title }}（{{ pile.length }}）</div>
-    <div
-      v-if="items.length"
-      class="flex-1 w-full overflow-y-auto flex flex-wrap justify-start content-start gap-3 px-8 pt-8 pb-6"
-      @click.self="emit('close')"
+    <CardPanel
+      :title="`${title}（${pile.length}）`"
+      class="w-[1100px]"
+      closable
+      @close="emit('close')"
     >
-      <CardView v-for="(card, i) in items" :key="`${i}-${card.id}`" :card="card" :playable="true" />
-    </div>
-    <div v-else class="flex-1 text-slate-400">空</div>
-    <button class="btn-primary" @click="emit('close')">关闭</button>
+      <div v-if="items.length" class="flex flex-wrap justify-center content-start gap-4">
+        <CardView
+          v-for="(card, i) in items"
+          :key="`${i}-${card.id}`"
+          :card="card"
+          :playable="true"
+        />
+      </div>
+      <div v-else class="py-10 text-center text-slate-400">空</div>
+    </CardPanel>
   </div>
 </template>

@@ -59,7 +59,7 @@ defineEmits<{ rest: []; forge: []; leave: [] }>()
   gap: 1.5rem;
   color: #f1f5f9;
   overflow: hidden;
-  background: linear-gradient(180deg, #0b1020, #1a1020 70%, #1f1410);
+  background: linear-gradient(180deg, #140d0a, #22140f 70%, #1f1410);
 }
 /* 篝火映在地面上的暖光 */
 .glow {
@@ -86,7 +86,7 @@ defineEmits<{ rest: []; forge: []; leave: [] }>()
   cursor: pointer;
   background:
     repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0 6px, transparent 6px 12px),
-    #1a1d29;
+    #241812;
   border: 3px solid transparent;
   border-radius: 14px;
   background-clip: padding-box;
@@ -133,7 +133,7 @@ defineEmits<{ rest: []; forge: []; leave: [] }>()
 }
 .desc {
   font-size: 0.9rem;
-  color: #cbd5e1;
+  color: #d8c8b0;
 }
 .note {
   font-size: 0.75rem;

@@ -39,7 +39,9 @@ describe('自动运行轨迹', () => {
     for (const id of Object.keys(cards)) {
       it(`${cards[id]!.name} (${id})`, () => {
         const t = traceCard(id)
-        expect(t.played).toBeGreaterThan(0)
+        // 诅咒牌无法打出：自动跑完也不应出现非法操作
+        if (cards[id]!.unplayable) expect(t.played).toBe(0)
+        else expect(t.played).toBeGreaterThan(0)
         expect(t.problems).toEqual([])
         expect(t.steps.flatMap((s) => s.lines).some((l) => l.includes('非法操作'))).toBe(false)
       })

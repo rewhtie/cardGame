@@ -5,7 +5,8 @@ import PileButton from './PileButton.vue'
 import PileModal from './PileModal.vue'
 import StatusIcons from './StatusIcons.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { fxBatch } from '@/composables/useFx'
+import { clearFxHandler, fxReset, lag, setFxHandler, whenFxIdle } from '@/composables/useFx'
+import { playSfx } from '@/composables/useSfx'
 import { statusById } from '@/engine/statuses'
 import type { Action, BattleState, GameEvent, Side } from '@/engine/types'
 
@@ -35,6 +36,28 @@ const pileView = computed(() => {
 const isDev = import.meta.env.DEV
 
 const isOver = computed(() => props.state.phase === 'won' || props.state.phase === 'lost')
+/** 只有玩家回合才能操作：敌人演出期间结束回合、作弊按钮都禁用 */
+const canAct = computed(() => props.state.phase === 'player')
+
+/** 胜负界面要等演出队列放空：状态里早已分出胜负，但最后一击的动画必须先演完 */
+const lostShown = ref(props.state.phase === 'lost')
+let phaseToken = 0
+watch(
+  () => props.state.phase,
+  async (phase) => {
+    const token = ++phaseToken
+    if (phase !== 'won' && phase !== 'lost') {
+      lostShown.value = false
+      return
+    }
+    await whenFxIdle()
+    if (token !== phaseToken || props.state.phase !== phase) return
+    if (phase === 'won' && !props.readonly) emit('continue')
+    else if (phase === 'lost') lostShown.value = true
+  },
+  { immediate: true },
+)
+
 const livingCount = computed(() => props.state.enemies.filter((e) => e.hp > 0).length)
 
 function intentOf(enemy: BattleState['enemies'][number]) {
@@ -135,7 +158,7 @@ onBeforeUnmount(stopDrag)
 // ---- 战斗动画：引擎事件 -> 纯视觉效果（状态已立即更新，这里只叠加表现） ----
 interface Floater {
   id: number
-  kind: 'text' | 'slash' | 'healRing'
+  kind: 'text' | 'slash' | 'healRing' | 'shield'
   x: number
   y: number
   text?: string
@@ -143,6 +166,8 @@ interface Floater {
 }
 const floaters = ref<Floater[]>([])
 const playerEl = ref<HTMLElement | null>(null)
+const blockEl = ref<HTMLElement | null>(null)
+const energyEl = ref<HTMLElement | null>(null)
 const vignette = ref<HTMLElement | null>(null)
 let floaterId = 0
 const timers = new Set<number>()
@@ -174,6 +199,14 @@ function float(el: HTMLElement | null, text: string, cls: string) {
   addFloater({ id: ++floaterId, kind: 'text', x, y: p.y, text, cls }, 1100)
 }
 
+/** 获得防御：蓝色护盾在目标身上凝聚，伴随扩散的冲击环 */
+function shieldUp(el: HTMLElement | null, cls?: string) {
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  const p = toStage(r.left + r.width / 2, r.top + r.height / 2)
+  addFloater({ id: ++floaterId, kind: 'shield', x: p.x, y: p.y, cls }, 900)
+}
+
 /** 治疗粒子：以目标为中心向上飘散的绿色光柱 */
 function healRing(el: HTMLElement | null) {
   if (!el) return
@@ -192,18 +225,37 @@ function slash(el: HTMLElement | null) {
 const SHAKE = [0, -14, 12, -8, 5, 0]
 const HIT_FLASH = 'brightness(1.9) sepia(1) saturate(6) hue-rotate(-50deg)'
 
-function hitReact(el: HTMLElement | null) {
-  el?.animate(
+const GLOW = {
+  block: 'rgba(56,189,248,.7)',
+  heal: 'rgba(74,222,128,.7)',
+  poison: 'rgba(74,222,128,.8)',
+  energy: 'rgba(250,204,21,.9)',
+  buff: 'rgba(250,204,21,.7)',
+  debuff: 'rgba(192,132,252,.7)',
+  enemyAct: 'rgba(167,139,250,.7)',
+  cardHurt: 'rgba(239,68,68,.7)',
+  cardAdd: 'rgba(148,163,184,.7)',
+} as const
+
+/** 播放动画并在演完时兑现；被取消 / 元素已移除也算演完，不能卡住演出队列 */
+function animate(el: HTMLElement | null, keyframes: Keyframe[], options: KeyframeAnimationOptions) {
+  const a = el?.animate(keyframes, options)
+  return a ? a.finished.then(() => a, () => a) : Promise.resolve(undefined)
+}
+
+const hitReact = (el: HTMLElement | null) =>
+  animate(
+    el,
     SHAKE.map((x, i) => ({
       transform: `translateX(${x}px)`,
       filter: i === 1 || i === 2 ? HIT_FLASH : 'none',
     })),
     { duration: 340, easing: 'ease-out' },
   )
-}
 
-function glow(el: HTMLElement | null, color: string) {
-  el?.animate(
+const glow = (el: HTMLElement | null, color: string) =>
+  animate(
+    el,
     [
       { transform: 'scale(1)', boxShadow: `0 0 0 0 ${color}` },
       { transform: 'scale(1.12)', boxShadow: `0 0 36px 10px ${color}`, offset: 0.4 },
@@ -211,18 +263,24 @@ function glow(el: HTMLElement | null, color: string) {
     ],
     { duration: 420, easing: 'ease-out' },
   )
-}
 
-function lunge(el: HTMLElement | null) {
-  el?.animate(
+/** 冲撞分两段：下压段演完才算"打到了"（队列在此处放行受击），回弹段不阻塞队列 */
+async function lunge(el: HTMLElement | null) {
+  const pressed = 'translateY(70px) scale(1.22)'
+  const down = await animate(
+    el,
     [
       { transform: 'translateY(0) scale(1)' },
-      { transform: 'translateY(-14px) scale(0.94)', offset: 0.3 },
-      { transform: 'translateY(70px) scale(1.22)', offset: 0.55 },
-      { transform: 'translateY(0) scale(1)' },
+      { transform: 'translateY(-14px) scale(0.94)', offset: 0.35 },
+      { transform: pressed },
     ],
-    { duration: 420, easing: 'cubic-bezier(.3,.7,.4,1)' },
+    { duration: 230, easing: 'cubic-bezier(.3,.7,.4,1)', fill: 'forwards' },
   )
+  // 回弹结束后撤掉下压段的 forwards，否则敌人会一直停在压下去的位置
+  void animate(el, [{ transform: pressed }, { transform: 'translateY(0) scale(1)' }], {
+    duration: 190,
+    easing: 'ease-out',
+  }).then(() => down?.cancel())
 }
 
 function screenHit(big: boolean) {
@@ -242,86 +300,130 @@ function screenHit(big: boolean) {
   })
 }
 
-const sameTarget = (e: GameEvent, side: Side, enemyIndex = 0) =>
-  'target' in e && e.target === side && (('enemyIndex' in e && e.enemyIndex) || 0) === enemyIndex
+type Ev<T extends GameEvent['type']> = Extract<GameEvent, { type: T }>
+type PlayCtx = { prev?: GameEvent }
 
-function playFx(events: GameEvent[]) {
-  let t = 0 // 当前事件的延迟（毫秒）：敌人逐个行动、连击逐段结算
-  events.forEach((e, i) => {
-    const prev = events[i - 1]
-    switch (e.type) {
-      case 'enemyActed': {
-        t += 380
-        const el = () => spriteOf('enemy', e.enemyIndex)
-        if (e.intent.type === 'attack') {
-          later(t, () => lunge(el()))
-          t += 160 // 让受击落在冲撞最低点
-        } else {
-          later(t, () => glow(el(), 'rgba(167,139,250,.7)'))
-        }
-        break
-      }
-      case 'damageDealt': {
-        const fromStatus =
-          prev?.type === 'statusTriggered' && sameTarget(prev, e.target, e.enemyIndex)
-        const dot = fromStatus && prev.type === 'statusTriggered' && prev.status === 'poison'
-        if (dot) t += 220
-        later(t, () => {
-          const el = spriteOf(e.target, e.enemyIndex)
-          if (dot) {
-            glow(el, 'rgba(74,222,128,.8)')
-            if (e.amount > 0) float(el, `☠ -${e.amount}`, 'fx-poison')
-            return
-          }
-          if (e.blocked > 0) float(el, `🛡 -${e.blocked}`, 'fx-blocked')
-          if (e.amount > 0) {
-            if (!fromStatus) slash(el)
-            hitReact(el)
-            float(el, `-${e.amount}`, e.target === 'player' ? 'fx-hurt' : 'fx-damage')
-            if (e.target === 'player') screenHit(e.amount >= 10)
-          } else if (e.blocked > 0) {
-            glow(el, 'rgba(56,189,248,.7)')
-          }
-        })
-        t += 130
-        break
-      }
-      case 'blockGained':
-        later(t, () => {
-          const el = spriteOf(e.target, e.enemyIndex)
-          glow(el, 'rgba(56,189,248,.7)')
-          float(el, `+${e.amount} 🛡`, 'fx-block')
-        })
-        break
-      case 'healed':
-        later(t, () => {
-          const el = spriteOf(e.target, e.enemyIndex)
-          glow(el, 'rgba(74,222,128,.7)')
-          healRing(el)
-          float(el, `+${e.amount} ❤`, 'fx-heal')
-        })
-        break
-      case 'statusApplied': {
-        const def = statusById[e.status]
-        if (!def) break
-        later(t, () =>
-          float(
-            spriteOf(e.target, e.enemyIndex),
-            `${def.icon} ${def.name} +${e.stacks}`,
-            def.kind === 'buff' ? 'fx-buff' : 'fx-debuff',
-          ),
-        )
-        t += 90
-        break
-      }
-    }
-  })
+const statusTone = (kind?: string) => (kind === 'buff' ? 'buff' : 'debuff')
+const cardLabel = (id: string) => {
+  const card = props.state.cards[id]
+  return `${card?.icon ?? '🃏'} ${card?.name ?? ''}`
 }
 
-watch(fxBatch, (b) => {
-  playFx(b.events)
+/** 扣血的成因：由紧邻其前的触发事件决定，用来区分斩击特效与毒的绿光 */
+function damageCause(e: Ev<'damageDealt'>, prev?: GameEvent): 'attack' | 'poison' | 'trigger' {
+  if (prev?.type === 'cardTriggered') return e.target === 'player' ? 'trigger' : 'attack'
+  if (prev?.type !== 'statusTriggered') return 'attack'
+  if (prev.target !== e.target || (prev.enemyIndex ?? 0) !== (e.enemyIndex ?? 0)) return 'attack'
+  return prev.status === 'poison' ? 'poison' : 'trigger'
+}
+
+async function playDamage(e: Ev<'damageDealt'>, { prev }: PlayCtx) {
+  const cause = damageCause(e, prev)
+  const el = spriteOf(e.target, e.enemyIndex)
+  if (cause === 'poison') {
+    if (e.amount > 0) float(el, `☠ -${e.amount}`, 'fx-poison')
+    return void (await glow(el, GLOW.poison))
+  }
+  if (e.blocked > 0) float(el, `🛡 -${e.blocked}`, 'fx-blocked')
+  if (e.amount <= 0) {
+    if (e.blocked > 0) {
+      void playSfx('block')
+      await glow(el, GLOW.block)
+    }
+    return
+  }
+  void playSfx(e.target === 'player' ? 'hurt' : 'hit')
+  if (cause === 'attack') slash(el)
+  float(el, `-${e.amount}`, e.target === 'player' ? 'fx-hurt' : 'fx-damage')
+  if (e.target === 'player') screenHit(e.amount >= 10)
+  await hitReact(el)
+}
+
+/** 每种事件的演出；没登记的事件不占队列时间。动画演完才兑现，队列据此保证"动作 -> 动画 -> 数值"逐个结算 */
+const players: { [T in GameEvent['type']]?: (e: Ev<T>, ctx: PlayCtx) => Promise<unknown> | void } = {
+  enemyActed: (e) => {
+    const el = spriteOf('enemy', e.enemyIndex)
+    return e.intent.type === 'attack' ? lunge(el) : glow(el, GLOW.enemyAct)
+  },
+  damageDealt: playDamage,
+  blockGained: (e) => {
+    // 玩家的防御只在徽章上演，不动整块左栏
+    const isPlayer = e.target === 'player'
+    const el = isPlayer ? blockEl.value : spriteOf(e.target, e.enemyIndex)
+    void playSfx('block')
+    shieldUp(el, isPlayer ? 'fx-shield-sm' : undefined)
+    float(el, `+${e.amount} 🛡`, 'fx-block')
+    return glow(el, GLOW.block)
+  },
+  energyGained: (e) => {
+    float(energyEl.value, `+${e.amount} ⚡`, 'fx-energy')
+    return glow(energyEl.value, GLOW.energy)
+  },
+  healed: (e) => {
+    const el = spriteOf(e.target, e.enemyIndex)
+    void playSfx('heal')
+    healRing(el)
+    float(el, `+${e.amount} ❤`, 'fx-heal')
+    return glow(el, GLOW.heal)
+  },
+  statusTriggered: (e) => {
+    const def = statusById[e.status]
+    const el = spriteOf(e.target, e.enemyIndex)
+    const tone = statusTone(def?.kind)
+    if (def) float(el, `${def.icon} ${def.name}`, `fx-${tone}`)
+    return glow(el, GLOW[tone])
+  },
+  cardTriggered: (e) => {
+    const el = spriteOf('player')
+    float(el, cardLabel(e.cardId), 'fx-debuff')
+    return glow(el, GLOW.cardHurt)
+  },
+  cardAdded: (e) => {
+    const el = spriteOf('player')
+    float(el, `${cardLabel(e.cardId)} ×${e.count}`, 'fx-debuff')
+    return glow(el, GLOW.cardAdd)
+  },
+  // 只飘字，不占队列时间
+  statusApplied: (e) => {
+    const def = statusById[e.status]
+    if (def) float(spriteOf(e.target, e.enemyIndex), `${def.icon} ${def.name} +${e.stacks}`, `fx-${statusTone(def.kind)}`)
+  },
+}
+
+async function playEvent(e: GameEvent, prev?: GameEvent): Promise<void> {
+  const play = players[e.type] as ((e: GameEvent, ctx: PlayCtx) => Promise<unknown> | void) | undefined
+  await play?.(e, { prev })
+}
+
+setFxHandler(playEvent)
+
+/** 界面显示值 = 真实状态 + 演出滞后量：事件的动画没演完，对应数值先不落地 */
+const enemies = computed(() =>
+  props.state.enemies.map((e, i) => {
+    const n = e.def.intents.length
+    return {
+      ...e,
+      hp: e.hp + (lag.enemyHp[i] ?? 0),
+      block: e.block + (lag.enemyBlock[i] ?? 0),
+      intentIndex: n ? (((e.intentIndex - (lag.intent[i] ?? 0)) % n) + n) % n : e.intentIndex,
+    }
+  }),
+)
+const shownBlock = computed(() => props.state.player.block + lag.playerBlock)
+
+// 读档 / 重开：旧战斗没播完的飘字和遮罩立刻作废（队列本身由 resetFx 清空）
+watch(fxReset, () => {
+  phaseToken++
+  lostShown.value = false
+  timers.forEach((id) => clearTimeout(id))
+  timers.clear()
+  floaters.value = []
 })
-onBeforeUnmount(() => timers.forEach((id) => clearTimeout(id)))
+onBeforeUnmount(() => {
+  clearFxHandler(playEvent)
+  phaseToken++
+  timers.forEach((id) => clearTimeout(id))
+})
 </script>
 
 <template>
@@ -336,21 +438,21 @@ onBeforeUnmount(() => timers.forEach((id) => clearTimeout(id)))
     >
       <button
         class="px-2 py-1 rounded bg-red-700 hover:bg-red-600 text-xs text-white disabled:(opacity-40 cursor-not-allowed)"
-        :disabled="isOver"
+        :disabled="!canAct"
         @click="emit('action', { type: 'cheatDamage', amount: 9999 })"
       >
         作弊：直接胜利
       </button>
       <button
         class="px-2 py-1 rounded bg-red-700 hover:bg-red-600 text-xs text-white disabled:(opacity-40 cursor-not-allowed)"
-        :disabled="isOver"
+        :disabled="!canAct"
         @click="emit('action', { type: 'cheatDraw', count: 3 })"
       >
         作弊：抽三张牌
       </button>
       <button
         class="px-2 py-1 rounded bg-red-700 hover:bg-red-600 text-xs text-white disabled:(opacity-40 cursor-not-allowed)"
-        :disabled="isOver"
+        :disabled="!canAct"
         @click="emit('action', { type: 'cheatEnergy', amount: 3 })"
       >
         作弊：回复3点能量
@@ -358,7 +460,7 @@ onBeforeUnmount(() => timers.forEach((id) => clearTimeout(id)))
     </div>
 
     <div class="flex justify-center gap-10">
-      <div v-for="(enemy, i) in state.enemies" :key="i" :data-enemy-index="i">
+      <div v-for="(enemy, i) in enemies" :key="i" :data-enemy-index="i">
         <EnemyView
           :enemy="enemy"
           :intent="intentOf(enemy)"
@@ -368,15 +470,30 @@ onBeforeUnmount(() => timers.forEach((id) => clearTimeout(id)))
       </div>
     </div>
 
-    <div class="flex items-end justify-between">
-      <div ref="playerEl" class="w-48 space-y-1 rounded-xl">
+    <!-- 底部行固定高度：左栏、打牌区都不会被内容撑开 -->
+    <div class="flex items-end justify-between h-56 shrink-0">
+      <div ref="playerEl" class="w-48 h-56 shrink-0 space-y-1 rounded-xl">
         <div class="text-sm text-slate-400">回合 {{ state.turn }}</div>
-        <div class="text-sky-300">🛡 {{ state.player.block }}</div>
-        <StatusIcons :statuses="state.player.statuses" />
         <div
-          class="w-16 h-16 rounded-full bg-sky-500 flex items-center justify-center text-2xl font-bold"
+          ref="blockEl"
+          :key="shownBlock"
+          class="block-badge"
+          :class="(shownBlock) > 0 ? 'block-badge-on' : 'block-badge-off'"
         >
-          {{ state.player.energy }}/{{ state.player.maxEnergy }}
+          <span class="block-icon">🛡</span>
+          <span class="block-num">{{ shownBlock }}</span>
+        </div>
+        <div class="relative w-16 h-16">
+          <div
+            ref="energyEl"
+            class="w-16 h-16 rounded-full bg-sky-500 flex items-center justify-center text-2xl font-bold"
+          >
+            {{ state.player.energy }}/{{ state.player.maxEnergy }}
+          </div>
+          <!-- 绝对定位在能量右侧、底边对齐向上延伸：不占布局高度，不会撑开左栏 -->
+          <div class="absolute left-full bottom-0 ml-3 max-h-56">
+            <StatusIcons :statuses="state.player.statuses" vertical />
+          </div>
         </div>
         <PileButton
           kind="draw"
@@ -413,7 +530,7 @@ onBeforeUnmount(() => timers.forEach((id) => clearTimeout(id)))
         </div>
         <button
           class="btn-primary"
-          :disabled="isOver || readonly"
+          :disabled="!canAct || readonly"
           @click="emit('action', { type: 'endTurn' })"
         >
           结束回合
@@ -429,7 +546,7 @@ onBeforeUnmount(() => timers.forEach((id) => clearTimeout(id)))
           :y1="drag.startY"
           :x2="drag.x"
           :y2="drag.y"
-          :stroke="hoverEnemy !== null ? '#fbbf24' : '#94a3b8'"
+          :stroke="hoverEnemy !== null ? '#fbbf24' : '#b09c86'"
           stroke-width="6"
           stroke-linecap="round"
           stroke-dasharray="4 12"
@@ -439,7 +556,7 @@ onBeforeUnmount(() => timers.forEach((id) => clearTimeout(id)))
           :cy="drag.y"
           r="14"
           fill="none"
-          :stroke="hoverEnemy !== null ? '#fbbf24' : '#94a3b8'"
+          :stroke="hoverEnemy !== null ? '#fbbf24' : '#b09c86'"
           stroke-width="4"
         />
       </template>
@@ -448,7 +565,7 @@ onBeforeUnmount(() => timers.forEach((id) => clearTimeout(id)))
         :x="drag.x"
         :y="drag.y - 20"
         text-anchor="middle"
-        :fill="drag.y < HAND_TOP ? '#fbbf24' : '#94a3b8'"
+        :fill="drag.y < HAND_TOP ? '#fbbf24' : '#b09c86'"
         font-size="20"
         font-weight="bold"
       >
@@ -478,6 +595,14 @@ onBeforeUnmount(() => timers.forEach((id) => clearTimeout(id)))
         :style="{ left: `${f.x}px`, top: `${f.y}px` }"
       />
       <div
+        v-else-if="f.kind === 'shield'"
+        class="fx-shield absolute pointer-events-none z-30"
+        :class="f.cls"
+        :style="{ left: `${f.x}px`, top: `${f.y}px` }"
+      >
+        <b>🛡</b>
+      </div>
+      <div
         v-else
         class="fx-heal-particles absolute pointer-events-none z-30"
         :style="{ left: `${f.x}px`, top: `${f.y}px` }"
@@ -496,10 +621,10 @@ onBeforeUnmount(() => timers.forEach((id) => clearTimeout(id)))
     />
 
     <div
-      v-if="isOver && !readonly"
+      v-if="lostShown && !readonly"
       class="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-6"
     >
-      <div class="text-5xl font-bold">{{ state.phase === 'won' ? '胜利！' : '战败…' }}</div>
+      <div class="text-5xl font-bold">战败…</div>
       <button class="btn-primary" @click="emit('continue')">继续</button>
     </div>
   </div>
@@ -524,9 +649,138 @@ onBeforeUnmount(() => timers.forEach((id) => clearTimeout(id)))
 .fx-blocked,
 .fx-block {
   color: #7dd3fc;
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.8),
+    0 0 14px rgba(56, 189, 248, 0.9);
+}
+.fx-block {
+  font-size: 2.4rem;
 }
 .fx-blocked {
-  font-size: 1.5rem;
+  font-size: 1.8rem;
+}
+
+/* 玩家防御徽章：有防御时醒目的蓝色盾牌，数值变化时弹一下 */
+.block-badge {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 4rem;
+}
+.block-icon,
+.block-num {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.block-icon {
+  font-size: 3.4rem;
+}
+.block-num {
+  top: 9px; /* 盾牌 emoji 视觉中心偏下，数字需下移才对准 */
+  font-size: 1.1rem;
+  font-weight: 900;
+  color: #fff;
+  text-shadow:
+    0 0 4px #0c4a6e,
+    0 0 4px #0c4a6e,
+    0 2px 2px rgba(0, 0, 0, 0.8);
+}
+.block-badge-on {
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.8));
+  animation: block-pop 0.4s ease-out;
+}
+.block-badge-off {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+@keyframes block-pop {
+  0% {
+    transform: scale(0.8);
+  }
+  50% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* 护盾凝聚：盾牌由大缩小定格后淡出，同时两圈冲击环向外扩散 */
+.fx-shield {
+  width: 0;
+  height: 0;
+}
+.fx-shield-sm {
+  transform: scale(0.5);
+}
+.fx-energy {
+  color: #fde047;
+  font-size: 2rem;
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.8),
+    0 0 14px rgba(250, 204, 21, 0.9);
+}
+.fx-shield i {
+  position: absolute;
+  left: -60px;
+  top: -60px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 4px solid #7dd3fc;
+  box-shadow:
+    0 0 24px 6px rgba(56, 189, 248, 0.7),
+    inset 0 0 24px 4px rgba(56, 189, 248, 0.5);
+  background: radial-gradient(circle, rgba(125, 211, 252, 0.35), transparent 70%);
+  animation: fx-shield-ring 0.7s ease-out forwards;
+}
+.fx-shield b {
+  position: absolute;
+  left: -50px;
+  top: -62px;
+  width: 100px;
+  text-align: center;
+  font-size: 5rem;
+  line-height: 1;
+  filter: drop-shadow(0 0 16px rgba(56, 189, 248, 1));
+  animation: fx-shield-icon 0.85s ease-out forwards;
+}
+@keyframes fx-shield-ring {
+  0% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+}
+@keyframes fx-shield-icon {
+  0% {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  75% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
 }
 .fx-heal {
   color: #86efac;

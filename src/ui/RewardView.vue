@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { cards } from '@/data/cards'
 import { potions, relics } from '@/data/items'
-import { maxPotions, SKIP_PICK, type Reward, type RunState } from '@/engine/run'
+import { type Reward, type RunState } from '@/engine/run'
+import CardPanel from './CardPanel.vue'
 import CardView from './CardView.vue'
 
 const props = defineProps<{ run: RunState }>()
@@ -10,8 +11,6 @@ const emit = defineEmits<{ claim: [index: number, pick?: number]; finish: [] }>(
 
 /** 正在挑选卡牌的奖励下标 */
 const picking = ref<number | null>(null)
-
-const potionFull = computed(() => props.run.potions.length >= maxPotions(props.run.relics))
 
 const pickingReward = computed(() => {
   const r = picking.value === null ? undefined : props.run.rewards[picking.value]
@@ -39,12 +38,18 @@ function describe(r: Reward) {
   }
 }
 
+// 奖励领完（且没有待处理的药水弹窗）后自动离开；遗物选牌返回时重新挂载也会触发
+watch(
+  () => props.run.rewards.length === 0 && !props.run.potionOffer?.length,
+  (done) => {
+    if (done) emit('finish')
+  },
+  { immediate: true },
+)
+
 function onClaim(index: number, r: Reward) {
-  if (r.type === 'cards') {
-    picking.value = index
-  } else if (!(r.type === 'potion' && potionFull.value)) {
-    emit('claim', index)
-  }
+  if (r.type === 'cards') picking.value = index
+  else emit('claim', index)
 }
 
 function choose(pick: number) {
@@ -56,11 +61,11 @@ function choose(pick: number) {
 
 <template>
   <div
-    class="w-full h-full flex flex-col items-center justify-center gap-6 theme-bg text-slate-100"
+    class="flex flex-col items-center justify-center gap-6 theme-bg text-slate-100"
+    :class="pickingReward ? 'absolute inset-0 z-[55]' : 'w-full h-full'"
   >
-    <template v-if="pickingReward">
-      <div class="text-3xl font-bold">选择一张卡牌</div>
-      <div class="flex gap-6">
+    <CardPanel v-if="pickingReward" title="选择一张卡牌" closable @close="picking = null">
+      <div class="flex justify-center gap-6">
         <CardView
           v-for="(id, i) in pickingReward.choices"
           :key="id"
@@ -69,30 +74,85 @@ function choose(pick: number) {
           @click="choose(i)"
         />
       </div>
-      <button class="btn-primary" @click="choose(SKIP_PICK)">跳过</button>
-    </template>
+    </CardPanel>
 
-    <template v-else>
-      <div class="text-4xl font-bold">战斗胜利</div>
-      <div class="text-amber-300">💰 {{ run.gold }}</div>
-      <div class="w-96 space-y-3">
+    <CardPanel v-else class="w-[32rem]" title="战斗胜利">
+      <div class="flex flex-col gap-3">
         <button
           v-for="(r, i) in run.rewards"
           :key="i"
-          class="w-full flex items-center gap-4 px-4 py-3 rounded bg-slate-800 hover:bg-slate-700 text-left disabled:(opacity-40 cursor-not-allowed)"
-          :disabled="r.type === 'potion' && potionFull"
+          class="reward"
           @click="onClaim(i, r)"
         >
-          <span class="text-3xl">{{ describe(r).icon }}</span>
+          <span class="icon">{{ describe(r).icon }}</span>
           <span class="flex-1">
-            <span class="block font-bold">{{ describe(r).title }}</span>
-            <span class="block text-xs text-slate-400">
-              {{ r.type === 'potion' && potionFull ? '药水栏已满' : describe(r).text }}
-            </span>
+            <span class="name">{{ describe(r).title }}</span>
+            <span class="desc">{{ describe(r).text }}</span>
           </span>
+          <span class="chev">›</span>
         </button>
       </div>
-      <button class="btn-primary" @click="emit('finish')">继续</button>
-    </template>
+      <template #footer>
+        <button class="btn-primary" @click="emit('finish')">继续</button>
+      </template>
+    </CardPanel>
   </div>
 </template>
+
+<style scoped>
+/* 奖励条目：深色底 + 金色描边，悬停发光 */
+.reward {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.7rem 1rem;
+  text-align: left;
+  color: #e2e8f0;
+  cursor: pointer;
+  background: linear-gradient(90deg, rgba(51, 65, 85, 0.75), rgba(30, 41, 59, 0.75));
+  border: 1px solid #334155;
+  border-radius: 10px;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
+}
+.reward:hover:not(:disabled) {
+  border-color: #f59e0b;
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.35);
+  transform: translateY(-1px);
+}
+.reward:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.7rem;
+  background: radial-gradient(circle at 50% 35%, #334155, #0f172a 85%);
+  border: 2px solid rgba(252, 211, 77, 0.6);
+  border-radius: 50%;
+}
+.name {
+  display: block;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #fef3c7;
+}
+.desc {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+.chev {
+  font-size: 1.5rem;
+  color: #d97706;
+}
+</style>

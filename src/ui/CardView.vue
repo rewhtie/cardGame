@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { cardText } from '@/engine/enchant'
-import { calcAttack, calcBlock, type Statuses } from '@/engine/statuses'
+import {
+  calcAttack,
+  calcBlock,
+  STATUSES,
+  statusTip,
+  type StatusDef,
+  type Statuses,
+} from '@/engine/statuses'
 import type { CardDef, Rarity } from '@/engine/types'
 
 const props = defineProps<{
@@ -11,6 +18,8 @@ const props = defineProps<{
   statuses?: Statuses
   /** 被瞄准的敌人状态：拖拽指向敌人时，伤害再叠加易伤等修正 */
   targetStatuses?: Statuses
+  /** 选牌界面中被选中：上浮并显示金色高亮 */
+  selected?: boolean
 }>()
 
 /** 卡面文字拆成片段；伤害 / 格挡数字按当前状态换算，并标出相对原值的升降 */
@@ -35,8 +44,8 @@ const textParts = computed(() => {
 /** 稀有度配色：frame 为边框渐变，banner 为名牌，glow 为悬停光晕 */
 const RARITY: Record<Rarity, { frame: string; banner: string; glow: string; label: string }> = {
   white: {
-    frame: 'linear-gradient(145deg, #f1f5f9, #94a3b8 55%, #e2e8f0)',
-    banner: 'linear-gradient(180deg, #64748b, #334155)',
+    frame: 'linear-gradient(145deg, #f1f5f9, #b09c86 55%, #f1e6d4)',
+    banner: 'linear-gradient(180deg, #8a7562, #4a3b30)',
     glow: 'rgba(226, 232, 240, 0.55)',
     label: '普通',
   },
@@ -51,6 +60,18 @@ const RARITY: Record<Rarity, { frame: string; banner: string; glow: string; labe
     banner: 'linear-gradient(180deg, #b45309, #78350f)',
     glow: 'rgba(251, 191, 36, 0.7)',
     label: '稀有',
+  },
+  curse: {
+    frame: 'linear-gradient(145deg, #4b5563, #1f2937 55%, #6b7280)',
+    banner: 'linear-gradient(180deg, #3f1d2e, #1c0e16)',
+    glow: 'rgba(168, 85, 247, 0.65)',
+    label: '诅咒',
+  },
+  status: {
+    frame: 'linear-gradient(145deg, #94a3b8, #475569 55%, #64748b)',
+    banner: 'linear-gradient(180deg, #475569, #1e293b)',
+    glow: 'rgba(148, 163, 184, 0.5)',
+    label: '状态',
   },
 }
 
@@ -80,33 +101,104 @@ const vars = computed(() => ({
   '--glow': rarity.value.glow,
   '--art': type.value.art,
 }))
+/** 诅咒牌 / 状态牌：卡面压暗，与可打出的牌一眼区分 */
+const cursed = computed(() => props.card.rarity === 'curse' || props.card.rarity === 'status')
+/** 卡牌给出的各状态层数，用来把悬浮说明里的 N 换成具体数字 */
+const stackOf = computed(() => {
+  const m = new Map<string, number>()
+  for (const e of props.card.effects) {
+    if (e.type === 'applyStatus' && !m.has(e.status)) m.set(e.status, e.stacks)
+  }
+  return m
+})
+/** 状态名 → 定义；长名优先匹配 */
+const TERM_RE = new RegExp(`(${[...STATUSES].sort((x, y) => y.name.length - x.name.length).map((d) => d.name).join('|')})`)
+const defByName = Object.fromEntries(STATUSES.map((d) => [d.name, d]))
+
+/** 把文字片段里出现的状态名切出来，加下划线 */
+function withTerms(text: string) {
+  return text
+    .split(TERM_RE)
+    .filter(Boolean)
+    .map((t) => ({ text: t, def: defByName[t] as StatusDef | undefined }))
+}
+
+/** 悬浮中的状态说明（视口坐标，名称正上方居中）；null 表示不显示 */
+const tip = ref<{ x: number; y: number; def: StatusDef; stacks?: number } | null>(null)
+function showTip(ev: MouseEvent, def: StatusDef) {
+  const r = (ev.currentTarget as HTMLElement).getBoundingClientRect()
+  tip.value = { x: r.left + r.width / 2, y: r.top, def, stacks: stackOf.value.get(def.id) }
+}
+const tipText = computed(() => (tip.value ? statusTip(tip.value.def, tip.value.stacks) : null))
+/** 卡面"类型"行的标签 */
+const tag = computed(() => {
+  if (cursed.value) return rarity.value.label
+  return type.value.label + (props.card.exhaust ? ' · 消耗' : '')
+})
 </script>
 
 <template>
-  <div class="card" :class="{ playable, locked: !playable }" :style="vars">
+  <div class="card" :class="{ playable, locked: !playable, selected, cursed }" :style="vars">
     <div class="frame">
       <div class="inner">
         <div class="art">
           <span class="icon">{{ card.icon ?? type.icon }}</span>
         </div>
         <div class="banner">{{ card.name }}</div>
-        <div class="type">— {{ type.label }}<template v-if="card.exhaust"> · 消耗</template> —</div>
+        <div class="type">— {{ tag }} —</div>
         <div class="desc">
           <span>
             <span
               v-for="(p, i) in textParts"
               :key="i"
               :class="p.diff > 0 ? 'up' : p.diff < 0 ? 'down' : ''"
-              >{{ p.text }}</span
             >
+              <template v-for="(t, j) in withTerms(p.text)" :key="j">
+                <span
+                  v-if="t.def"
+                  class="term"
+                  :class="t.def.kind"
+                  @mouseenter="showTip($event, t.def)"
+                  @mouseleave="tip = null"
+                  >{{ t.text }}</span
+                >
+                <template v-else>{{ t.text }}</template>
+              </template>
+            </span>
           </span>
         </div>
         <div class="rarity-gem" :title="rarity.label" />
       </div>
     </div>
 
-    <div class="cost">{{ card.cost }}</div>
+    <!-- 无法打出的牌（状态 / 诅咒）没有费用，不显示费用球 -->
+    <div v-if="!card.unplayable" class="cost">{{ card.cost }}</div>
     <span v-if="card.enchanted" class="enchant" title="已附魔" />
+
+    <!-- 状态说明：传送到 body，避免被卡面 overflow 裁掉 -->
+    <Teleport to="body">
+      <div
+        v-if="tip && tipText"
+        class="info-tip"
+        :class="tip.def.kind"
+        :style="{ left: tip.x + 'px', top: tip.y + 'px' }"
+      >
+        <div class="info-name">
+          {{ tip.def.icon }} {{ tip.def.name }}
+          <span class="info-kind">{{ tip.def.kind === 'buff' ? '增益' : '减益' }}</span>
+        </div>
+        <div class="info-text">
+          <template v-if="tipText.total !== undefined || tipText.perLayer !== tip.def.text">
+            <b>每层：</b>{{ tipText.perLayer }}
+          </template>
+          <template v-else>{{ tipText.perLayer }}</template>
+        </div>
+        <div v-if="tipText.total !== undefined" class="info-text">
+          <b>当前 {{ tipText.stacks }} 层：</b>{{ tipText.total }}
+        </div>
+        <div class="info-duration">{{ tipText.duration }}</div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -125,6 +217,16 @@ const vars = computed(() => ({
   transform: translateY(-1rem);
   filter: drop-shadow(0 0 14px var(--glow));
 }
+/* 选中：保持上浮（悬停与否都一样），金色光晕 + 外框描边跟随卡牌圆角 */
+.card.selected,
+.card.selected:hover {
+  transform: translateY(-1rem);
+  filter: drop-shadow(0 0 16px rgba(251, 191, 36, 0.95));
+}
+.card.selected .frame {
+  outline: 3px solid #fbbf24;
+  outline-offset: 2px;
+}
 /* 能量不足：保持不透明，只降低饱和度和亮度，费用球变红 */
 .card.locked {
   filter: grayscale(0.7) brightness(0.8);
@@ -132,6 +234,17 @@ const vars = computed(() => ({
 .card.locked .cost {
   background: radial-gradient(circle at 35% 30%, #fca5a5, #b91c1c 70%);
   border-color: #fee2e2;
+}
+
+/* 诅咒牌：暗紫底纹，卡面整体压暗，与可打出的牌区分 */
+.card.cursed .inner {
+  background: linear-gradient(180deg, #241426, #160c1b);
+}
+.card.cursed .art {
+  filter: grayscale(0.55) brightness(0.85);
+}
+.card.cursed .banner {
+  filter: saturate(0.8);
 }
 
 /* 渐变外框 */
@@ -151,7 +264,7 @@ const vars = computed(() => ({
   height: 100%;
   overflow: hidden;
   border-radius: 8px;
-  background: #1e293b;
+  background: #2d221c;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6);
 }
 
@@ -203,7 +316,7 @@ const vars = computed(() => ({
   text-align: center;
   font-size: 0.6rem;
   letter-spacing: 0.15em;
-  color: #94a3b8;
+  color: #b09c86;
 }
 
 /* 描述框 */
@@ -217,8 +330,8 @@ const vars = computed(() => ({
   text-align: center;
   font-size: 0.78rem;
   line-height: 1.25;
-  color: #e2e8f0;
-  background: rgba(15, 23, 42, 0.65);
+  color: #f1e6d4;
+  background: rgba(24, 16, 12, 0.65);
   border-radius: 6px;
   border: 1px solid rgba(148, 163, 184, 0.25);
 }
@@ -266,6 +379,63 @@ const vars = computed(() => ({
     0 2px 6px rgba(0, 0, 0, 0.6),
     inset 0 -3px 5px rgba(0, 0, 0, 0.3);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+
+/* 卡面上的状态名：普通实线下划线 */
+.term {
+  cursor: help;
+  text-decoration: underline;
+}
+/* 提示框传送到 body，用视口坐标定位在图标正上方 */
+.info-tip {
+  position: fixed;
+  z-index: 2147483647;
+  transform: translate(-50%, calc(-100% - 8px));
+  width: max-content;
+  max-width: 12rem;
+  padding: 0.45rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  text-align: left;
+  pointer-events: none;
+  background: linear-gradient(180deg, #1e2540, #12162a);
+  --tip-color: #34d399;
+  border: 1px solid var(--tip-color);
+  border-radius: 8px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 8px 20px rgba(0, 0, 0, 0.6);
+}
+.info-tip.debuff {
+  --tip-color: #f87171;
+}
+.info-name {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--tip-color);
+}
+.info-kind {
+  margin-left: auto;
+  padding: 0 0.35rem;
+  font-size: 0.65rem;
+  color: #18100c;
+  background: var(--tip-color);
+  border-radius: 999px;
+}
+.info-duration {
+  padding-top: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--tip-color);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.info-text {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #f1e6d4;
 }
 
 /* 附魔宝石：镶嵌在右上角 */
