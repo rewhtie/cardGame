@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { willSplit } from '@/engine/effects'
+import AimArrow from './AimArrow.vue'
 import EnemyView from './EnemyView.vue'
 import HandView from './HandView.vue'
 import PileButton from './PileButton.vue'
@@ -689,23 +690,12 @@ onBeforeUnmount(() => {
     <!-- 拖拽指示：敌人牌画箭头，自身牌在越过手牌区上沿后提示可松手 -->
     <svg v-if="drag?.active" class="absolute inset-0 w-full h-full pointer-events-none z-20">
       <template v-if="dragAimsEnemy">
-        <line
+        <AimArrow
           :x1="drag.startX"
           :y1="drag.startY"
           :x2="drag.x"
           :y2="drag.y"
-          :stroke="hoverEnemy !== null ? '#fbbf24' : '#b09c86'"
-          stroke-width="6"
-          stroke-linecap="round"
-          stroke-dasharray="4 12"
-        />
-        <circle
-          :cx="drag.x"
-          :cy="drag.y"
-          r="14"
-          fill="none"
-          :stroke="hoverEnemy !== null ? '#fbbf24' : '#b09c86'"
-          stroke-width="4"
+          :color="hoverEnemy !== null ? '#fbbf24' : '#b09c86'"
         />
       </template>
       <text

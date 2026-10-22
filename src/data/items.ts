@@ -211,13 +211,14 @@ export const relics: Record<string, ItemDef> = {
   braveBadge: { id: 'braveBadge', name: '勇者徽章', icon: '🏅', text: '一回合内打出第 3 张攻击牌时，获得 3 点活力', lore: '我不像某个铁疙瘩，稳扎稳打才是王道' },
   // 剑圣专属
   bloodBlade: { id: 'bloodBlade', name: '饮血剑', icon: '🩸', text: '每回合开始获得 1 层汲血（回合结束清空）', lore: '剑身越旧越爱喝血。剑圣说这不是邪物，只是它比人诚实。' },
-  frostBlade: { id: 'frostBlade', name: '霜剑', icon: '❄️', text: '每回合开始，所有敌人获得 1 层冰霜', lore: '握久了，掌心会结一层薄霜。勇者笑称这是最好的冰镇酒壶。' },
+  frostBlade: { id: 'frostBlade', name: '霜剑', icon: '❄️', text: '战斗开始时，所有敌人获得 5 层冰霜（只有第一回合生效）', lore: '握久了，掌心会结一层薄霜。勇者笑称这是最好的冰镇酒壶。' },
   thunderBlade: { id: 'thunderBlade', name: '雷剑', icon: '⚡', text: '每场战斗第一回合开始，获得 2 层感电', lore: '出鞘前总有一声闷雷。队里的人一听见，就知道该退后了。' },
   flameBlade: { id: 'flameBlade', name: '炎剑', icon: '🔥', text: '战斗开始时，所有敌人获得 3 层灼伤', lore: '篝火边，鸦嘴常借它烘干绷带。剑圣从不介意。' },
   venomBlade2: { id: 'venomBlade2', name: '毒剑', icon: '☠️', text: '每回合开始，已经中毒的敌人额外获得 1 层中毒', lore: '剑圣不喜欢毒。鸦嘴说，对付那些东西，体面是奢侈品。' },
   scabbard: { id: 'scabbard', name: '剑鞘', icon: '🗡️', text: '每回合第一次打出技能牌，获得 3 点活力', lore: '好剑藏于鞘。会收的人，才配出剑。' },
   kingdomSeal: { id: 'kingdomSeal', name: '王国公章', icon: '📜', text: '附魔一张牌「固有」：每场战斗第一回合必定抽上手', lore: '盖着一个早已不存在的国度的印。出发那天，国王亲手按下。' },
   bladeTomb: { id: 'bladeTomb', name: '万剑冢', icon: '⚰️', text: '最大能量 −1；剑心改为每回合打出第 2 张攻击牌时触发', lore: '每一把断剑，都是一次没能守住的承诺。剑圣把它们埋在一处，此后再没拔出新的。' },
+  swordManual: { id: 'swordManual', name: '剑谱', icon: '📖', text: '战斗开始获得 1 点力量；剑流突破上限：每打出一张剑击（含免费的）都获得 1 层剑流，本回合内剑击可以一直免费连打', lore: '一页一式，翻到最后一页，又回到第一页。' },
   nothingBetween: { id: 'nothingBetween', name: '无间', icon: '🌀', text: '每回合开始获得 1 层剑意，回合结束失去全部剑意', lore: '「心中无物，剑下无间。」可惜后来，剑圣心里装了太多人。' },
   metamorphosis: { id: 'metamorphosis', name: '蜕变', icon: '🦋', text: '带有成长的攻击牌斩杀敌人（由这张牌的伤害将其杀死）时，该牌的成长层数额外 +2', lore: '蛹破开的那天，剑圣第一次明白，成长是要付出什么的。' },
   parasiteSeed: {

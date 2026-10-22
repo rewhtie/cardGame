@@ -125,6 +125,8 @@ export interface CardDef {
   retainGrow?: number
   /** 全场存活敌人的寄生层数合计达到该值时，这张牌免费打出 */
   freeIfParasiteTotal?: number
+  /** 玩家身上有剑意时，这张牌免费打出（不消耗剑意；伤害随剑意层数的牌自己会消耗） */
+  freeIfSwordIntent?: boolean
   /** 无法打出（状态牌 / 诅咒牌） */
   unplayable?: boolean
   /** 回合结束时若在手牌中，玩家失去这么多生命 */

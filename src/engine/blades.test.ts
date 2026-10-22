@@ -54,7 +54,7 @@ describe('背水', () => {
 })
 
 describe('冰霜', () => {
-  it('有格挡时穿甲且每层 +10%，格挡不减少', () => {
+  it('有格挡时穿甲且每层 +10%（翻倍），格挡不减少', () => {
     const s = fight()
     s.enemies[0]!.block = 10
     s.enemies[0]!.statuses = { frost: 3 }
@@ -64,11 +64,11 @@ describe('冰霜', () => {
     expect(s.enemies[0]!.block).toBe(10)
     expect(events.find((e) => e.type === 'damageDealt')).toMatchObject({ blocked: 0 })
   })
-  it('没有格挡时无效果', () => {
+  it('没有格挡时每层 +5%（不穿甲，只是增伤）', () => {
     const s = fight()
-    s.enemies[0]!.statuses = { frost: 3 }
-    hitPlayer(s, 6)
-    expect(s.enemies[0]!.hp).toBe(94)
+    s.enemies[0]!.statuses = { frost: 4 }
+    hitPlayer(s, 10)
+    expect(s.enemies[0]!.hp).toBe(100 - 12) // 10 × 1.2
   })
   it('没有冰霜时格挡照常抵挡', () => {
     const s = fight()

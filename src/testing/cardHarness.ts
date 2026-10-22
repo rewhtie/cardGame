@@ -243,12 +243,25 @@ export function effectSnapshot(cardId: string): { actual: Snapshot; expected: Sn
         expected.enemyStatuses[0] = {}
       } else if (e.type === 'heal')
         expected.playerHp = Math.min(before.player.maxHp, expected.playerHp + e.amount)
+      else if (e.type === 'penalty') {
+        // 力量 / 敏捷：立刻失去，记透支待恢复；能量 / 抽牌：记到下回合的状态
+        const [now, mark] =
+          e.stat === 'strength' ? ['strength', 'overdraft'] : e.stat === 'dexterity' ? ['dexterity', 'overdraftDex'] : [undefined, e.stat === 'energy' ? 'energyDown' : 'drawDown']
+        if (now) stack(expected.playerStatuses, now, -e.amount)
+        stack(expected.playerStatuses, mark!, e.amount)
+      }
       else if (e.type === 'overdraft') {
         stack(expected.playerStatuses, 'strength', -e.amount)
         stack(expected.playerStatuses, 'overdraft', e.amount)
       }
       else if (e.type === 'applyStatus') {
-        if (e.to === 'self') {
+        if (e.stacks < 0) {
+          // 负层数 = 清除（如泰坦清掉虚弱/易伤）：预期里直接去掉该状态
+          const targets = e.to === 'self' ? [expected.playerStatuses] : e.to === 'target' ? [expected.enemyStatuses[0]!] : expected.enemyStatuses
+          for (const st of targets) st[e.status] = Math.max(0, (st[e.status] ?? 0) + e.stacks)
+          for (const st of targets) if (st[e.status] === 0) delete st[e.status]
+        }
+        else if (e.to === 'self') {
           stack(expected.playerStatuses, e.status, e.stacks)
           // 临时层数另记一笔 temp: 键，回合结束扣除
           if (e.temp) stack(expected.playerStatuses, 'temp:' + e.status, e.stacks)

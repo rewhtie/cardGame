@@ -2,33 +2,12 @@ import { Card } from '../card'
 
 /** 战士 · 蓝卡；新增卡牌在末尾追加 */
 export const warriorBlue: Card[] = [
-  Card.blue('heavyBlow', '重击')
-    .icon('🔨')
-    .cost(2)
-    .targetEnemy()
-    .damage(16)
-    .reward()
-    .upgrade((u) => u.damage(18)),
   Card.blue('quickStrike', '快速打击')
     .icon('🗡️')
     .cost(0)
     .damage(4)
     .reward()
     .upgrade((u) => u.damage(7)),
-  Card.blue('bash', '痛击')
-    .icon('🔨')
-    .cost(2)
-    .damage(8)
-    .applyStatus('vulnerable', 2, 'target')
-    .reward()
-    .upgrade((u) => u.damage(10).applyStatus('vulnerable', 3, 'target')),
-  Card.blue('clothesline', '闷棍')
-    .icon('🏏')
-    .cost(2)
-    .damage(12)
-    .applyStatus('weak', 2, 'target')
-    .reward()
-    .upgrade((u) => u.damage(14).applyStatus('weak', 3, 'target')),
   Card.blue('expose', '破绽')
     .icon('🎯')
     .cost(0)
@@ -53,30 +32,6 @@ export const warriorBlue: Card[] = [
     .upgrade((u) =>
       u.damage(13).applyStatus('vulnerable', 2, 'target').applyStatus('weak', 2, 'target'),
     ),
-  Card.blue('bloodlust', '越战越勇')
-    .icon('🧛')
-    .cost(1)
-    .targetEnemy()
-    .exhaust()
-    .damage(9)
-    .heal(3)
-    .reward()
-    .upgrade((u) => u.damage(12).heal(5)),
-  Card.blue('deepBreath', '深呼吸')
-    .icon('🌬️')
-    .cost(1)
-    .targetSelf()
-    .draw(3)
-    .reward()
-    .upgrade((u) => u.draw(4)),
-  Card.blue('mend', '疗伤')
-    .icon('💚')
-    .cost(1)
-    .targetSelf()
-    .block(4)
-    .heal(4)
-    .reward()
-    .upgrade((u) => u.block(6).heal(6)),
   Card.blue('shockwave', '震荡波')
     .icon('💥')
     .cost(2)
@@ -88,22 +43,14 @@ export const warriorBlue: Card[] = [
     .upgrade((u) =>
       u.applyStatus('weak', 5, 'allEnemies').applyStatus('vulnerable', 5, 'allEnemies'),
     ),
-  Card.blue('fortify', '加固')
-    .icon('🏰')
-    .cost(1)
-    .targetSelf()
-    .block(13)
-    .penalty('dexterity', 2)
-    .reward()
-    .upgrade((u) => u.block(17).penalty('dexterity', 2)),
   Card.blue('weakenAll', '削弱')
     .icon('📉')
     .cost(1)
     .targetSelf()
     .block(4)
-    .applyStatus('weak', 2, 'allEnemies')
+    .applyStatus('weak', 1, 'allEnemies')
     .reward()
-    .upgrade((u) => u.block(6).applyStatus('weak', 3, 'allEnemies')),
+    .upgrade((u) => u.block(7).applyStatus('weak', 2, 'allEnemies')),
   Card.blue('bracing', '稳固')
     .icon('🪨')
     .cost(1)
@@ -138,4 +85,27 @@ export const warriorBlue: Card[] = [
     .exhaust()
     .reward()
     .upgrade((u) => u.sapStrength(15).applyStatus('weak', 3, 'target')),
+  Card.blue('intuition', '直觉')
+    .icon('🔮')
+    .cost(1)
+    .targetSelf()
+    .applyStatus('intuition', 1, 'self')
+    .text('打出此牌后，直到回合结束卡牌获得的格挡在下个回合开始获得')
+    .reward()
+    .upgrade((u) => u.cost(0)),
+  Card.blue('bloodBattle', '血战')
+    .icon('🩸')
+    .cost(1)
+    .targetEnemy()
+    .loseHp(3)
+    .gainEnergy(2)
+    .reward()
+    .upgrade((u) => u.loseHp(3).gainEnergy(3)),
+  Card.blue('spikeShell', '刺甲')
+    .icon('🦔')
+    .cost(1)
+    .power()
+    .applyStatus('thorns', 2)
+    .reward()
+    .upgrade((u) => u.applyStatus('thorns', 3)),
 ]

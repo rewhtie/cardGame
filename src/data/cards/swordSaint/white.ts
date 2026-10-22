@@ -40,45 +40,31 @@ export const swordSaintWhite: Card[] = [
     .damage(12)
     .reward()
     .upgrade((u) => u.loseHp(2).damage(17)),
-  Card.white('frostSlash', '凝霜斩')
+  Card.white('frostSlash', '霜斩')
     .icon('❄️')
     .cost(1)
+    .targetEnemy()
     .damage(6)
     .applyStatus('frost', 2, 'target')
     .reward()
     .upgrade((u) => u.damage(8).applyStatus('frost', 3, 'target')),
-  Card.white('thunderClap', '雷鸣')
+  Card.white('thunderClap', '雷剑')
     .icon('⚡')
     .cost(1)
+    .targetEnemy()
     .damage(4)
     .applyStatus('shock', 1)
     .reward()
-    .upgrade((u) => u.damage(6).applyStatus('shock', 1)),
-  Card.white('flameTongue', '火舌')
+    .upgrade((u) => u.damage(6).applyStatus('shock', 2)),
+  Card.white('flameTongue', '炎剑')
     .icon('🔥')
     .cost(1)
     .targetEnemy()
-    .damage(5)
+    .damage(4)
     .applyStatus('burn', 4, 'target')
     .reward()
-    .upgrade((u) => u.damage(7).applyStatus('burn', 4, 'target')),
+    .upgrade((u) => u.damage(6).applyStatus('burn', 6, 'target')),
   // —— 引擎与衔接 ——
-  Card.white('luck', '运气')
-    .icon('🍀')
-    .cost(0)
-    .targetSelf()
-    .draw(1)
-    .exhaust()
-    .reward()
-    .upgrade((u) => u.draw(2)),
-  Card.white('gather', '蓄势')
-    .icon('🌬️')
-    .cost(1)
-    .targetSelf()
-    .applyStatus('swordFlow', 1)
-    .block(4)
-    .reward()
-    .upgrade((u) => u.applyStatus('swordFlow', 1).block(7)),
   Card.white('cutWater', '断水')
     .icon('💧')
     .cost(1)

@@ -5,6 +5,7 @@ import { POTION_RULES, fieldHeal } from '@/engine/potions'
 import { relicCounter } from '@/engine/relics'
 import { maxPotions } from '@/engine/run'
 import { playSfx } from '@/composables/useSfx'
+import AimArrow from './AimArrow.vue'
 import HoverTip from './HoverTip.vue'
 
 const props = defineProps<{
@@ -51,10 +52,16 @@ const menu = ref<number | null>(null)
 const menuUsable = (index: number) => {
   const id = props.potions[index]
   if (!id) return false
-  return props.inBattle ? !!props.canUse : fieldHeal(id) !== undefined
+  if (!props.inBattle) return fieldHeal(id) !== undefined
+  return !!props.canUse && !needsAim(index)
 }
-const menuUseHint = (index: number) =>
-  menuUsable(index) ? '' : props.inBattle ? '现在不能使用' : '只能在战斗中使用'
+/** 投掷类药水在多个敌人时必须拖到目标身上，菜单无法指定目标 */
+const needsAim = (index: number) => ruleOf(index)?.target === 'enemy' && (props.livingEnemies ?? 0) > 1
+const menuUseHint = (index: number) => {
+  if (menuUsable(index)) return ''
+  if (!props.inBattle) return '只能在战斗中使用'
+  return props.canUse && needsAim(index) ? '有多个敌人，请拖到目标身上投掷' : '现在不能使用'
+}
 function menuUse(index: number) {
   menu.value = null
   emit('use', index)
@@ -316,23 +323,12 @@ const hintOf = (id: string | undefined) => {
     <!-- 拖拽指示：投掷类画瞄准线，饮用类越过手牌区上沿后提示可松手 -->
     <svg v-if="drag?.active" class="fixed inset-0 w-full h-full pointer-events-none z-50">
       <template v-if="dragAimsEnemy()">
-        <line
+        <AimArrow
           :x1="drag.startX"
           :y1="drag.startY"
           :x2="drag.x"
           :y2="drag.y"
-          :stroke="aimed !== null ? '#fbbf24' : '#38bdf8'"
-          stroke-width="6"
-          stroke-linecap="round"
-          stroke-dasharray="4 12"
-        />
-        <circle
-          :cx="drag.x"
-          :cy="drag.y"
-          r="14"
-          fill="none"
-          :stroke="aimed !== null ? '#fbbf24' : '#38bdf8'"
-          stroke-width="4"
+          :color="aimed !== null ? '#fbbf24' : '#38bdf8'"
         />
       </template>
       <text

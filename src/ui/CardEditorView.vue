@@ -117,6 +117,16 @@ function optionalNumber(key: 'retainGrow' | 'grow' | 'freeIfParasiteTotal') {
 const retainGrow = optionalNumber('retainGrow')
 const grow = optionalNumber('grow')
 const freeParasite = optionalNumber('freeIfParasiteTotal')
+/** 有剑意时免费：关闭 = 删除字段 */
+const freeIntent = computed({
+  get: () => !!current.value?.spec.freeIfSwordIntent,
+  set: (on: boolean) => {
+    const spec = current.value?.spec
+    if (!spec) return
+    if (on) spec.freeIfSwordIntent = true
+    else delete spec.freeIfSwordIntent
+  },
+})
 
 /** 成长：累计打出 plays 次后变成 into（战斗胜利时结算）；开启时默认指向自己，需要再改目标 */
 const hasEvolve = computed({
@@ -376,6 +386,7 @@ function revert(e: Entry) {
               全场寄生合计 ≥ N 时免费
               <input v-model.number="freeParasite" type="number" min="0" class="ed-ctl ed-mini" />
             </label>
+            <label><input v-model="freeIntent" type="checkbox" /> 有剑意时免费打出（不消耗剑意）</label>
             <label class="inline">
               回合结束时失去生命
               <input v-model.number="current.spec.endTurnLoseHp" type="number" min="0" class="ed-ctl ed-mini" />

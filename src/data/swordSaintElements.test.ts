@@ -15,7 +15,7 @@ const TABLE: [string, string, number][] = [
   ['slash', 'white', 1], ['desperate', 'blue', 1], ['lastStandPower', 'gold', 1],
   ['frostSlash', 'white', 1], ['coldWave', 'blue', 1], ['frostWorld', 'gold', 1],
   ['thunderClap', 'white', 1], ['chainLightning', 'blue', 1], ['thunderGodPower', 'gold', 2],
-  ['flameTongue', 'white', 1], ['firestorm', 'blue', 2], ['burnSky', 'gold', 2],
+  ['flameTongue', 'white', 1], ['firestorm', 'blue', 1], ['burnSky', 'gold', 2],
 ]
 
 describe('属性剑新牌', () => {

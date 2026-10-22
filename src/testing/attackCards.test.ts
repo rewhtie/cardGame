@@ -35,6 +35,7 @@ describe('攻击牌：卡池批量校验', () => {
             e.type === 'multiplyStatus' ||
             ['consumeParasite', 'parasiteBurst', 'devourParasite', 'parasiteStatus', 'spreadParasite', 'stealMaxHp', 'convertCorpse'].includes(e.type) ||
             (e.type === 'exhaustWounds' && e.gain === 'damage') ||
+            (e.type === 'exhaustCards' && !!e.perCard?.some((p) => p.type === 'damage')) ||
             (e.type === 'applyStatus' && e.to !== 'self'),
         )
         expect(hitsTarget).toBe(true)
@@ -53,7 +54,7 @@ describe('攻击牌：卡池批量校验', () => {
           if (status) s.enemies.forEach((en) => (en.statuses = { ...en.statuses, [status]: 2 }))
         }
         // 伤口转伤害的牌：弃牌堆里要有伤口才有东西可转
-        if (cards[id]!.effects.some((e) => e.type === 'exhaustWounds')) s.discardPile = ['wound', 'wound']
+        if (cards[id]!.effects.some((e) => e.type === 'exhaustWounds' || e.type === 'exhaustCards')) s.discardPile = ['wound', 'wound']
         const before = s.enemies.map((e) => ({ hp: e.hp, statuses: JSON.stringify(e.statuses) }))
         const { state } = playCard(s, id, 1)
         const touched = (i: number) =>

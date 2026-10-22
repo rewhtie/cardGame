@@ -26,11 +26,11 @@ describe('剑圣遗物', () => {
     s = endTurn(s)
     expect(s.player.statuses.bloodDrain).toBe(1) // 新回合重新给，不叠到 2
   })
-  it('霜剑：每回合开始所有敌人 1 层冰霜，回合末清空后下回合重新有 1 层', () => {
+  it('霜剑：战斗开始所有敌人 5 层冰霜，第一回合结束清空后不再给', () => {
     let s = fight(['frostBlade'], [dummy, { ...dummy, id: 'd2' }])
-    expect(s.enemies.map((e) => e.statuses.frost)).toEqual([1, 1])
+    expect(s.enemies.map((e) => e.statuses.frost)).toEqual([5, 5])
     s = endTurn(s)
-    expect(s.enemies.map((e) => e.statuses.frost)).toEqual([1, 1])
+    expect(s.enemies.map((e) => e.statuses.frost)).toEqual([undefined, undefined])
   })
   it('雷剑：第一回合 2 层感电，第二回合不再给', () => {
     let s = fight(['thunderBlade'])
@@ -75,5 +75,38 @@ describe('剑圣遗物', () => {
     expect(s.player.statuses.swordIntent).toBe(1)
     s = endTurn(s)
     expect(s.player.statuses.swordIntent).toBe(1)
+  })
+  describe('剑谱', () => {
+    const strike: CardDef = { ...atk('swordStrike'), cost: 1 }
+    const strikeFight = (relics: string[]) =>
+      createBattle({ seed: 1, deck: Array(10).fill('swordStrike'), enemies: [dummy], cards: { swordStrike: strike }, relics }).state
+    const chain = (s: BattleState, n: number) => {
+      const energy: number[] = []
+      for (let i = 0; i < n; i++) {
+        s = play(s)
+        energy.push(s.player.energy)
+      }
+      return { s, energy }
+    }
+    it('剑流回合结束清空：不会带到下个回合（没有剑谱的第一张照常付费）', () => {
+      let { s } = chain(strikeFight(['swordManual']), 2)
+      expect(s.player.statuses.swordFlow).toBe(1)
+      s = endTurn(s)
+      expect(s.player.statuses.swordFlow).toBeUndefined()
+      const next = play(s)
+      expect(next.player.energy).toBe(next.player.maxEnergy - 1)
+    })
+    it('没有剑谱：付费 → 免费 → 又要付费（两张就断）', () => {
+      const { s, energy } = chain(strikeFight([]), 3)
+      expect(energy).toEqual([2, 2, 1])
+      expect(s.player.statuses.swordFlow).toBe(1)
+    })
+    it('有剑谱：只付第一张，之后的剑击一直免费，并获得 1 点力量', () => {
+      const s0 = strikeFight(['swordManual'])
+      expect(s0.player.statuses.strength).toBe(1)
+      const { s, energy } = chain(s0, 5)
+      expect(energy).toEqual([2, 2, 2, 2, 2])
+      expect(s.player.statuses.swordFlow).toBe(1)
+    })
   })
 })

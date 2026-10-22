@@ -9,9 +9,10 @@ export const warriorGold: Card[] = [
     .exhaust()
     .reward()
     .upgrade((u) => u.damage(32)),
-  Card.gold('infernoSlash', '烈焰斩')
+  Card.gold('infernoSlash', '猛烈')
     .icon('☄️')
     .cost(2)
+    .targetEnemy()
     .damage(16)
     .applyStatus('vulnerable', 2, 'target')
     .reward()
@@ -23,16 +24,15 @@ export const warriorGold: Card[] = [
     .damage(26)
     .applyStatus('strength', 3)
     .reward()
-    .upgrade((u) => u.damage(32).applyStatus('vulnerable', 4, 'target')),
+    .upgrade((u) => u.damage(32).applyStatus('strength', 4)),
   Card.gold('deathMark', '死亡标记')
     .icon('💀')
     .cost(2)
     .targetAllEnemies()
     .applyStatus('gash', 2, 'allEnemies')
-    .damageHits(4, 4)
-    .text('给予所有敌人 2 层裂伤，造成 2 x 4 点伤害。')
+    .damageHits(2, 4)
     .reward()
-    .upgrade((u) => u.applyStatus('gash', 4, 'allEnemies').damageHits(4, 4).text('给予所有敌人 4 层裂伤，造成 4 x 4 点伤害。')),
+    .upgrade((u) => u.applyStatus('gash', 4, 'allEnemies').damageHits(2, 4)),
   Card.gold('dash', '疾跑')
     .icon('💨')
     .cost(0)
@@ -53,11 +53,11 @@ export const warriorGold: Card[] = [
     .icon('🔥')
     .cost(2)
     .targetSelf()
-    .heal(15)
-    .block(10)
     .exhaust()
+    .loseHp(20)
+    .applyStatus('regen', 10)
     .reward()
-    .upgrade((u) => u.heal(22).block(14)),
+    .upgrade((u) => u),
   Card.gold('bulwark', '铁桶阵')
     .icon('🛡️')
     .cost(2)
@@ -70,11 +70,11 @@ export const warriorGold: Card[] = [
     .icon('⛪')
     .cost(1)
     .targetSelf()
-    .block(12)
-    .applyStatus('regen', 3)
     .exhaust()
+    .block(7)
+    .applyStatus('regen', 2)
     .reward()
-    .upgrade((u) => u.block(16).applyStatus('regen', 5)),
+    .upgrade((u) => u.block(7).applyStatus('regen', 4)),
   Card.gold('inflame', '燃烧')
     .icon('🔥')
     .cost(1)
@@ -89,36 +89,38 @@ export const warriorGold: Card[] = [
     .power()
     .applyStatus('dexterity', 2)
     .reward()
-    .upgrade((u) => u.cost(0)),
+    .upgrade((u) => u.cost(1).applyStatus('dexterity', 3)),
   Card.gold('ironBody', '钢铁之躯')
     .icon('🦾')
     .cost(1)
     .power()
-    .applyStatus('metallicize', 3)
+    .applyStatus('metallicize', 5)
     .reward()
-    .upgrade((u) => u.applyStatus('metallicize', 5)),
+    .upgrade((u) => u.applyStatus('metallicize', 8)),
   Card.gold('thornArmor', '荆棘护甲')
     .icon('🌵')
     .cost(1)
     .power()
-    .applyStatus('thorns', 3)
+    .applyStatus('thorns', 2)
     .reward()
-    .upgrade((u) => u.applyStatus('thorns', 5)),
+    .upgrade((u) => u.applyStatus('thorns', 3)),
   Card.gold('warFury', '战意')
     .icon('😤')
+    .cost(1)
+    .power()
+    .applyStatus('strength', 1)
+    .applyStatus('dexterity', 1)
+    .reward()
+    .upgrade((u) => u.applyStatus('strength', 2).applyStatus('dexterity', 2)),
+  Card.gold('titan', '不顾一切')
+    .icon('🗿')
     .cost(2)
     .power()
-    .applyStatus('strength', 4)
+    .applyStatus('strength', 6)
+    .applyStatus('frail', 99)
+    .applyStatus('vulnerable', 99)
     .reward()
-    .upgrade((u) => u.applyStatus('strength', 6)),
-  Card.gold('titan', '泰坦')
-    .icon('🗿')
-    .cost(3)
-    .power()
-    .applyStatus('strength', 3)
-    .applyStatus('dexterity', 3)
-    .reward()
-    .upgrade((u) => u.cost(2)),
+    .upgrade((u) => u.cost(1)),
   Card.gold('legendSpear', '传说中的长枪')
     .icon('🔱')
     .cost(3)
@@ -129,9 +131,10 @@ export const warriorGold: Card[] = [
   Card.gold('decisiveBlow', '决胜一击')
     .icon('⚡')
     .cost(3)
+    .targetEnemy()
     .damageByBuffs(30)
     .reward()
-    .upgrade((u) => u.cost(2).damageByBuffs(34)),
+    .upgrade((u) => u.cost(2)),
   Card.gold('meditate', '冥想')
     .icon('🧘')
     .cost(1)
@@ -160,11 +163,54 @@ export const warriorGold: Card[] = [
     .upgrade((u) => u.heal(5).draw(1)),
   Card.gold('overdraft', '透支')
     .icon('📉')
-    .cost(2)
+    .cost(3)
     .targetEnemy()
     .damage(30)
     .block(30)
     .overdraft(30)
     .reward()
     .upgrade((u) => u.damage(30).blockFromDamage().penalty('strength', -30)),
+  Card.gold('bloodlust', '狂骨')
+    .icon('🧛')
+    .cost(1)
+    .targetEnemy()
+    .exhaust()
+    .damage(9)
+    .heal(2)
+    .reward()
+    .upgrade((u) => u.damage(12).heal(3)),
+  Card.gold('mend', '疗伤')
+    .icon('💚')
+    .cost(2)
+    .targetSelf()
+    .exhaust()
+    .heal(4)
+    .reward()
+    .upgrade((u) => u.heal(6)),
+  Card.gold('steelNerve', '退缩')
+    .icon('🔩')
+    .cost(1)
+    .targetSelf()
+    .exhaust()
+    .block(8)
+    .gainEnergy(1)
+    .reward()
+    .upgrade((u) => u.block(11).gainEnergy(1)),
+  Card.gold('regroup', '早有准备')
+    .icon('🌬️')
+    .cost(0)
+    .targetSelf()
+    .exhaust()
+    .gainEnergy(1)
+    .draw(1)
+    .reward()
+    .upgrade((u) => u.gainEnergy(1).draw(2)),
+  Card.gold('deepBreath', '深呼吸')
+    .icon('🌬️')
+    .cost(1)
+    .targetSelf()
+    .exhaust()
+    .draw(3)
+    .reward()
+    .upgrade((u) => u.draw(4)),
 ]

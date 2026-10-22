@@ -226,6 +226,7 @@ export class Card {
   private _upgrade?: (u: Card) => Card
   private _evolve?: { plays: number; into: string }
   private _freeParasite?: number
+  private _freeIntent = false
   private _innate = false
   private _grow = 0
 
@@ -258,6 +259,7 @@ export class Card {
     if (spec.starter > 0) c.starter(spec.starter)
     if (spec.evolve) c.evolve(spec.evolve.plays, spec.evolve.into)
     if (spec.freeIfParasiteTotal) c.freeIfParasiteTotal(spec.freeIfParasiteTotal)
+    if (spec.freeIfSwordIntent) c.freeIfSwordIntent()
     const up = spec.upgrade
     if (up) {
       c.upgrade((u) => {
@@ -299,6 +301,7 @@ export class Card {
       ...(upgrade && { upgrade }),
       ...(this._evolve && { evolve: this._evolve }),
       ...(this._freeParasite && { freeIfParasiteTotal: this._freeParasite }),
+      ...(this._freeIntent && { freeIfSwordIntent: true }),
     }
   }
 
@@ -570,6 +573,11 @@ export class Card {
     this._freeParasite = total
     return this
   }
+  /** 玩家有剑意时，这张牌免费 */
+  freeIfSwordIntent() {
+    this._freeIntent = true
+    return this
+  }
   stealMaxHp(amount: number) {
     return this.effect({ type: 'stealMaxHp', amount })
   }
@@ -663,6 +671,7 @@ export class Card {
     u._retain = this._retain
     u._retainGrow = this._retainGrow
     u._innate = this._innate
+    u._freeIntent = this._freeIntent
     u._skill = this._skill
     const result = this._upgrade(u)
     result._effects = result._effects.length > 0 ? result._effects : this._effects
@@ -706,10 +715,11 @@ export class Card {
       ...(this._endTurnLoseHp > 0 && { endTurnLoseHp: this._endTurnLoseHp }),
       ...(this._evolve && { evolve: this._evolve }),
       ...(this._freeParasite && { freeIfParasiteTotal: this._freeParasite }),
+      ...(this._freeIntent && { freeIfSwordIntent: true }),
       effects: this._effects,
       text:
         this._text ??
-        `${this._innate ? '固有\n' : ''}${this._retain ? '保留\n' : ''}${effectsText}${exhaust ? '\n消耗' : ''}`,
+        `${this._innate ? '固有\n' : ''}${this._retain ? '保留\n' : ''}${this._freeIntent ? '有剑意时免费\n' : ''}${effectsText}${exhaust ? '\n消耗' : ''}`,
     }
   }
 }

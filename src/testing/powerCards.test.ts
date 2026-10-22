@@ -9,7 +9,7 @@ const powerIds = cardIdsOfKind('power')
 /** 能力牌给自己上的状态：[状态 id, 层数] */
 const grants = (id: string) =>
   cards[id]!.effects.flatMap((e) =>
-    e.type === 'applyStatus' && e.to === 'self' ? [[e.status, e.stacks] as const] : [],
+    e.type === 'applyStatus' && e.to === 'self' && e.stacks > 0 ? [[e.status, e.stacks] as const] : [],
   )
 
 describe('能力牌：卡池批量校验', () => {
@@ -114,19 +114,23 @@ describe('燃烧 (inflame)', () => {
   })
 })
 
+/** 能力牌给自己的某个状态层数：数值随卡牌数据走，改卡后测试不用跟着改 */
+const stacksOf = (id: string, status: string) => grants(id).find(([st]) => st === status)![1]
+
 describe('钢铁之躯 (ironBody)', () => {
-  it('回合结束获得 3 点格挡，挡掉史莱姆第一回合 8 点攻击中的 3 点', () => {
+  const M = stacksOf('ironBody', 'metallicize')
+  it('回合结束获得格挡，挡掉史莱姆第一回合 8 点攻击中的对应点数', () => {
     const s = playCard(setupScenario({ hand: ['ironBody'] }), 'ironBody').state
     const { state, events } = dispatch(s, { type: 'endTurn' })
-    expect(events).toContainEqual({ type: 'blockGained', target: 'player', amount: 3 })
-    expect(state.player.hp).toBe(80 - (8 - 3))
+    expect(events).toContainEqual({ type: 'blockGained', target: 'player', amount: M })
+    expect(state.player.hp).toBe(80 - (8 - M))
   })
 
-  it('叠加两次：回合结束获得 6 点格挡', () => {
+  it('叠加两次：回合结束获得双倍格挡', () => {
     const s = setupScenario({ hand: ['ironBody', 'ironBody'], energy: 3 })
     const after = playSequence(s, ['ironBody', 'ironBody']).state
     const { events } = dispatch(after, { type: 'endTurn' })
-    expect(events).toContainEqual({ type: 'blockGained', target: 'player', amount: 6 })
+    expect(events).toContainEqual({ type: 'blockGained', target: 'player', amount: M * 2 })
   })
 
   it('打出当回合不会立刻获得格挡', () => {
@@ -137,15 +141,16 @@ describe('钢铁之躯 (ironBody)', () => {
     let s = playCard(setupScenario({ hand: ['ironBody'] }), 'ironBody').state
     s = dispatch(s, { type: 'endTurn' }).state
     const { events } = dispatch(s, { type: 'endTurn' })
-    expect(events).toContainEqual({ type: 'blockGained', target: 'player', amount: 3 })
+    expect(events).toContainEqual({ type: 'blockGained', target: 'player', amount: M })
   })
 })
 
 describe('荆棘护甲 (thornArmor)', () => {
-  it('被攻击时反弹 3 点伤害给史莱姆', () => {
+  const T = stacksOf('thornArmor', 'thorns')
+  it('被攻击时反弹荆棘层数的伤害给史莱姆', () => {
     const s = playCard(setupScenario({ hand: ['thornArmor'] }), 'thornArmor').state
     const { state, events } = dispatch(s, { type: 'endTurn' })
-    expect(state.enemies[0]!.hp).toBe(40 - 3)
+    expect(state.enemies[0]!.hp).toBe(40 - T)
     expect(events).toContainEqual({ type: 'statusTriggered', target: 'player', status: 'thorns' })
   })
 
@@ -155,7 +160,7 @@ describe('荆棘护甲 (thornArmor)', () => {
     const { state } = dispatch(after, { type: 'endTurn' })
     // 两张防御共 10 点格挡，完全挡下史莱姆的 8 点攻击
     expect(state.player.hp).toBe(80)
-    expect(state.enemies[0]!.hp).toBe(40 - 3)
+    expect(state.enemies[0]!.hp).toBe(40 - T)
   })
 
   it('敌人不攻击的回合不触发（史莱姆第二回合在防御）', () => {

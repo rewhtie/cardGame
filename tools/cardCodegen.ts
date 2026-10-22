@@ -137,6 +137,7 @@ export function cardToCode(spec: CardSpec): string {
   if (spec.starter > 0) add(`.starter(${spec.starter})`)
   if (spec.evolve) add(`.evolve(${spec.evolve.plays}, ${q(spec.evolve.into)})`)
   if (spec.freeIfParasiteTotal) add(`.freeIfParasiteTotal(${spec.freeIfParasiteTotal})`)
+  if (spec.freeIfSwordIntent) add('.freeIfSwordIntent()')
   const up = spec.upgrade
   if (up) {
     const calls: string[] = []

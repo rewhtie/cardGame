@@ -27,19 +27,12 @@ export const colorlessWhite: Card[] = [
     .choose('scry', 3)
     .reward()
     .upgrade((u) => u.choose('scry', 5)),
-  Card.white('swapHand', '换手')
-    .icon('🔄')
+  Card.white('destiny', '天命')
+    .icon('🎴')
     .cost(1)
     .targetSelf()
-    .redraw(0)
-    .reward()
-    .upgrade((u) => u.redraw(1)),
-  Card.white('alchemy', '炼金')
-    .icon('⚗️')
-    .cost(1)
-    .targetSelf()
-    .gainPotion()
     .exhaust()
+    .playTop()
     .reward()
     .upgrade((u) => u.cost(0)),
 ]

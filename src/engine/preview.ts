@@ -19,7 +19,8 @@ export function previewDamage(s: BattleState, card: CardDef, enemyIndex?: number
   // 这张牌打出时「本回合攻击数」已含自己
   let ctx: BattleState = card.kind === 'attack' ? { ...s, turnAttacks: (s.turnAttacks ?? 0) + 1 } : s
   const from = { hp: s.player.hp, maxHp: s.player.maxHp, statuses: s.player.statuses }
-  const tStatuses = (enemyIndex === undefined ? undefined : s.enemies[enemyIndex])?.statuses ?? {}
+  // 复制一份：牌里排在伤害前面的「给予目标状态」（如死亡标记先上裂伤）要先叠上去再算伤害
+  const tStatuses: Record<string, number> = { ...((enemyIndex === undefined ? undefined : s.enemies[enemyIndex])?.statuses ?? {}) }
   // 目标格挡随效果顺序变化（如长矛先融化格挡再造成伤害），每次算伤害时现读
   const finalOf = (base: number) => {
     const block = (enemyIndex === undefined ? undefined : ctx.enemies[enemyIndex])?.block ?? 0
@@ -31,7 +32,9 @@ export function previewDamage(s: BattleState, card: CardDef, enemyIndex?: number
   // 衍生效果（每消耗一张牌…）的卡面文字紧跟在这个效果之后，按同样顺序展开
   const visit = (raw: Effect) => {
     const effect = modifyEffect(ctx, card, raw)
-    if (effect.type === 'meltBlock' && enemyIndex !== undefined) {
+    if (effect.type === 'applyStatus' && (effect.to === 'target' || effect.to === 'allEnemies')) {
+      tStatuses[effect.status] = (tStatuses[effect.status] ?? 0) + effect.stacks
+    } else if (effect.type === 'meltBlock' && enemyIndex !== undefined) {
       ctx = { ...ctx, enemies: ctx.enemies.map((e, i) => (i === enemyIndex ? { ...e, block: 0 } : e)) }
     } else if (effect.type === 'damage') {
       if (effect.buffTotal || effect.maxHpPct) return // 卡面没有具体数字

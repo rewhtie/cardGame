@@ -50,7 +50,7 @@ export const characters: CharacterDef[] = [
     allCards: [...new Set(['defend', ...classAllIds.swordSaint!, ...colorlessAllIds])],
     rewardCards: [...classRewardIds.swordSaint!, ...colorlessRewardIds],
     relics: ['swordHeart'],
-    exclusiveRelics: ['braveBadge', 'bloodBlade', 'frostBlade', 'thunderBlade', 'flameBlade', 'venomBlade2', 'scabbard', 'bladeTomb', 'nothingBetween', 'metamorphosis', 'kingdomSeal'],
+    exclusiveRelics: ['braveBadge', 'bloodBlade', 'frostBlade', 'thunderBlade', 'flameBlade', 'venomBlade2', 'scabbard', 'bladeTomb', 'nothingBetween', 'swordManual', 'metamorphosis', 'kingdomSeal'],
   },
   {
     id: 'ancientTree',

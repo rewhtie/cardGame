@@ -219,9 +219,16 @@ export function applyBlock(
   amount: number,
   events: GameEvent[],
   enemyIndex = 0,
+  /** 来自卡牌效果的格挡（遗物、状态、随从指挥等不算） */
+  fromCard = false,
 ) {
   const t = target === 'player' ? s.player : s.enemies[enemyIndex]
   if (!t) return
+  // 直觉：本回合卡牌获得的格挡不生效，存起来下回合开始再给（传说背心等到真正获得时才计数）
+  if (fromCard && target === 'player' && (s.player.statuses.intuition ?? 0) > 0) {
+    addStatus(s, 'player', 0, 'intuitionStore', amount, events)
+    return
+  }
   t.block += amount
   events.push({
     type: 'blockGained',
@@ -788,7 +795,7 @@ export function resolveEffect(
       break
     }
     case 'blockFromDamage':
-      if ((s.lastDamage ?? 0) > 0) applyBlock(s, 'player', s.lastDamage!, events)
+      if ((s.lastDamage ?? 0) > 0) applyBlock(s, 'player', s.lastDamage!, events, 0, true)
       break
     case 'overdraft':
       shiftStatus(s, 'player', 0, 'strength', -effect.amount, events)
@@ -817,6 +824,7 @@ export function resolveEffect(
       delete s.player.statuses[id]
       delete s.player.statuses[TEMP_PREFIX + id] // 临时层数的记账一并清掉
       events.push({ type: 'statusRemoved', target: 'player', status: id })
+      // 堂堂正正优先级最高：不受直觉拦截，格挡立即生效
       applyBlock(s, 'player', stacks, events)
       break
     }
@@ -926,7 +934,7 @@ export function resolveEffect(
       for (let i = 0; i < n; i++) s.exhaustPile.push(WOUND)
       const total = effect.per * n
       if (effect.gain === 'block')
-        applyBlock(s, 'player', calcBlock(total, s.player.statuses), events)
+        applyBlock(s, 'player', calcBlock(total, s.player.statuses), events, 0, true)
       else if (effect.gain === 'gash') addStatus(s, 'enemy', enemyIndex, 'gash', total, events)
       else if (effect.gain === 'gashAll')
         s.enemies.forEach((e, i) => {
@@ -1017,7 +1025,7 @@ export function resolveEffect(
       const intent = e?.def.intents[e.intentIndex]
       if (!e || intent?.type !== 'attack') break
       const base = intent.damage + attackBonusAt(e.def, e.turns ?? 0)
-      applyBlock(s, 'player', enemyAttack(base, e, s.player).damage, events)
+      applyBlock(s, 'player', enemyAttack(base, e, s.player).damage, events, 0, true)
       break
     }
     case 'goldIfKill':
@@ -1055,6 +1063,8 @@ export function resolveEffect(
         'player',
         calcBlock(effect.perX ? effect.amount * x : effect.amount, s.player.statuses),
         events,
+        0,
+        true,
       )
       break
     case 'applyStatus':

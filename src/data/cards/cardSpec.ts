@@ -45,4 +45,6 @@ export interface CardSpec {
   evolve?: { plays: number; into: string }
   /** 全场寄生种子合计达到该值时免费 */
   freeIfParasiteTotal?: number
+  /** 有剑意时免费 */
+  freeIfSwordIntent?: boolean
 }

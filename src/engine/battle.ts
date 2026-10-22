@@ -33,7 +33,7 @@ import { shuffle } from './rng'
 import { attackBonusAt, intentIndexAt } from './intents'
 import { calcBlock, STATUSES, statusById } from './statuses'
 import { enemyAttack, hasDamage } from './blades'
-import { afterPlay, playCost } from './swordSaint'
+import { afterPlay, playCost, SWORD_MANUAL } from './swordSaint'
 import type { Action, BattleConfig, BattleState, DispatchResult, GameEvent, IntentAction, Side } from './types'
 
 const DEFAULT_MAX_HP = 80
@@ -57,6 +57,13 @@ function startPlayerTurn(s: BattleState, events: GameEvent[]) {
   events.push({ type: 'turnStarted', turn: s.turn })
   runTiming(s, 'playerStart', events)
   if (s.player.hp <= 0) return
+  // 直觉：上回合存下的格挡（此时直觉标记已清空，不会再被存走）
+  const stored = s.player.statuses.intuitionStore ?? 0
+  if (stored > 0) {
+    delete s.player.statuses.intuitionStore
+    events.push({ type: 'statusRemoved', target: 'player', status: 'intuitionStore' })
+    applyBlock(s, 'player', stored, events)
+  }
   turnStartPassives(s, 'player', 0, events)
   fireRelics(s, 'onTurnStart', events)
   drawCards(s, Math.max(0, s.handSize - drawDown), events)
@@ -245,7 +252,11 @@ function playCard(state: BattleState, handIndex: number, target?: number, pick?:
   const x = card.cost === 'X' ? (paid.free ? 0 : s.player.energy) + (card.xBonus ?? 0) : 0
   if (!paid.free) s.player.energy = card.cost === 'X' ? 0 : s.player.energy - card.cost
   if (paid.viaIntent) shiftStatus(s, 'player', 0, 'swordIntent', -1, events)
-  if (paid.viaFlow) shiftStatus(s, 'player', 0, 'swordFlow', -(s.player.statuses.swordFlow ?? 0), events)
+  // 剑流免费：平时一次清空（只有 1 层）；有剑谱时每张只消耗 1 层，叠高的层数能连续用
+  if (paid.viaFlow) {
+    const flow = s.player.statuses.swordFlow ?? 0
+    shiftStatus(s, 'player', 0, 'swordFlow', -(s.relics.includes(SWORD_MANUAL) ? 1 : flow), events)
+  }
   if (card.evolve) {
     const counts = (s.evolveCounts ??= {})
     counts[cardId] = (counts[cardId] ?? progressOf(cardId)) + 1

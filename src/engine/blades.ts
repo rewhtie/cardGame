@@ -21,7 +21,7 @@ export const attackerOf = (e: EnemyState): Attacker => ({
 
 /**
  * 出手方攻击时，需要读生命 / 目标格挡才能算的额外修正（玩家、敌人通用，增益跟着状态走）：
- * 背水（出手方血量不高于 30%）、活力（下一次攻击 +N）、感电（下一次伤害攻击）、冰霜（目标有格挡时穿甲 + 增伤）。
+ * 背水（出手方血量不高于 30%）、活力（下一次攻击 +N）、感电（下一次伤害攻击）、冰霜（目标受伤 +5%×N；有格挡时 +10%×N 并穿甲）。
  * 增伤一律四舍五入。
  */
 export function attackMods(
@@ -37,7 +37,8 @@ export function attackMods(
   if (vigor > 0) mods.push({ add: vigor })
   const frost = targetStatuses.frost ?? 0
   const pierce = frost > 0 && targetBlock > 0
-  if (pierce) mods.push({ mul: 1 + 0.1 * frost, round: true })
+  // 冰霜：任何时候受到伤害 +5%×N；目标有格挡时翻倍到 +10%×N，并且穿透格挡
+  if (frost > 0) mods.push({ mul: 1 + (pierce ? 0.1 : 0.05) * frost, round: true })
   return { mods, pierce }
 }
 

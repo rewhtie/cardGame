@@ -244,11 +244,11 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
   bloodBlade: {
     onTurnStart: (s, ev) => addStatus(s, 'player', 0, 'bloodDrain', 1, ev),
   },
-  // 霜剑：每回合开始，所有敌人获得 1 层冰霜
+  // 霜剑：战斗开始时，所有敌人获得 5 层冰霜（冰霜回合结束清空，所以只管第一回合）
   frostBlade: {
-    onTurnStart: (s, ev) =>
+    onBattleStart: (s, ev) =>
       s.enemies.forEach((e, i) => {
-        if (isAlive(e)) addStatus(s, 'enemy', i, 'frost', 1, ev)
+        if (isAlive(e)) addStatus(s, 'enemy', i, 'frost', 5, ev)
       }),
   },
   // 雷剑：每场战斗第一回合开始，获得 2 层感电
@@ -297,6 +297,10 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
       delete s.player.statuses.swordIntent
       ev.push({ type: 'statusRemoved', target: 'player', status: 'swordIntent' })
     },
+  },
+  // 剑谱：战斗开始获得 1 点力量；剑击永远给剑流且不受 1 层上限（见 swordSaint.afterPlay）
+  swordManual: {
+    onBattleStart: (s, ev) => addStatus(s, 'player', 0, 'strength', 1, ev),
   },
   // 包扎：每次恢复生命，把一张伤口置入弃牌堆
   bandaging: {
