@@ -21,6 +21,7 @@ defineEmits<{ choose: [id: string] }>()
         <span class="text-6xl">{{ relics[id]?.icon }}</span>
         <span class="text-xl font-bold">{{ relics[id]?.name }}</span>
         <span class="text-sm text-slate-300 text-center">{{ relics[id]?.text }}</span>
+        <span v-if="relics[id]?.lore" class="text-xs italic text-slate-400 text-center">{{ relics[id]?.lore }}</span>
       </button>
     </div>
   </div>

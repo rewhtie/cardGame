@@ -3,12 +3,34 @@ export interface ItemDef {
   name: string
   icon: string
   text: string
+  /** 剧情故事描述（可选）：显示在效果说明下方 */
+  lore?: string
 }
 
 export const potions: Record<string, ItemDef> = {
   healPotion: { id: 'healPotion', name: '治疗药水', icon: '🧪', text: '恢复 20 点生命' },
   firePotion: { id: 'firePotion', name: '火焰药水', icon: '🔥', text: '对敌人造成 20 点伤害' },
   guardPotion: { id: 'guardPotion', name: '护盾药水', icon: '🛡️', text: '获得 12 点格挡' },
+  strengthPotion: { id: 'strengthPotion', name: '力量药水', icon: '💪', text: '获得 2 点力量' },
+  dexterityPotion: { id: 'dexterityPotion', name: '敏捷药水', icon: '🌀', text: '获得 2 点敏捷' },
+  energyPotion: { id: 'energyPotion', name: '能量药水', icon: '⚡', text: '获得 2 点能量' },
+  swiftPotion: { id: 'swiftPotion', name: '迅捷药水', icon: '💨', text: '抽 3 张牌' },
+  flexPotion: { id: 'flexPotion', name: '灵活药水', icon: '🏋️', text: '本回合获得 5 点力量' },
+  speedPotion: { id: 'speedPotion', name: '速度药水', icon: '👟', text: '本回合获得 5 点敏捷' },
+  regenPotion: { id: 'regenPotion', name: '再生药水', icon: '🌿', text: '获得 5 层再生' },
+  weakPotion: { id: 'weakPotion', name: '虚弱药水', icon: '🧫', text: '使敌人获得 3 层虚弱' },
+  fearPotion: { id: 'fearPotion', name: '恐惧药水', icon: '😱', text: '使敌人获得 3 层易伤' },
+  poisonPotion: { id: 'poisonPotion', name: '剧毒药水', icon: '☠️', text: '使敌人获得 6 层中毒' },
+  bronzePotion: { id: 'bronzePotion', name: '液态青铜', icon: '🥉', text: '获得 3 层荆棘' },
+  steelPotion: { id: 'steelPotion', name: '钢铁精华', icon: '⚙️', text: '获得 4 层钢铁之躯' },
+  ghostPotion: { id: 'ghostPotion', name: '瓶中幽灵', icon: '👻', text: '获得 1 层无实体' },
+  gamblerPotion: { id: 'gamblerPotion', name: '赌徒特酿', icon: '🎲', text: '弃掉所有手牌，再抽等量的牌' },
+  memoryPotion: { id: 'memoryPotion', name: '液态记忆', icon: '🫗', text: '从弃牌堆取回 1 张牌到手牌' },
+  fortressPotion: { id: 'fortressPotion', name: '堡垒药水', icon: '🏰', text: '获得 25 点格挡' },
+  elixirPotion: { id: 'elixirPotion', name: '强效治疗药水', icon: '❤️‍🩹', text: '恢复 40 点生命' },
+  thunderPotion: { id: 'thunderPotion', name: '雷电药水', icon: '🌩️', text: '获得 2 层感电' },
+  weakAllPotion: { id: 'weakAllPotion', name: '衰弱雾瓶', icon: '🌫️', text: '使所有敌人获得 2 层虚弱' },
+  fearAllPotion: { id: 'fearAllPotion', name: '惊惧雾瓶', icon: '👁️', text: '使所有敌人获得 2 层易伤' },
 }
 
 export const relics: Record<string, ItemDef> = {
@@ -24,7 +46,7 @@ export const relics: Record<string, ItemDef> = {
     id: 'trainingGuide',
     name: '训练指南',
     icon: '📖',
-    text: '附魔一张牌：每场战斗中每打出一次，卡面数值 +1',
+    text: '附魔一张牌「增量」：每场战斗中每打出一次，卡面数值 +1',
   },
   roundShield: {
     id: 'roundShield',
@@ -72,68 +94,94 @@ export const relics: Record<string, ItemDef> = {
   strawberry: { id: 'strawberry', name: '草莓', icon: '🍓', text: '最大生命 +7' },
   potionBelt: { id: 'potionBelt', name: '药水腰带', icon: '🎗️', text: '药水栏位 +2' },
   whetstone: { id: 'whetstone', name: '磨刀石', icon: '🔧', text: '获得时升级牌组中的 2 张攻击牌' },
+  warPaint: { id: 'warPaint', name: '战争涂料', icon: '🎨', text: '获得时升级牌组中的 2 张技能牌' },
+  toxicEgg: { id: 'toxicEgg', name: '毒素蛋', icon: '🥚', text: '之后加入牌组的技能牌自动升级' },
+  moltenEgg: { id: 'moltenEgg', name: '熔火蛋', icon: '🌋', text: '之后加入牌组的攻击牌自动升级' },
+  frozenEgg: { id: 'frozenEgg', name: '冰霜蛋', icon: '🧊', text: '之后加入牌组的能力牌自动升级' },
+  marbleBag: { id: 'marbleBag', name: '弹珠袋', icon: '🔮', text: '战斗开始时，所有敌人获得 1 层易伤' },
+  shuriken: { id: 'shuriken', name: '手里剑', icon: '🥷', text: '每回合打出第 3 张攻击牌时，获得 1 点力量' },
+  ornateFan: { id: 'ornateFan', name: '华丽折扇', icon: '🪭', text: '每回合打出第 3 张攻击牌时，获得 4 点格挡' },
+  hornCleat: { id: 'hornCleat', name: '号角扣', icon: '📯', text: '每场战斗第 2 回合开始时，获得 14 点格挡' },
+  mercuryHourglass: { id: 'mercuryHourglass', name: '水银沙漏', icon: '⏳', text: '每个回合开始时，对所有敌人造成 3 点伤害' },
   // 鸦嘴医生专属
-  toxinSac: { id: 'toxinSac', name: '毒囊', icon: '🧪', text: '战斗开始时，给予所有敌人 2 层中毒' },
+  toxinSac: { id: 'toxinSac', name: '毒囊', icon: '🧪', text: '战斗开始时，给予所有敌人 2 层中毒', lore: '从前用来标注药量。现在鸦嘴不再标了。' },
   scalpel: {
     id: 'scalpel',
     name: '解剖刀',
     icon: '🔪',
     text: '每场战斗第一回合额外抽 2 张牌，并将 1 张伤口置入弃牌堆',
+    lore: '最初用来取出箭头。刃口的磨损处，已分不清是救人还是别的。',
   },
   caseFile: {
     id: 'caseFile',
     name: '病历簿',
     icon: '📒',
     text: '战斗胜利时，牌堆中每有 5 张伤口，恢复 2 点生命',
+    lore: '前半本写满康复的名字。后半本，只有编号。',
   },
   boneUrn: {
     id: 'boneUrn',
     name: '骨灰罐',
     icon: '⚱️',
     text: '回合结束时，弃牌堆每有 3 张伤口，获得 2 点格挡',
+    lore: '没有名字，没有日期。里面是谁，从来没人问过。',
   },
   ravenMask: {
     id: 'ravenMask',
     name: '渡鸦面具',
     icon: '🎭',
     text: '每回合额外获得 1 点能量；每个回合开始时，将 2 张伤口置入弃牌堆',
+    lore: '勇者说戴上它，病人就不会怕了。如今，怕的是别人。',
   },
   herbalSachet: {
     id: 'herbalSachet',
     name: '香囊',
     icon: '🌸',
     text: '每当恢复生命值时，获得 2 点格挡',
+    lore: '勇者缝的，里面的草药早该换了。鸦嘴一直没换。',
   },
   vaccine: {
     id: 'vaccine',
     name: '疫苗',
     icon: '💉',
     text: '战斗开始时获得 2 层再生，并将 1 张伤口置入弃牌堆',
+    lore: '第一针扎在自己身上。后来，不再是了。',
   },
   petriDish: {
     id: 'petriDish',
     name: '培养皿',
     icon: '🧫',
     text: '每打出一张能力牌，给予所有敌人 2 层中毒',
+    lore: '「再观察一天就好。」同样的话，已经说了很多天。',
   },
   plagueBell: {
     id: 'plagueBell',
     name: '瘟疫之钟',
     icon: '🔔',
     text: '每 3 个回合，给予所有敌人 3 层中毒（回合数跨战斗累计）',
+    lore: '从前钟响，是召集病人来领药。如今钟响，是下一轮开始。',
   },
   surgicalKit: {
     id: 'surgicalKit',
     name: '手术包',
     icon: '💼',
     text: '每打出 5 张牌，恢复 1 点生命（计数跨战斗累计）',
+    lore: '器具擦得发亮，排列整齐。麻药那一格，空了很久。',
   },
-  medicineChest: { id: 'medicineChest', name: '药箱', icon: '🧰', text: '药水栏位 +1' },
+  shroud: {
+    id: 'shroud',
+    name: '裹尸布',
+    icon: '🪦',
+    text: '洗牌时，弃牌堆里的伤口留在弃牌堆，不进入抽牌堆',
+    lore: '战士下葬时裹的就是这一块。鸦嘴后来又把它挖了出来。',
+  },
+  medicineChest: { id: 'medicineChest', name: '药箱', icon: '🧰', text: '药水栏位 +1', lore: '箱底刻着四个名字，其中三个被刮掉了。' },
   sickbedAmulet: {
     id: 'sickbedAmulet',
     name: '病榻护符',
     icon: '📿',
     text: '回合结束时，若生命不高于一半，恢复 3 点生命',
+    lore: '勇者留下的护符。据说戴着它的人，不会死在病床上。',
   },
   // 职业初始遗物
   bandaging: {
@@ -141,5 +189,42 @@ export const relics: Record<string, ItemDef> = {
     name: '包扎',
     icon: '🩹',
     text: '每当恢复生命值时，将一张【伤口】置入弃牌堆',
+    lore: '救人的手，总要沾些伤。鸦嘴最初是这样相信的。',
+  },
+  swordHeart: {
+    id: 'swordHeart',
+    name: '剑心',
+    icon: '🗡️',
+    text: '每回合打出第三张攻击牌时，获得一层剑意',
+    lore: '剑要稳，心要静。急着出第三剑的人，没能看见第四剑。',
+  },
+  legendVest: {
+    id: 'legendVest',
+    name: '传说背心',
+    icon: '🦺',
+    text: '敌人受到的一切伤害（攻击、反伤、药水、中毒等）与你获得的格挡合并计数，每满 100 点获得 1 层完美防御（计数跨战斗累计）',
+    lore: '补丁摞着补丁，早看不出原来的颜色。战士总说：打得够狠，就没人能碰到我。',
+  },
+  // 职业徽章
+  valiantHood: { id: 'valiantHood', name: '勇士头巾', icon: '🧣', text: '战斗开始时获得 8 点活力（下一张攻击牌伤害 +8）', lore: '唯唯诺诺，成何体统，应当速战速决' },
+  abandonBadge: { id: 'abandonBadge', name: '遗弃徽章', icon: '🎖️', text: '每回合第一次弃牌时，可以将该牌加入手牌', lore: '似乎是某人曾经的荣耀' },
+  braveBadge: { id: 'braveBadge', name: '勇者徽章', icon: '🏅', text: '一回合内打出第 3 张攻击牌时，获得 3 点活力', lore: '我不像某个铁疙瘩，稳扎稳打才是王道' },
+  // 剑圣专属
+  bloodBlade: { id: 'bloodBlade', name: '饮血剑', icon: '🩸', text: '每回合开始获得 1 层汲血（回合结束清空）', lore: '剑身越旧越爱喝血。剑圣说这不是邪物，只是它比人诚实。' },
+  frostBlade: { id: 'frostBlade', name: '霜剑', icon: '❄️', text: '每回合开始，所有敌人获得 1 层冰霜', lore: '握久了，掌心会结一层薄霜。勇者笑称这是最好的冰镇酒壶。' },
+  thunderBlade: { id: 'thunderBlade', name: '雷剑', icon: '⚡', text: '每场战斗第一回合开始，获得 2 层感电', lore: '出鞘前总有一声闷雷。队里的人一听见，就知道该退后了。' },
+  flameBlade: { id: 'flameBlade', name: '炎剑', icon: '🔥', text: '战斗开始时，所有敌人获得 3 层灼伤', lore: '篝火边，鸦嘴常借它烘干绷带。剑圣从不介意。' },
+  venomBlade2: { id: 'venomBlade2', name: '毒剑', icon: '☠️', text: '每回合开始，已经中毒的敌人额外获得 1 层中毒', lore: '剑圣不喜欢毒。鸦嘴说，对付那些东西，体面是奢侈品。' },
+  scabbard: { id: 'scabbard', name: '剑鞘', icon: '🗡️', text: '每回合第一次打出技能牌，获得 3 点活力', lore: '好剑藏于鞘。会收的人，才配出剑。' },
+  kingdomSeal: { id: 'kingdomSeal', name: '王国公章', icon: '📜', text: '附魔一张牌「固有」：每场战斗第一回合必定抽上手', lore: '盖着一个早已不存在的国度的印。出发那天，国王亲手按下。' },
+  bladeTomb: { id: 'bladeTomb', name: '万剑冢', icon: '⚰️', text: '最大能量 −1；剑心改为每回合打出第 2 张攻击牌时触发', lore: '每一把断剑，都是一次没能守住的承诺。剑圣把它们埋在一处，此后再没拔出新的。' },
+  nothingBetween: { id: 'nothingBetween', name: '无间', icon: '🌀', text: '每回合开始获得 1 层剑意，回合结束失去全部剑意', lore: '「心中无物，剑下无间。」可惜后来，剑圣心里装了太多人。' },
+  metamorphosis: { id: 'metamorphosis', name: '蜕变', icon: '🦋', text: '带有成长的攻击牌斩杀敌人（由这张牌的伤害将其杀死）时，该牌的成长层数额外 +2', lore: '蛹破开的那天，剑圣第一次明白，成长是要付出什么的。' },
+  parasiteSeed: {
+    id: 'parasiteSeed',
+    name: '寄生之种',
+    icon: '🌱',
+    text: '战斗开始时，所有敌人获得 3 层寄生种子',
+    lore: '它没有恶意，也没有善意。它只是想活下去。',
   },
 }

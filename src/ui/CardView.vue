@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { cardText } from '@/engine/enchant'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { cards as allCards } from '@/data/cards'
+import { cardText, evolvedId, progressOf, resolveCards } from '@/engine/enchant'
+import { ENCHANTS } from '@/engine/enchants'
 import {
   calcAttack,
   calcBlock,
@@ -18,28 +20,77 @@ const props = defineProps<{
   statuses?: Statuses
   /** 被瞄准的敌人状态：拖拽指向敌人时，伤害再叠加易伤等修正 */
   targetStatuses?: Statuses
+  /** 战斗预览算好的每段「造成 N 点伤害」最终值（见 engine/preview.ts），顺序与卡面文字一致 */
+  damages?: number[]
   /** 选牌界面中被选中：上浮并显示金色高亮 */
   selected?: boolean
+  /** 覆盖显示的费用（剑意 / 剑流让牌免费时传 0） */
+  cost?: number | 'X'
+  /** 覆盖进化进度（战斗中按实例计数）；缺省取卡牌 id 里的 ~N */
+  progress?: number
 }>()
+
+/** 进化进度 n/总次数：只有声明了 evolve 的牌才显示 */
+const evolveProgress = computed(() =>
+  props.card.evolve
+    ? `${Math.min(props.progress ?? progressOf(props.card.id), props.card.evolve.plays)}/${props.card.evolve.plays}`
+    : '',
+)
+
+/** 进化后的牌（保留升级 / 附魔标记）；悬浮在进化进度上时展示，让玩家知道会变成什么 */
+const evolveTarget = computed(() => {
+  const into = props.card.evolve?.into
+  if (!into) return null
+  const id = evolvedId(props.card.id, into)
+  return resolveCards(allCards, [id])[id] ?? null
+})
+const evolveTip = ref<{ x: number; y: number } | null>(null)
+function showEvolveTip(ev: MouseEvent) {
+  const r = (ev.currentTarget as HTMLElement).getBoundingClientRect()
+  evolveTip.value = { x: r.left + r.width / 2, y: r.top }
+}
 
 /** 卡面文字拆成片段；伤害 / 格挡数字按当前状态换算，并标出相对原值的升降 */
 const textParts = computed(() => {
   const text = cardText(props.card)
   if (!props.statuses) return [{ text, diff: 0 }]
-  return text
-    .split(/(造成 \d+ 点伤害|获得 \d+ 点格挡)/)
-    .filter(Boolean)
-    .map((part) => {
-      const m = /^(造成|获得) (\d+) 点(伤害|格挡)$/.exec(part)
-      if (!m) return { text: part, diff: 0 }
-      const base = Number(m[2])
-      const value =
-        m[3] === '伤害'
-          ? calcAttack(base, props.statuses, props.targetStatuses ?? {})
-          : calcBlock(base, props.statuses!)
-      return { text: `${m[1]} ${value} 点${m[3]}`, diff: value - base }
-    })
+  const parts = text.split(/(造成 \d+ 点伤害|获得 \d+ 点格挡)/).filter(Boolean)
+  // 有战斗预览（含条件加成、感电 / 活力 / 背水 / 冰霜、遗物改写）且条数对得上时，伤害直接用预览的最终值
+  const dmgCount = parts.filter((p) => /^造成 \d+ 点伤害$/.test(p)).length
+  const final = props.damages && props.damages.length === dmgCount ? props.damages : undefined
+  let di = 0
+  return parts.map((part) => {
+    const m = /^(造成|获得) (\d+) 点(伤害|格挡)$/.exec(part)
+    if (!m) return { text: part, diff: 0 }
+    const base = Number(m[2])
+    const value =
+      m[3] === '伤害'
+        ? (final?.[di++] ?? calcAttack(base, props.statuses, props.targetStatuses ?? {}))
+        : calcBlock(base, props.statuses!)
+    return { text: `${m[1]} ${value} 点${m[3]}`, diff: value - base }
+  })
 })
+
+/** 描述文字超出描述框时逐级缩小字号，直到放得下（或到下限） */
+const descEl = ref<HTMLElement | null>(null)
+const descInner = ref<HTMLElement | null>(null)
+const DESC_MAX_REM = 0.78
+const DESC_MIN_REM = 0.45
+function fitDesc() {
+  const box = descEl.value
+  const inner = descInner.value
+  if (!box || !inner || box.clientHeight === 0) return // 未显示（display: none）时无法测量
+  const cs = getComputedStyle(box)
+  const room = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+  let size = DESC_MAX_REM
+  box.style.fontSize = ''
+  while (inner.offsetHeight > room && size > DESC_MIN_REM) {
+    size = Math.round((size - 0.02) * 100) / 100
+    box.style.fontSize = `${size}rem`
+  }
+}
+onMounted(fitDesc)
+watch(textParts, () => nextTick(fitDesc), { flush: 'post' })
 
 /** 稀有度配色：frame 为边框渐变，banner 为名牌，glow 为悬停光晕 */
 const RARITY: Record<Rarity, { frame: string; banner: string; glow: string; label: string }> = {
@@ -133,7 +184,7 @@ const tipText = computed(() => (tip.value ? statusTip(tip.value.def, tip.value.s
 /** 卡面"类型"行的标签 */
 const tag = computed(() => {
   if (cursed.value) return rarity.value.label
-  return type.value.label + (props.card.exhaust ? ' · 消耗' : '')
+  return type.value.label // 保留/消耗已在描述里写明，类型行不重复
 })
 </script>
 
@@ -146,8 +197,8 @@ const tag = computed(() => {
         </div>
         <div class="banner">{{ card.name }}</div>
         <div class="type">— {{ tag }} —</div>
-        <div class="desc">
-          <span>
+        <div ref="descEl" class="desc">
+          <span ref="descInner" class="desc-text">
             <span
               v-for="(p, i) in textParts"
               :key="i"
@@ -172,11 +223,32 @@ const tag = computed(() => {
     </div>
 
     <!-- 无法打出的牌（状态 / 诅咒）没有费用，不显示费用球 -->
-    <div v-if="!card.unplayable" class="cost">{{ card.cost }}</div>
-    <span v-if="card.enchanted" class="enchant" title="已附魔" />
+    <div v-if="!card.unplayable" class="cost">{{ cost ?? card.cost }}</div>
+    <div
+      v-if="evolveProgress"
+      class="evolve-progress"
+      @mouseenter="showEvolveTip"
+      @mouseleave="evolveTip = null"
+    >
+      {{ evolveProgress }}
+    </div>
+    <span v-if="card.enchant" class="enchant" :class="{ innate: card.enchant === 'innate' }" :title="ENCHANTS[card.enchant]?.name ?? '已附魔'" />
 
     <!-- 状态说明：传送到 body，避免被卡面 overflow 裁掉 -->
     <Teleport to="body">
+      <div
+        v-if="evolveTip && evolveTarget"
+        class="info-tip"
+        :style="{ left: evolveTip.x + 'px', top: evolveTip.y + 'px' }"
+      >
+        <div class="info-name">
+          {{ evolveTarget.icon ?? '' }} 成长为：{{ evolveTarget.name }}
+        </div>
+        <div class="info-text">{{ cardText(evolveTarget) }}</div>
+        <div class="info-duration">
+          累计打出 {{ card.evolve!.plays }} 次后，战斗胜利时成长
+        </div>
+      </div>
       <div
         v-if="tip && tipText"
         class="info-tip"
@@ -188,7 +260,7 @@ const tag = computed(() => {
           <span class="info-kind">{{ tip.def.kind === 'buff' ? '增益' : '减益' }}</span>
         </div>
         <div class="info-text">
-          <template v-if="tipText.total !== undefined || tipText.perLayer !== tip.def.text">
+          <template v-if="!tipText.plain && (tipText.total !== undefined || tipText.perLayer !== tip.def.text)">
             <b>每层：</b>{{ tipText.perLayer }}
           </template>
           <template v-else>{{ tipText.perLayer }}</template>
@@ -322,6 +394,8 @@ const tag = computed(() => {
 /* 描述框 */
 .desc {
   flex: 1;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -334,6 +408,12 @@ const tag = computed(() => {
   background: rgba(24, 16, 12, 0.65);
   border-radius: 6px;
   border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.desc-text {
+  display: block;
+  white-space: pre-line; /* 保留 / 固有 / 消耗 等词缀单独成行 */
+  max-width: 100%;
 }
 
 /* 修正后的数值：高于原值绿色，低于原值红色 */
@@ -356,6 +436,21 @@ const tag = computed(() => {
   transform: translateX(-50%) rotate(45deg);
   background: var(--frame);
   border: 1px solid rgba(0, 0, 0, 0.6);
+}
+
+/* 进化进度：卡面右下角 */
+.evolve-progress {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 3;
+  padding: 0 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fef3c7;
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid #d97706;
+  border-radius: 999px;
 }
 
 /* 费用球 */
@@ -439,6 +534,12 @@ const tag = computed(() => {
 }
 
 /* 附魔宝石：镶嵌在右上角 */
+.enchant.innate {
+  background: linear-gradient(135deg, #fef9c3, #facc15 40%, #f97316);
+  box-shadow:
+    0 0 10px rgba(250, 204, 21, 0.9),
+    inset 0 0 4px rgba(255, 255, 255, 0.8);
+}
 .enchant {
   position: absolute;
   top: -8px;

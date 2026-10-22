@@ -8,22 +8,17 @@ export const warriorWhite: Card[] = [
     .damage(6)
     .starter(5)
     .upgrade((u) => u.damage(9)),
-  Card.white('counter', '反击')
-    .icon('🤺')
-    .cost(1)
-    .damage(5)
-    .block(5)
-    .reward()
-    .upgrade((u) => u.damage(8).block(8)),
   Card.white('spinStrike', '旋身打击')
     .icon('🌪️')
     .cost('X')
+    .targetAllEnemies()
     .damage(6, true)
     .reward()
     .upgrade((u) => u.damage(8, true)),
-  Card.white('pommelStrike', '剑柄打击')
+  Card.white('pommelStrike', '速攻')
     .icon('🗡️')
     .cost(1)
+    .targetEnemy()
     .damage(8)
     .draw(1)
     .reward()
@@ -35,18 +30,12 @@ export const warriorWhite: Card[] = [
     .applyStatus('weak', 1, 'target')
     .reward()
     .upgrade((u) => u.damage(8).applyStatus('weak', 2, 'target')),
-  Card.white('poisonStab', '毒刃')
-    .icon('🔪')
-    .cost(1)
-    .damage(5)
-    .applyStatus('poison', 3, 'target')
-    .reward()
-    .upgrade((u) => u.damage(7).applyStatus('poison', 4, 'target')),
   Card.white('bulwarkStrike', '盾击')
     .icon('🛡️')
     .cost(1)
+    .targetEnemy()
     .damage(7)
-    .block(3)
+    .block(7)
     .reward()
     .upgrade((u) => u.damage(9).block(5)),
   Card.white('sweepKick', '扫腿')
@@ -62,13 +51,14 @@ export const warriorWhite: Card[] = [
     .damage(9)
     .reward()
     .upgrade((u) => u.damage(12)),
-  Card.white('parry', '招架')
+  Card.white('parry', '攻防一体')
     .icon('🤺')
     .cost(1)
+    .targetEnemy()
     .damage(4)
-    .block(7)
+    .block(4)
     .reward()
-    .upgrade((u) => u.damage(6).block(10)),
+    .upgrade((u) => u.damage(6).block(6)),
   Card.white('defend', '防御')
     .icon('🛡️')
     .cost(1)
@@ -77,13 +67,6 @@ export const warriorWhite: Card[] = [
     .starter(4)
     .upgrade((u) => u.block(8)),
   // 升级：降费
-  Card.white('ironWall', '铁壁')
-    .icon('🧱')
-    .cost(2)
-    .targetSelf()
-    .block(12)
-    .reward()
-    .upgrade((u) => u.cost(1)),
   Card.white('spinDefend', '回旋防御')
     .icon('🔄')
     .cost('X')
@@ -114,14 +97,7 @@ export const warriorWhite: Card[] = [
     .block(3)
     .reward()
     .upgrade((u) => u.block(5)),
-  Card.white('bracing', '稳固')
-    .icon('🪨')
-    .cost(1)
-    .targetSelf()
-    .block(8)
-    .reward()
-    .upgrade((u) => u.block(11)),
-  Card.white('spikeShell', '尖刺外壳')
+  Card.white('spikeShell', '尖刺盔甲')
     .icon('🦔')
     .cost(1)
     .power()
@@ -142,4 +118,11 @@ export const warriorWhite: Card[] = [
     .applyStatus('metallicize', 2)
     .reward()
     .upgrade((u) => u.applyStatus('metallicize', 3)),
+  Card.white('roar', '咆哮')
+    .icon('🦁')
+    .cost(1)
+    .targetSelf()
+    .tempStatus('strength', 3)
+    .reward()
+    .upgrade((u) => u.tempStatus('strength', 6)),
 ]

@@ -1,25 +1,33 @@
 import type { EnemyDef } from '@/engine/types'
+import raw from './enemies.json'
+import { buildEnemies, type EnemyData } from './enemySpec'
 
-export const slime: EnemyDef = {
-  id: 'slime',
-  name: '史莱姆',
-  maxHp: 40,
-  intents: [
-    { type: 'attack', damage: 8 },
-    { type: 'defend', block: 6 },
-    { type: 'attack', damage: 12 },
-  ],
-}
+/**
+ * 敌人数据在 enemies.json 里，开发模式下由敌人编辑器维护（意图循环、数值、定位、固定遭遇）。
+ * 这里只负责把数据表构建成引擎用的 EnemyDef，并保持原有的导出名不变。
+ */
+const built = buildEnemies(raw as EnemyData)
+const get = (id: string) => built.byId[id] as EnemyDef
 
-export const sporeSlime: EnemyDef = {
-  id: 'spore-slime',
-  name: '孢子史莱姆',
-  maxHp: 40,
-  intents: [
-    { type: 'debuff', status: 'weak', stacks: 1 },
-    { type: 'attack', damage: 8 },
-    { type: 'defend', block: 6 },
-  ],
+export const slime = get('slime')
+export const sporeSlime = get('spore-slime')
+export const smallSlime = get('small-slime')
+export const cockroach = get('cockroach')
+export const hive = get('hive')
+export const splitSlime = get('split-slime')
+export const summoner = get('summoner')
+export const goblin = get('goblin')
+export const beetle = get('beetle')
+export const mediumSpikeSlime = get('medium-spike-slime')
+export const mediumAcidSlime = get('medium-acid-slime')
+export const largeSpikeSlime = get('large-spike-slime')
+export const largeAcidSlime = get('large-acid-slime')
+export const slimeBoss = get('slime-boss')
+export const drainer = get('drainer')
+export const statue = get('statue')
+
+function rotate<T>(list: T[], by: number): T[] {
+  return [...list.slice(by), ...list.slice(0, by)]
 }
 
 /** 三只史莱姆：意图循环错开起点，避免同一回合全部打出最高伤害 */
@@ -29,153 +37,8 @@ export const slimeGroup: EnemyDef[] = [
   { ...sporeSlime, id: 'slime-3' },
 ]
 
-export const cockroach: EnemyDef = {
-  id: 'cockroach',
-  name: '蟑螂',
-  icon: '🪳',
-  maxHp: 40,
-  startStatuses: { damageCap: 9 },
-  intents: [
-    { type: 'attack', damage: 6 },
-    { type: 'defend', block: 8 },
-    { type: 'attack', damage: 10 },
-  ],
-}
+/** 普通战斗的怪池（定位为 monster 的敌人）：按各自 threat 与楼层预算组怪，见 engine/encounter */
+export const monsterPool: EnemyDef[] = built.pool('monster')
 
-export const hive: EnemyDef = {
-  id: 'hive',
-  name: '蜂巢',
-  icon: '🐝',
-  maxHp: 36,
-  startStatuses: { hive: 1 },
-  intents: [
-    { type: 'attack', damage: 7 },
-    { type: 'debuff', status: 'weak', stacks: 1 },
-    { type: 'attack', damage: 9 },
-  ],
-}
-
-export const smallSlime: EnemyDef = {
-  id: 'small-slime',
-  name: '小史莱姆',
-  maxHp: 20,
-  intents: [
-    { type: 'attack', damage: 5 },
-    { type: 'defend', block: 4 },
-  ],
-}
-
-export const splitSlime: EnemyDef = {
-  id: 'split-slime',
-  name: '分裂史莱姆',
-  maxHp: 40,
-  startStatuses: { split: 1 },
-  splitInto: [smallSlime, smallSlime],
-  intents: slime.intents,
-}
-
-export const summoner: EnemyDef = {
-  id: 'summoner',
-  name: '召唤师',
-  icon: '🧙',
-  maxHp: 50,
-  intents: [
-    { type: 'attack', damage: 6 },
-    { type: 'summon', enemy: smallSlime },
-    { type: 'defend', block: 8 },
-  ],
-}
-
-export const goblin: EnemyDef = {
-  id: 'goblin',
-  name: '哥布林',
-  icon: '👺',
-  maxHp: 30,
-  intents: [
-    { type: 'attack', damage: 5 },
-    { type: 'steal', amount: 15 },
-    { type: 'flee' },
-  ],
-}
-
-export const beetle: EnemyDef = {
-  id: 'beetle',
-  name: '甲壳虫',
-  icon: '🪲',
-  maxHp: 45,
-  startStatuses: { carapace: 1 },
-  intents: [
-    { type: 'defend', block: 6 },
-    { type: 'attack', damage: 11 },
-    { type: 'attack', damage: 7 },
-  ],
-}
-
-const slimed = { cardId: 'slimed', count: 1 }
-
-export const mediumSpikeSlime: EnemyDef = {
-  id: 'medium-spike-slime',
-  name: '中尖刺史莱姆',
-  maxHp: 32,
-  intents: [
-    { type: 'attack', damage: 8, addCards: slimed },
-    { type: 'debuff', status: 'frail', stacks: 1 },
-  ],
-}
-
-export const mediumAcidSlime: EnemyDef = {
-  id: 'medium-acid-slime',
-  name: '中酸液史莱姆',
-  maxHp: 34,
-  intents: [
-    { type: 'attack', damage: 7, addCards: slimed },
-    { type: 'attack', damage: 10 },
-    { type: 'debuff', status: 'weak', stacks: 1 },
-  ],
-}
-
-export const largeSpikeSlime: EnemyDef = {
-  id: 'large-spike-slime',
-  name: '大尖刺史莱姆',
-  maxHp: 64,
-  startStatuses: { split: 1 },
-  splitInto: [mediumSpikeSlime, mediumSpikeSlime],
-  intents: [
-    { type: 'attack', damage: 16, addCards: { cardId: 'slimed', count: 2 } },
-    { type: 'debuff', status: 'frail', stacks: 2 },
-  ],
-}
-
-export const largeAcidSlime: EnemyDef = {
-  id: 'large-acid-slime',
-  name: '大酸液史莱姆',
-  maxHp: 68,
-  startStatuses: { split: 1 },
-  splitInto: [mediumAcidSlime, mediumAcidSlime],
-  intents: [
-    { type: 'attack', damage: 11, addCards: { cardId: 'slimed', count: 2 } },
-    { type: 'attack', damage: 16 },
-    { type: 'debuff', status: 'weak', stacks: 2 },
-  ],
-}
-
-/** Boss：血量过半当场分裂成大尖刺 + 大酸液 */
-export const slimeBoss: EnemyDef = {
-  id: 'slime-boss',
-  name: '史莱姆老大',
-  maxHp: 140,
-  startStatuses: { split: 1 },
-  splitInto: [largeSpikeSlime, largeAcidSlime],
-  intents: [
-    { type: 'addCards', cardId: 'slimed', count: 3 },
-    { type: 'idle' },
-    { type: 'attack', damage: 35 },
-  ],
-}
-
-/** 普通战斗节点的机制怪池 */
-export const monsterPool: EnemyDef[] = [cockroach, hive, splitSlime, summoner, goblin, beetle]
-
-function rotate<T>(list: T[], by: number): T[] {
-  return [...list.slice(by), ...list.slice(0, by)]
-}
+/** 固定遭遇（组合怪）：楼层命中时按概率优先于预算组怪 */
+export const encounterList = built.encounters

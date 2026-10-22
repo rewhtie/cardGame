@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { cards } from '@/data/cards'
+import { characters } from '@/data/characters'
 import { potions, relics } from '@/data/items'
 import type { Rarity } from '@/engine/types'
 import { upgradeCard } from '@/engine/enchant'
@@ -23,16 +24,28 @@ const TABS: { value: Tab; label: string }[] = [
 ]
 
 const tab = ref<Tab>('gold')
+/** 左侧职业栏的筛选：null 为全部；状态牌 / 诅咒牌 / 药水不属于任何职业，不受影响 */
+const charId = ref<string | null>(null)
+const character = computed(() => characters.find((c) => c.id === charId.value))
+const cardsOf = (t: Rarity) =>
+  Object.values(cards).filter(
+    (c) =>
+      c.rarity === t &&
+      (!character.value || t === 'status' || t === 'curse' || character.value.allCards.includes(c.id)),
+  )
+const relicsOfAll = () =>
+  Object.values(relics).filter(
+    (r) =>
+      !character.value || [...character.value.relics, ...(character.value.exclusiveRelics ?? [])].includes(r.id),
+  )
 const cardList = computed(() =>
-  tab.value === 'relic' || tab.value === 'potion'
-    ? []
-    : Object.values(cards).filter((c) => c.rarity === tab.value),
+  tab.value === 'relic' || tab.value === 'potion' ? [] : cardsOf(tab.value),
 )
-const itemList = computed(() => Object.values(tab.value === 'potion' ? potions : relics))
+const itemList = computed(() => (tab.value === 'potion' ? Object.values(potions) : relicsOfAll()))
 const count = (t: Tab) => {
-  if (t === 'relic') return Object.keys(relics).length
+  if (t === 'relic') return relicsOfAll().length
   if (t === 'potion') return Object.keys(potions).length
-  return Object.values(cards).filter((c) => c.rarity === t).length
+  return cardsOf(t).length
 }
 const isCardTab = computed(() => tab.value !== 'relic' && tab.value !== 'potion')
 
@@ -64,6 +77,23 @@ function grant(kind: 'card' | 'potion' | 'relic', id: string) {
 
 <template>
   <div class="absolute inset-0 z-30 bg-black/85 flex items-center justify-center p-8">
+    <!-- 左侧职业栏：平时收起只露出图标，悬停时整条伸出并显示名称 -->
+    <nav class="rail" aria-label="职业筛选">
+      <button class="rail-item" :class="{ active: charId === null }" @click="charId = null">
+        <span class="rail-icon">📚</span>
+        <span class="rail-name">全部</span>
+      </button>
+      <button
+        v-for="c in characters"
+        :key="c.id"
+        class="rail-item"
+        :class="{ active: charId === c.id }"
+        @click="charId = c.id"
+      >
+        <span class="rail-icon">{{ c.icon }}</span>
+        <span class="rail-name">{{ c.name }}</span>
+      </button>
+    </nav>
     <!-- 固定高度：切换分页时弹框尺寸不跳动 -->
     <CardPanel title="图鉴" class="w-[1100px] h-full" closable @close="$emit('close')">
       <template #toolbar>
@@ -100,6 +130,7 @@ function grant(kind: 'card' | 'potion' | 'relic', id: string) {
           <div class="flex-1">
             <div class="font-bold text-amber-300">{{ r.name }}</div>
             <div class="text-sm text-slate-300">{{ r.text }}</div>
+            <div v-if="r.lore" class="text-xs italic text-slate-400">{{ r.lore }}</div>
           </div>
           <button
             v-if="canGrant"
@@ -129,6 +160,77 @@ function grant(kind: 'card' | 'potion' | 'relic', id: string) {
 </template>
 
 <style scoped>
+.rail {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem 0.5rem 0.6rem 0;
+  width: 3.6rem;
+  overflow: hidden;
+  transform: translateY(-50%);
+  background: linear-gradient(90deg, #131a33, #0d1224);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-left: none;
+  border-radius: 0 14px 14px 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+  transition:
+    width 0.2s ease,
+    box-shadow 0.2s;
+}
+.rail:hover {
+  width: 10rem;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.7),
+    0 0 22px rgba(251, 191, 36, 0.25);
+}
+.rail-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.35rem 0.5rem 0.35rem 0.4rem;
+  color: #d8c8b0;
+  white-space: nowrap;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0 999px 999px 0;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.rail-item:hover {
+  color: #fde68a;
+  background: rgba(251, 191, 36, 0.12);
+}
+.rail-item.active {
+  font-weight: 700;
+  color: #1c1917;
+  background: linear-gradient(90deg, #fcd34d, #d97706);
+}
+.rail-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  font-size: 1.5rem;
+  background: radial-gradient(circle at 50% 35%, #334155, #0f172a 85%);
+  border: 2px solid rgba(252, 211, 77, 0.6);
+  border-radius: 50%;
+}
+.rail-name {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.rail:hover .rail-name {
+  opacity: 1;
+}
 /* 分页标签：与弹框金边呼应，选中态为金色 */
 .tab {
   padding: 0.35rem 1.1rem;

@@ -1,0 +1,398 @@
+{
+  "enemies": [
+    {
+      "id": "statue",
+      "name": "雕像",
+      "icon": "🗿",
+      "role": "monster",
+      "threat": 3,
+      "maxHp": 80,
+      "startStatuses": {
+        "crack": 1
+      },
+      "loopFrom": 3,
+      "intents": [
+        {
+          "type": "idle"
+        },
+        {
+          "type": "idle"
+        },
+        {
+          "type": "idle"
+        },
+        {
+          "type": "attack",
+          "damage": 23,
+          "grow": 2
+        }
+      ]
+    },
+    {
+      "id": "goblin",
+      "name": "哥布林",
+      "icon": "👺",
+      "role": "monster",
+      "threat": 1,
+      "maxHp": 30,
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 8
+        },
+        {
+          "type": "attack",
+          "damage": 10
+        },
+        {
+          "type": "steal",
+          "amount": 25
+        },
+        {
+          "type": "flee"
+        }
+      ]
+    },
+    {
+      "id": "cockroach",
+      "name": "蟑螂",
+      "icon": "🪳",
+      "role": "monster",
+      "threat": 2,
+      "maxHp": 40,
+      "startStatuses": {
+        "damageCap": 9
+      },
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 6
+        },
+        {
+          "type": "defend",
+          "block": 8
+        },
+        {
+          "type": "attack",
+          "damage": 10
+        }
+      ]
+    },
+    {
+      "id": "hive",
+      "name": "蜂巢",
+      "icon": "🐝",
+      "role": "monster",
+      "threat": 2,
+      "maxHp": 36,
+      "startStatuses": {
+        "hive": 1
+      },
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 7
+        },
+        {
+          "type": "debuff",
+          "status": "weak",
+          "stacks": 1
+        },
+        {
+          "type": "attack",
+          "damage": 9
+        }
+      ]
+    },
+    {
+      "id": "split-slime",
+      "name": "分裂史莱姆",
+      "role": "monster",
+      "threat": 2.5,
+      "maxHp": 40,
+      "startStatuses": {
+        "split": 1
+      },
+      "splitInto": [
+        "small-slime",
+        "small-slime"
+      ],
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 8
+        },
+        {
+          "type": "defend",
+          "block": 6
+        },
+        {
+          "type": "attack",
+          "damage": 12
+        }
+      ]
+    },
+    {
+      "id": "beetle",
+      "name": "甲壳虫",
+      "icon": "🪲",
+      "role": "monster",
+      "threat": 3,
+      "maxHp": 45,
+      "startStatuses": {
+        "carapace": 1
+      },
+      "intents": [
+        {
+          "type": "defend",
+          "block": 6
+        },
+        {
+          "type": "attack",
+          "damage": 11
+        },
+        {
+          "type": "attack",
+          "damage": 7
+        }
+      ]
+    },
+    {
+      "id": "summoner",
+      "name": "召唤师",
+      "icon": "🧙",
+      "role": "monster",
+      "threat": 3.5,
+      "maxHp": 40,
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 6
+        },
+        {
+          "type": "summon",
+          "enemy": "small-slime"
+        },
+        {
+          "type": "defend",
+          "block": 8
+        }
+      ]
+    },
+    {
+      "id": "drainer",
+      "name": "汲取者",
+      "icon": "🧛",
+      "role": "elite",
+      "maxHp": 80,
+      "startStatuses": {
+        "drain": 1
+      },
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 8
+        },
+        {
+          "type": "defend",
+          "block": 12
+        },
+        {
+          "type": "attack",
+          "damage": 14
+        }
+      ]
+    },
+    {
+      "id": "slime-boss",
+      "name": "史莱姆老大",
+      "role": "boss",
+      "maxHp": 140,
+      "startStatuses": {
+        "split": 1
+      },
+      "splitInto": [
+        "large-spike-slime",
+        "large-acid-slime"
+      ],
+      "intents": [
+        {
+          "type": "addCards",
+          "cardId": "slimed",
+          "count": 3
+        },
+        {
+          "type": "idle"
+        },
+        {
+          "type": "attack",
+          "damage": 35
+        }
+      ]
+    },
+    {
+      "id": "large-spike-slime",
+      "name": "大尖刺史莱姆",
+      "role": "other",
+      "maxHp": 64,
+      "startStatuses": {
+        "split": 1
+      },
+      "splitInto": [
+        "medium-spike-slime",
+        "medium-spike-slime"
+      ],
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 16,
+          "addCards": {
+            "cardId": "slimed",
+            "count": 2
+          }
+        },
+        {
+          "type": "debuff",
+          "status": "frail",
+          "stacks": 2
+        }
+      ]
+    },
+    {
+      "id": "large-acid-slime",
+      "name": "大酸液史莱姆",
+      "role": "other",
+      "maxHp": 68,
+      "startStatuses": {
+        "split": 1
+      },
+      "splitInto": [
+        "medium-acid-slime",
+        "medium-acid-slime"
+      ],
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 11,
+          "addCards": {
+            "cardId": "slimed",
+            "count": 2
+          }
+        },
+        {
+          "type": "attack",
+          "damage": 16
+        },
+        {
+          "type": "debuff",
+          "status": "weak",
+          "stacks": 2
+        }
+      ]
+    },
+    {
+      "id": "medium-spike-slime",
+      "name": "中尖刺史莱姆",
+      "role": "other",
+      "maxHp": 32,
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 8,
+          "addCards": {
+            "cardId": "slimed",
+            "count": 1
+          }
+        },
+        {
+          "type": "debuff",
+          "status": "frail",
+          "stacks": 1
+        }
+      ]
+    },
+    {
+      "id": "medium-acid-slime",
+      "name": "中酸液史莱姆",
+      "role": "other",
+      "maxHp": 34,
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 7,
+          "addCards": {
+            "cardId": "slimed",
+            "count": 1
+          }
+        },
+        {
+          "type": "attack",
+          "damage": 10
+        },
+        {
+          "type": "debuff",
+          "status": "weak",
+          "stacks": 1
+        }
+      ]
+    },
+    {
+      "id": "small-slime",
+      "name": "小史莱姆",
+      "role": "other",
+      "maxHp": 20,
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 5
+        },
+        {
+          "type": "defend",
+          "block": 4
+        }
+      ]
+    },
+    {
+      "id": "slime",
+      "name": "史莱姆",
+      "role": "other",
+      "maxHp": 40,
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 8
+        },
+        {
+          "type": "defend",
+          "block": 6
+        },
+        {
+          "type": "attack",
+          "damage": 12
+        }
+      ]
+    },
+    {
+      "id": "spore-slime",
+      "name": "孢子史莱姆",
+      "role": "other",
+      "maxHp": 40,
+      "intents": [
+        {
+          "type": "debuff",
+          "status": "weak",
+          "stacks": 1
+        },
+        {
+          "type": "attack",
+          "damage": 8
+        },
+        {
+          "type": "defend",
+          "block": 6
+        }
+      ]
+    }
+  ],
+  "encounters": []
+}

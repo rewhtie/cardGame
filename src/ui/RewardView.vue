@@ -77,7 +77,7 @@ function choose(pick: number) {
     </CardPanel>
 
     <CardPanel v-else class="w-[32rem]" title="战斗胜利">
-      <div class="flex flex-col gap-3">
+      <div class="reward-list flex flex-col gap-3">
         <button
           v-for="(r, i) in run.rewards"
           :key="i"
@@ -101,7 +101,13 @@ function choose(pick: number) {
 
 <style scoped>
 /* 奖励条目：深色底 + 金色描边，悬停发光 */
+/* 默认三个奖励位：每项固定高度，列表至少撑满三项，领走一项后面板不缩 */
+.reward-list {
+  min-height: 16.5rem; /* 3 × 5rem + 2 × 0.75rem 间距 */
+}
 .reward {
+  flex: none;
+  height: 5rem;
   display: flex;
   align-items: center;
   gap: 1rem;

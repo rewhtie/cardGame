@@ -5,6 +5,8 @@ withDefaults(
     icon: string
     name: string
     text: string
+    /** 剧情故事描述，显示在效果说明下方 */
+    lore?: string
     tag?: string
     hint?: string
     color?: string
@@ -26,6 +28,7 @@ withDefaults(
         <span v-if="tag" class="tip-tag">{{ tag }}</span>
       </span>
       <span class="tip-text">{{ text }}</span>
+      <span v-if="lore" class="tip-lore">{{ lore }}</span>
       <span v-if="hint" class="tip-hint">{{ hint }}</span>
     </span>
   </span>
@@ -119,6 +122,14 @@ withDefaults(
   line-height: 1.45;
   color: #f1e6d4;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.tip-lore {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  font-style: italic;
+  line-height: 1.4;
+  color: #b8a99a;
 }
 .tip-hint {
   display: block;

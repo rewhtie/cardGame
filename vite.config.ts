@@ -3,9 +3,12 @@ import vue from '@vitejs/plugin-vue'
 import UnoCSS from 'unocss/vite'
 import { defineConfig } from 'vite'
 import { cardEditorPlugin } from './tools/cardEditorPlugin'
+import { docSyncPlugin } from './tools/docSync'
+import { enemyEditorPlugin } from './tools/enemyEditorPlugin'
+import { sfxEditorPlugin } from './tools/sfxEditorPlugin'
 
 export default defineConfig({
-  plugins: [vue(), UnoCSS(), cardEditorPlugin()],
+  plugins: [vue(), UnoCSS(), cardEditorPlugin(), sfxEditorPlugin(), enemyEditorPlugin(), docSyncPlugin()],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },

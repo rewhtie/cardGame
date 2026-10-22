@@ -25,7 +25,7 @@ const dx = computed(() => {
 
 <template>
   <div class="card-add" :class="to" :style="{ animationDelay: `${delay}ms`, '--dx': `${dx}px` }">
-    <CardView :card="card" :playable="false" class="pointer-events-none" />
+    <CardView :card="card" :playable="true" class="pointer-events-none" />
   </div>
 </template>
 

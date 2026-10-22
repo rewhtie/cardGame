@@ -1,5 +1,6 @@
-import { addStatus, applyBlock, countWounds, drawCards, heal, isAlive, WOUND } from './effects'
-import { enchantedId, isEnchanted, isUpgraded, rawId, upgradedId } from './enchant'
+import { addStatus, applyBlock, applyDamage, countWounds, drawCards, heal, isAlive, WOUND } from './effects'
+import { isForgeable, isUpgraded, rawId, resolveCards, upgradedId, withEnchant } from './enchant'
+import { canEnchant } from './enchants'
 import { sample, type Rng } from './seed'
 import type { RunState } from './run'
 import type { BattleState, CardDef, Effect, GameEvent } from './types'
@@ -17,6 +18,8 @@ export interface BattleHooks {
   onHealed(s: BattleState, events: GameEvent[]): void
   /** 一张牌的效果结算完之后 */
   onCardPlayed(s: BattleState, events: GameEvent[], card: CardDef): void
+  /** 效果让玩家主动弃牌之后（换手 / 预知等；回合结束的整手弃牌不算） */
+  onDiscard(s: BattleState, events: GameEvent[], cards: string[]): void
 }
 
 /** 钩子在 (s, events) 之外的额外参数 */
@@ -35,7 +38,7 @@ export interface PickSpec {
   /** 选牌界面的提示文案 */
   hint: string
   count: number
-  eligible(cardId: string): boolean
+  eligible(cardId: string, cards: Readonly<Record<string, CardDef>>): boolean
   apply(cardId: string): string
 }
 
@@ -46,12 +49,16 @@ export interface RelicRule extends Partial<BattleHooks> {
   maxEnergy?: number
   /** 药水栏位加成 */
   potionSlots?: number
+  /** 洗牌时弃牌堆里的伤口留在原处，不进抽牌堆 */
+  keepWounds?: boolean
   /** 获得时需要玩家先选牌（选完才获得）；无法让玩家选时（作弊发放等）由 onAcquire 随机选 */
   pick?: PickSpec
   /** 改写出牌时即将结算的效果（如伤害翻倍） */
   modifyEffect?(s: BattleState, card: CardDef, effect: Effect): Effect
   /** 获得时的一次性结算 */
   onAcquire?(run: RunState, rng: Rng): AcquireResult
+  /** 获得之后，加入牌组的该种类的牌自动升级（不回头改已有的牌） */
+  upgradeOnAdd?: CardDef['kind']
 }
 
 /** 遗物的计数 / 标记存放处：BattleState.relicState[id] */
@@ -67,6 +74,27 @@ function tickCounter(s: BattleState, id: string, every: number): boolean {
 
 const PEN_NIB_EVERY = 10
 const WHETSTONE_CARDS = 2
+const WAR_PAINT_CARDS = 2
+
+/** 获得时随机升级牌组里 count 张指定种类、尚未升级的牌 */
+function upgradeRandomCards(kind: CardDef['kind'], count: number): NonNullable<RelicRule['onAcquire']> {
+  return (run, rng) => {
+    const idx = run.content.deck
+      .map((_, i) => i)
+      .filter((i) => {
+        const c = run.content.deck[i] as string
+        return !isUpgraded(c) && run.content.cards[rawId(c)]?.kind === kind
+      })
+    const picked = new Set(sample(idx, count, rng))
+    const cards: { from: string; to: string }[] = []
+    const deck = run.content.deck.map((c, i) => {
+      if (!picked.has(i)) return c
+      cards.push({ from: c, to: upgradedId(c) })
+      return upgradedId(c)
+    })
+    return { run: { ...run, content: { ...run.content, deck } }, cards }
+  }
+}
 const STRAWBERRY_HP = 7
 const woundsIn = (pile: readonly string[]) => pile.filter((c) => c === WOUND).length
 
@@ -75,12 +103,18 @@ const withGold = (amount: number) => (run: RunState) => ({
 })
 
 /** 牌组中满足 spec 的牌的下标 */
-const eligibleIndices = (deck: readonly string[], spec: PickSpec) =>
-  deck.flatMap((c, i) => (spec.eligible(c) ? [i] : []))
+const eligibleIndices = (run: RunState, spec: PickSpec) =>
+  run.content.deck.flatMap((c, i) => (spec.eligible(c, run.content.cards) ? [i] : []))
+
+/** 该牌当前的样子（含锻造 / 附魔）；可附魔只看这个 */
+const canEnchantId = (cards: Readonly<Record<string, CardDef>>, id: string, enchant: string) => {
+  const def = resolveCards(cards, [id])[id]
+  return !!def && canEnchant(def, enchant)
+}
 
 /** 实际需要选的张数：可选牌不足时选全部 */
 const pickCount = (run: RunState, spec: PickSpec) =>
-  Math.min(spec.count, eligibleIndices(run.content.deck, spec).length)
+  Math.min(spec.count, eligibleIndices(run, spec).length)
 
 /** 该遗物此刻是否需要玩家选牌：有选牌规则且牌组里有可选的牌 */
 export function relicNeedsPick(run: RunState, id: string): boolean {
@@ -99,7 +133,7 @@ export function resolveRelicPick(
 ): AcquireResult | undefined {
   const spec = RELIC_RULES[id]?.pick
   if (!spec) return undefined
-  const eligible = eligibleIndices(run.content.deck, spec)
+  const eligible = eligibleIndices(run, spec)
   if (
     new Set(indices).size !== indices.length ||
     indices.length !== pickCount(run, spec) ||
@@ -128,7 +162,7 @@ function pickRelic(spec: PickSpec): RelicRule {
   return {
     pick: spec,
     onAcquire: (run, rng) =>
-      applyPick(run, spec, sample(eligibleIndices(run.content.deck, spec), spec.count, rng)),
+      applyPick(run, spec, sample(eligibleIndices(run, spec), spec.count, rng)),
   }
 }
 
@@ -191,10 +225,101 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
       s.relicState = { ...s.relicState, penNib: n >= PEN_NIB_EVERY ? 0 : n + 1 }
     },
   },
+  // 寄生之种：开战给所有敌人 3 层寄生种子
+  parasiteSeed: {
+    onBattleStart: (s, ev) =>
+      s.enemies.forEach((e, i) => {
+        if (isAlive(e)) addStatus(s, 'enemy', i, 'parasite', 3, ev)
+      }),
+  },
+  // 剑心：每回合打出第三张攻击牌时获得 1 层剑意（回合计数在 BattleState，不跨战斗）
+  swordHeart: {
+    onCardPlayed: (s, ev, card) => {
+      if (card.kind !== 'attack') return
+      // 万剑冢：触发阈值改为第 2 张
+      if (s.turnAttacks === (s.relics.includes('bladeTomb') ? 2 : 3)) addStatus(s, 'player', 0, 'swordIntent', 1, ev)
+    },
+  },
+  // 饮血剑：每回合开始获得 1 层汲血（汲血回合结束清空）
+  bloodBlade: {
+    onTurnStart: (s, ev) => addStatus(s, 'player', 0, 'bloodDrain', 1, ev),
+  },
+  // 霜剑：每回合开始，所有敌人获得 1 层冰霜
+  frostBlade: {
+    onTurnStart: (s, ev) =>
+      s.enemies.forEach((e, i) => {
+        if (isAlive(e)) addStatus(s, 'enemy', i, 'frost', 1, ev)
+      }),
+  },
+  // 雷剑：每场战斗第一回合开始，获得 2 层感电
+  thunderBlade: {
+    onTurnStart: (s, ev) => {
+      if (s.turn === 1) addStatus(s, 'player', 0, 'shock', 2, ev)
+    },
+  },
+  // 炎剑：战斗开始时，所有敌人获得 3 层灼伤
+  flameBlade: {
+    onBattleStart: (s, ev) =>
+      s.enemies.forEach((e, i) => {
+        if (isAlive(e)) addStatus(s, 'enemy', i, 'burn', 3, ev)
+      }),
+  },
+  // 毒剑：每回合开始，已经中毒的敌人额外获得 1 层中毒
+  venomBlade2: {
+    onTurnStart: (s, ev) =>
+      s.enemies.forEach((e, i) => {
+        if (isAlive(e) && (e.statuses.poison ?? 0) > 0) addStatus(s, 'enemy', i, 'poison', 1, ev)
+      }),
+  },
+  // 剑鞘：每回合第一次打出技能牌，获得 3 点活力（回合内技能牌数由 turnSkills 计）
+  scabbard: {
+    onCardPlayed: (s, ev, card) => {
+      if (card.kind !== 'skill' || s.turnSkills !== 1) return
+      addStatus(s, 'player', 0, 'vigor', 3, ev)
+    },
+  },
+  // 王国公章：获得时选一张牌附上「固有」：第一回合必定抽上手
+  kingdomSeal: pickRelic({
+    hint: '选择一张牌附魔「固有」：每场战斗第一回合必定抽上手',
+    count: 1,
+    eligible: (c, cards) => canEnchantId(cards, c, 'innate'),
+    apply: (c) => withEnchant(c, 'innate'),
+  }),
+  // 万剑冢（Boss）：最大能量 -1；剑心改为第 2 张攻击牌触发（见 swordHeart）
+  bladeTomb: { maxEnergy: -1 },
+  // 蜕变：带成长的攻击牌斩杀敌人时，该牌成长层数额外 +2（结算在 battle.ts 的 playCard，需要拿到牌实例 id）
+  metamorphosis: {},
+  // 无间（Boss）：每回合开始获得 1 层剑意，回合结束失去全部剑意
+  nothingBetween: {
+    onTurnStart: (s, ev) => addStatus(s, 'player', 0, 'swordIntent', 1, ev),
+    onTurnEnd: (s, ev) => {
+      if ((s.player.statuses.swordIntent ?? 0) <= 0) return
+      delete s.player.statuses.swordIntent
+      ev.push({ type: 'statusRemoved', target: 'player', status: 'swordIntent' })
+    },
+  },
   // 包扎：每次恢复生命，把一张伤口置入弃牌堆
   bandaging: {
     onHealed: (s) => {
       s.discardPile.push('wound')
+    },
+  },
+  // 勇士头巾（战士）：战斗开始获得 8 点活力
+  valiantHood: { onBattleStart: (s, ev) => addStatus(s, 'player', 0, 'vigor', 8, ev) },
+  // 勇者徽章（剑圣）：一回合内打出第 3 张攻击牌时，获得 8 点活力
+  braveBadge: {
+    onCardPlayed: (s, ev, card) => {
+      if (card.kind === 'attack' && s.turnAttacks === 3) addStatus(s, 'player', 0, 'vigor', 3, ev)
+    },
+  },
+  // 遗弃徽章（鸦嘴）：每回合第一次弃牌时，可以把弃掉的牌（多张时选一张）放回手牌
+  abandonBadge: {
+    onDiscard: (s, _ev, cards) => {
+      if (s.turnDiscarded || s.pending) return
+      const back = cards.filter((id) => s.discardPile.includes(id))
+      if (back.length === 0) return
+      s.turnDiscarded = true
+      s.pending = { kind: 'recover', cards: back }
     },
   },
   // 鸦嘴医生专属
@@ -234,6 +359,8 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
       s.discardPile.push(WOUND, WOUND)
     },
   },
+  // 裹尸布：伤口留在弃牌堆（洗牌时不进抽牌堆）
+  shroud: { keepWounds: true },
   // 香囊：每当恢复生命，获得 2 点格挡
   herbalSachet: { onHealed: (s, ev) => applyBlock(s, 'player', 2, ev) },
   // 疫苗：战斗开始时获得 2 层再生，并将 1 张伤口置入弃牌堆
@@ -289,29 +416,52 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
     }),
   },
   potionBelt: { potionSlots: 2 },
-  whetstone: {
-    onAcquire: (run, rng) => {
-      const idx = run.content.deck
-        .map((_, i) => i)
-        .filter((i) => {
-          const c = run.content.deck[i] as string
-          return !isUpgraded(c) && run.content.cards[rawId(c)]?.kind === 'attack'
-        })
-      const picked = new Set(sample(idx, WHETSTONE_CARDS, rng))
-      const cards: { from: string; to: string }[] = []
-      const deck = run.content.deck.map((c, i) => {
-        if (!picked.has(i)) return c
-        cards.push({ from: c, to: upgradedId(c) })
-        return upgradedId(c)
-      })
-      return { run: { ...run, content: { ...run.content, deck } }, cards }
+  whetstone: { onAcquire: upgradeRandomCards('attack', WHETSTONE_CARDS) },
+  // 战争涂料：获得时升级牌组中的 2 张技能牌
+  warPaint: { onAcquire: upgradeRandomCards('skill', WAR_PAINT_CARDS) },
+  // 三个蛋：获得之后加入牌组的对应种类的牌自动升级（见 cardOnAdd）
+  toxicEgg: { upgradeOnAdd: 'skill' },
+  moltenEgg: { upgradeOnAdd: 'attack' },
+  frozenEgg: { upgradeOnAdd: 'power' },
+  // 弹珠袋：战斗开始时，所有敌人获得 1 层易伤
+  marbleBag: {
+    onBattleStart: (s, ev) =>
+      s.enemies.forEach((e, i) => {
+        if (isAlive(e)) addStatus(s, 'enemy', i, 'vulnerable', 1, ev)
+      }),
+  },
+  // 手里剑：每回合打出第 3 张攻击牌时，获得 1 点力量
+  shuriken: {
+    onCardPlayed: (s, ev, card) => {
+      if (card.kind === 'attack' && s.turnAttacks === 3) addStatus(s, 'player', 0, 'strength', 1, ev)
     },
   },
+  // 华丽折扇：每回合打出第 3 张攻击牌时，获得 4 点格挡
+  ornateFan: {
+    onCardPlayed: (s, ev, card) => {
+      if (card.kind === 'attack' && s.turnAttacks === 3) applyBlock(s, 'player', 4, ev)
+    },
+  },
+  // 号角扣：每场战斗第 2 回合开始时，获得 14 点格挡
+  hornCleat: {
+    onTurnStart: (s, ev) => {
+      if (s.turn === 2) applyBlock(s, 'player', 14, ev)
+    },
+  },
+  // 水银沙漏：每个回合开始时，对所有敌人造成 3 点伤害（无来源，不吃力量加成）
+  mercuryHourglass: {
+    onTurnStart: (s, ev) =>
+      s.enemies.forEach((e, i) => {
+        if (isAlive(e)) applyDamage(s, 'enemy', 3, ev, i)
+      }),
+  },
+  // 计数与结算在 effects.ts 的 applyDamage / applyBlock 里（需要拿到实际伤害与格挡数值）
+  legendVest: { showCounter: true },
   trainingGuide: pickRelic({
-    hint: '选择一张牌附魔：每场战斗中每打出一次，卡面数值 +1',
+    hint: '选择一张牌附魔「增量」：每场战斗中每打出一次，卡面数值 +1',
     count: 1,
-    eligible: (c) => !isEnchanted(c),
-    apply: enchantedId,
+    eligible: (c, cards) => canEnchantId(cards, c, 'grow'),
+    apply: (c) => withEnchant(c, 'grow'),
   }),
 }
 
@@ -337,6 +487,13 @@ export function fireRelics<K extends keyof BattleHooks>(
   }
 }
 
+/** 牌加入牌组前的改写：持有对应种类的"蛋"时自动升级；已升级、诅咒、状态牌保持原样 */
+export function cardOnAdd(run: RunState, id: string): string {
+  const def = run.content.cards[rawId(id)]
+  if (!def || !isForgeable(run.content.cards, id)) return id
+  return activeRules(run.relics).some((r) => r.upgradeOnAdd === def.kind) ? upgradedId(id) : id
+}
+
 /** 依次让持有遗物改写即将结算的效果 */
 export function modifyEffect(s: BattleState, card: CardDef, effect: Effect): Effect {
   return activeRules(s.relics).reduce((e, r) => r.modifyEffect?.(s, card, e) ?? e, effect)
@@ -346,6 +503,8 @@ const sum = (relics: readonly string[], key: 'maxEnergy' | 'potionSlots') =>
   activeRules(relics).reduce((n, r) => n + (r[key] ?? 0), 0)
 
 export const relicMaxEnergy = (relics: readonly string[]) => sum(relics, 'maxEnergy')
+export const relicKeepsWounds = (relics: readonly string[]) =>
+  activeRules(relics).some((r) => r.keepWounds)
 export const relicPotionSlots = (relics: readonly string[]) => sum(relics, 'potionSlots')
 
 /** 遗物图标右下角的计数；不显示计数的遗物返回 undefined */

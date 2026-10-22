@@ -1,3 +1,4 @@
+import { migrateLegacyId } from './enchant'
 import type { RunContent, RunScreen, RunState } from './run'
 
 const SAVE_KEY = 'cardfire.save'
@@ -37,7 +38,7 @@ export function toSave(run: RunState, enter?: NodeEntry): RunSave | null {
 
 /** 用存档 + 最新的静态内容还原整局 */
 export function fromSave(save: RunSave, content: RunContent): RunState {
-  return { ...save.run, battle: null, content: { ...content, deck: save.deck } }
+  return { ...save.run, battle: null, content: { ...content, deck: save.deck.map(migrateLegacyId) } }
 }
 
 function isSave(raw: unknown): raw is RunSave {

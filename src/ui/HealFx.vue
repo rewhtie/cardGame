@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /** 全屏回血特效：边缘泛绿光，中间浮起回复量；不挡点击 */
-defineProps<{ amount: number }>()
+defineProps<{ amount: number; maxHp?: boolean }>()
 </script>
 
 <template>
   <div class="heal-screen">
-    <div class="heal-text">+{{ amount }} ❤</div>
+    <div class="heal-text">{{ maxHp ? `最大生命 +${amount}` : `+${amount}` }} ❤</div>
   </div>
 </template>
 

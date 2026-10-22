@@ -1,10 +1,12 @@
 import { cards } from '@/data/cards'
 import { slimeGroup } from '@/data/enemies'
 import { potions as potionDefs, relics as relicDefs } from '@/data/items'
-import { createBattle, dispatch } from '@/engine/battle'
+import { autoResolve, createBattle, dispatch } from '@/engine/battle'
+import { firstLivingEnemy } from '@/engine/effects'
+import { displayCost } from '@/engine/swordSaint'
 import { statusById } from '@/engine/statuses'
 import type { Action, BattleState, EnemyDef, GameEvent } from '@/engine/types'
-import { effectSnapshot, smokeCheck } from './cardHarness'
+import { effectSnapshot, primeParasite, smokeCheck } from './cardHarness'
 
 export const DEFAULT_TEST_TURNS = 3
 /** 被测牌在牌组里的张数，其余用打击/防御补满 */
@@ -97,6 +99,8 @@ export function describeEvent(state: BattleState, e: GameEvent): string | null {
       return `获得遗物 ${relicDefs[e.id]?.name ?? e.id}${e.heal ? `（回复 ${e.heal} 点生命）` : ''}`
     case 'cardsUpgraded':
       return `升级了 ${e.cards.length} 张牌`
+    case 'cardsEvolved':
+      return `成长了${e.cards.length} 张牌`
     case 'potionUsed':
       return `使用药水 ${potionDefs[e.potionId]?.name ?? e.potionId}`
     case 'invalidAction':
@@ -130,12 +134,16 @@ function sortKeys(v: unknown): unknown {
   return v
 }
 
+/** 可进化 / 附魔的牌进战斗后带 #实例号，按去掉实例号后的 id 匹配 */
+const isCard = (instance: string, id: string) => instance.split('#')[0] === id
+
 /** 保证被测牌在手里：不在的话从抽牌堆（其次弃牌堆）换一张进来，换掉一张填充牌 */
 function ensureInHand(state: BattleState, cardId: string): BattleState {
-  if (state.hand.includes(cardId)) return state
-  const pile = state.drawPile.includes(cardId) ? 'drawPile' : 'discardPile'
-  const from = state[pile].indexOf(cardId)
+  if (state.hand.some((h) => isCard(h, cardId))) return state
+  const pile = state.drawPile.some((h) => isCard(h, cardId)) ? 'drawPile' : 'discardPile'
+  const from = state[pile].findIndex((h) => isCard(h, cardId))
   if (from < 0) return state
+  cardId = state[pile][from]!
   const s: BattleState = {
     ...state,
     hand: [...state.hand],
@@ -162,6 +170,8 @@ export function traceCard(cardId: string, opts: AutoRunOptions = {}): Trace {
     ...Array<string>(TEST_COPIES).fill(cardId),
     ...Array<string>(FILLER_STRIKES).fill('strike'),
     ...Array<string>(FILLER_DEFENDS).fill('defend'),
+    // 需要选状态牌的牌：牌组里放几张伤口当祭品
+    ...Array<string>(def.effects.some((e) => e.type === 'exhaustStatusCard') ? TEST_COPIES * 3 : 0).fill('wound'),
   ]
   const created = createBattle({
     seed: opts.seed ?? 1,
@@ -179,20 +189,31 @@ export function traceCard(cardId: string, opts: AutoRunOptions = {}): Trace {
   }
   const act = (label: string, action: Action) => {
     const from = state
-    const result = dispatch(state, action)
+    let result = dispatch(state, action)
     state = result.state
+    for (let guard = 0; state.pending && guard < 4; guard++) {
+      const auto = autoResolve(state)
+      if (!auto) break
+      result = { ...auto, events: [...result.events, ...auto.events] }
+      state = auto.state
+    }
     record(label, state, result.events, from)
   }
 
   record('战斗开始', state, created.events, state)
   const playable = (id: string) => {
     const c = state.cards[id]
-    return !!c && !c.unplayable && (c.cost === 'X' || c.cost <= state.player.energy)
+    return !!c && !c.unplayable && (displayCost(state, c) === 'X' || (displayCost(state, c) as number) <= state.player.energy)
   }
   const playFirst = (id: string) => {
-    const handIndex = state.hand.indexOf(id)
-    if (handIndex < 0 || !playable(id) || state.phase !== 'player') return false
-    act(`打出 ${nameOf(state, id)}`, { type: 'playCard', handIndex })
+    const handIndex = state.hand.findIndex((h) => isCard(h, id))
+    if (handIndex < 0 || !playable(state.hand[handIndex]!) || state.phase !== 'player') return false
+    const pick = state.cards[state.hand[handIndex]!]?.effects.some((e) => e.type === 'exhaustStatusCard')
+      ? state.hand.findIndex((c) => state.cards[c]?.rarity === 'status')
+      : undefined
+    if (pick !== undefined && pick < 0) return false
+    state = primeParasite(state, state.hand[handIndex]!, firstLivingEnemy(state))
+    act(`打出 ${nameOf(state, id)}`, { type: 'playCard', handIndex, ...(pick !== undefined && { pick }) })
     return true
   }
 

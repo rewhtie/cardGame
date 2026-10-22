@@ -38,7 +38,7 @@ watch(
   () => props.gold,
   (now, before) => {
     if (now === before) return
-    if (now > before) void playSfx('coin')
+    void playSfx(now > before ? 'run.gold.gain' : 'run.gold.spend')
     goldFx.value = { key: ++goldKey, delta: now - before }
     clearTimeout(goldTimer)
     goldTimer = window.setTimeout(() => (goldFx.value = null), 1000)
@@ -297,6 +297,7 @@ const hintOf = (id: string | undefined) => {
           :icon="relicDefs[id]!.icon"
           :name="relicDefs[id]!.name"
           :text="relicDefs[id]!.text"
+          :lore="relicDefs[id]!.lore"
           tag="遗物"
           align="left"
         >

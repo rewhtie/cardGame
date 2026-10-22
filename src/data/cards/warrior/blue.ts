@@ -5,7 +5,8 @@ export const warriorBlue: Card[] = [
   Card.blue('heavyBlow', '重击')
     .icon('🔨')
     .cost(2)
-    .damage(14)
+    .targetEnemy()
+    .damage(16)
     .reward()
     .upgrade((u) => u.damage(18)),
   Card.blue('quickStrike', '快速打击')
@@ -21,12 +22,6 @@ export const warriorBlue: Card[] = [
     .applyStatus('vulnerable', 2, 'target')
     .reward()
     .upgrade((u) => u.damage(10).applyStatus('vulnerable', 3, 'target')),
-  Card.blue('venom', '毒针')
-    .icon('🪡')
-    .cost(1)
-    .applyStatus('poison', 4, 'target')
-    .reward()
-    .upgrade((u) => u.applyStatus('poison', 6, 'target')),
   Card.blue('clothesline', '闷棍')
     .icon('🏏')
     .cost(2)
@@ -37,23 +32,17 @@ export const warriorBlue: Card[] = [
   Card.blue('expose', '破绽')
     .icon('🎯')
     .cost(0)
-    .applyStatus('vulnerable', 2, 'target')
+    .targetEnemy()
     .exhaust()
+    .applyStatus('vulnerable', 2, 'target')
     .reward()
-    .upgrade((u) => u.applyStatus('vulnerable', 3, 'target')),
+    .upgrade((u) => u.applyStatus('vulnerable', 2, 'allEnemies')),
   Card.blue('hammerBlow', '重锤')
     .icon('⚒️')
     .cost(3)
     .damage(26)
     .reward()
     .upgrade((u) => u.damage(34)),
-  Card.blue('viperFang', '蛇牙')
-    .icon('🐍')
-    .cost(1)
-    .damage(4)
-    .applyStatus('poison', 5, 'target')
-    .reward()
-    .upgrade((u) => u.damage(6).applyStatus('poison', 7, 'target')),
   Card.blue('rend', '撕裂')
     .icon('🩸')
     .cost(2)
@@ -64,22 +53,11 @@ export const warriorBlue: Card[] = [
     .upgrade((u) =>
       u.damage(13).applyStatus('vulnerable', 2, 'target').applyStatus('weak', 2, 'target'),
     ),
-  Card.blue('plague', '瘟疫')
-    .icon('☠️')
-    .cost(2)
-    .applyStatus('poison', 9, 'target')
-    .reward()
-    .upgrade((u) => u.applyStatus('poison', 13, 'target')),
-  Card.blue('dazeBlow', '眩晕击')
-    .icon('💫')
-    .cost(1)
-    .damage(8)
-    .applyStatus('weak', 2, 'target')
-    .reward()
-    .upgrade((u) => u.damage(10).applyStatus('weak', 3, 'target')),
-  Card.blue('bloodlust', '嗜血')
+  Card.blue('bloodlust', '越战越勇')
     .icon('🧛')
     .cost(1)
+    .targetEnemy()
+    .exhaust()
     .damage(9)
     .heal(3)
     .reward()
@@ -112,12 +90,12 @@ export const warriorBlue: Card[] = [
     ),
   Card.blue('fortify', '加固')
     .icon('🏰')
-    .cost(2)
+    .cost(1)
     .targetSelf()
-    .block(14)
-    .draw(1)
+    .block(13)
+    .penalty('dexterity', 2)
     .reward()
-    .upgrade((u) => u.block(18).draw(1)),
+    .upgrade((u) => u.block(17).penalty('dexterity', 2)),
   Card.blue('weakenAll', '削弱')
     .icon('📉')
     .cost(1)
@@ -126,35 +104,38 @@ export const warriorBlue: Card[] = [
     .applyStatus('weak', 2, 'allEnemies')
     .reward()
     .upgrade((u) => u.block(6).applyStatus('weak', 3, 'allEnemies')),
-  Card.blue('meditate', '冥想')
-    .icon('🧘')
+  Card.blue('bracing', '稳固')
+    .icon('🪨')
     .cost(1)
     .targetSelf()
-    .draw(2)
-    .gainEnergy(1)
+    .block(10)
+    .reward()
+    .upgrade((u) => u.block(13)),
+  Card.blue('throwSpear', '投掷长矛')
+    .icon('🔱')
+    .cost(1)
+    .targetEnemy()
+    .meltBlock()
+    .damage(10)
+    .text('移除目标所有格挡，造成10点伤害')
+    .reward()
+    .upgrade((u) => u.meltBlock().damage(14).text('移除目标所有格挡，造成14点伤害')),
+  Card.blue('upright', '堂堂正正')
+    .icon('🦁')
+    .cost(1)
+    .targetSelf()
+    .purgeSelfBuff()
     .exhaust()
     .reward()
-    .upgrade((u) => u.draw(3).gainEnergy(1)),
-  Card.blue('vitality', '活力')
-    .icon('🌱')
-    .cost(1)
-    .power()
-    .applyStatus('regen', 4)
-    .reward()
-    .upgrade((u) => u.applyStatus('regen', 6)),
-  Card.blue('hardShell', '硬壳')
-    .icon('🐢')
+    .upgrade((u) => u.noExhaust()),
+  Card.blue('awe', '震慑')
+    .icon('😨')
     .cost(2)
-    .power()
-    .applyStatus('thorns', 4)
+    .targetEnemy()
+    .asSkill()
+    .sapStrength(9)
+    .applyStatus('weak', 2, 'target')
+    .exhaust()
     .reward()
-    .upgrade((u) => u.applyStatus('thorns', 6)),
-  Card.blue('tonic', '补药')
-    .icon('🍵')
-    .cost(1)
-    .targetSelf()
-    .heal(3)
-    .draw(1)
-    .reward()
-    .upgrade((u) => u.heal(5).draw(1)),
+    .upgrade((u) => u.sapStrength(15).applyStatus('weak', 3, 'target')),
 ]

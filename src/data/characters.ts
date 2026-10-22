@@ -1,4 +1,4 @@
-import { classRewardIds, starterDeck } from './cards'
+import { classAllIds, classRewardIds, colorlessAllIds, colorlessRewardIds, starterDeck } from './cards'
 
 export interface CharacterDef {
   id: string
@@ -7,6 +7,8 @@ export interface CharacterDef {
   icon: string
   desc: string
   deck: string[]
+  /** 图鉴用：该职业的全部卡牌（含初始卡） */
+  allCards: string[]
   /** 战斗奖励的卡池 */
   rewardCards: string[]
   /** 初始遗物 */
@@ -23,18 +25,42 @@ export const characters: CharacterDef[] = [
     icon: '⚔️',
     desc: '均衡的冒险者。',
     deck: starterDeck,
-    rewardCards: classRewardIds.warrior!,
-    relics: [],
+    allCards: [...new Set([...starterDeck, ...classAllIds.warrior!, ...colorlessAllIds])],
+    rewardCards: [...classRewardIds.warrior!, ...colorlessRewardIds],
+    relics: ['legendVest'],
+    exclusiveRelics: ['valiantHood'],
   },
   {
     id: 'plagueDoctor',
     name: '鸦嘴医生',
-    icon: '🐦‍⬛',
+    icon: '🐦',
     desc: '戴着长喙面具的游医，以治疗与回复为生，每一次包扎都会留下伤痕。',
     deck: [...Array<string>(4).fill('strike'), ...Array<string>(4).fill('defend'), 'bandage', 'recover'],
-    rewardCards: classRewardIds.doctor!,
+    allCards: [...new Set(['strike', 'defend', ...classAllIds.doctor!, ...colorlessAllIds])],
+    rewardCards: [...classRewardIds.doctor!, ...colorlessRewardIds],
     relics: ['bandaging'],
-    exclusiveRelics: ['toxinSac', 'scalpel', 'caseFile', 'boneUrn', 'ravenMask', 'herbalSachet', 'vaccine', 'petriDish', 'plagueBell', 'surgicalKit', 'medicineChest', 'sickbedAmulet'],
+    exclusiveRelics: ['abandonBadge', 'toxinSac', 'scalpel', 'caseFile', 'boneUrn', 'ravenMask', 'herbalSachet', 'vaccine', 'petriDish', 'plagueBell', 'surgicalKit', 'medicineChest', 'sickbedAmulet', 'shroud'],
+  },
+  {
+    id: 'swordSaint',
+    name: '剑圣',
+    icon: '🗡️',
+    desc: '一回合连出数张攻击牌，积蓄剑意。',
+    deck: [...Array<string>(4).fill('swordStrike0'), ...Array<string>(4).fill('defend')],
+    allCards: [...new Set(['defend', ...classAllIds.swordSaint!, ...colorlessAllIds])],
+    rewardCards: [...classRewardIds.swordSaint!, ...colorlessRewardIds],
+    relics: ['swordHeart'],
+    exclusiveRelics: ['braveBadge', 'bloodBlade', 'frostBlade', 'thunderBlade', 'flameBlade', 'venomBlade2', 'scabbard', 'bladeTomb', 'nothingBetween', 'metamorphosis', 'kingdomSeal'],
+  },
+  {
+    id: 'ancientTree',
+    name: '参天古树',
+    icon: '🌳',
+    desc: '低伤害的狗流：用寄生种子养出回复与随从，靠中毒、反伤和吸血苟住。',
+    deck: [...Array<string>(4).fill('strike'), ...Array<string>(4).fill('defend')],
+    allCards: [...new Set(['strike', 'defend', ...classAllIds.ancientTree!, ...colorlessAllIds])],
+    rewardCards: [...classRewardIds.ancientTree!, ...colorlessRewardIds],
+    relics: ['parasiteSeed'],
   },
 ]
 

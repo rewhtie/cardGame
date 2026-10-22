@@ -1,13 +1,15 @@
 <script setup lang="ts">
+import { willSplit } from '@/engine/effects'
 import EnemyView from './EnemyView.vue'
 import HandView from './HandView.vue'
 import PileButton from './PileButton.vue'
+import PendingPicker from './PendingPicker.vue'
 import PileModal from './PileModal.vue'
 import StatusIcons from './StatusIcons.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { clearFxHandler, fxReset, lag, setFxHandler, whenFxIdle } from '@/composables/useFx'
-import { playSfx } from '@/composables/useSfx'
-import { statusById } from '@/engine/statuses'
+import { clearFxHandler, fxReset, lag, setFxCards, setFxHandler, whenFxIdle } from '@/composables/useFx'
+import { intentIndexAt } from '@/engine/intents'
+import { BUFFS, DEBUFFS, statusById } from '@/engine/statuses'
 import type { Action, BattleState, GameEvent, Side } from '@/engine/types'
 
 const props = defineProps<{
@@ -35,9 +37,47 @@ const pileView = computed(() => {
 
 const isDev = import.meta.env.DEV
 
+/** 作弊加状态：target 为 'player' 或敌人下标 */
+const cheatOpen = ref(false)
+const cheatStatusId = ref(BUFFS[0]?.id ?? '')
+const cheatTarget = ref<'player' | number>('player')
+const cheatStacks = ref(1)
+const CHEAT_STACK_PRESETS = [-99, -1, 1, 3, 5, 10]
+const cheatBtn =
+  'px-2.5 py-1 rounded-md border border-red-400/30 bg-red-900/70 hover:bg-red-700 text-xs text-red-50 shadow transition-colors disabled:(opacity-40 cursor-not-allowed hover:bg-red-900/70)'
+const cheatField =
+  'flex-1 min-w-0 h-7 rounded-md border border-slate-600 px-2 text-xs outline-none focus:border-red-400'
+// 原生控件的文字色用内联样式强制指定，避免被浏览器默认的黑字覆盖
+const cheatFieldStyle = { color: '#f1e9dc', backgroundColor: '#2d2420', colorScheme: 'dark' }
+function applyCheatStatus() {
+  const stacks = Math.trunc(Number(cheatStacks.value))
+  if (!cheatStatusId.value || !stacks) return
+  const t = cheatTarget.value
+  emit('action', {
+    type: 'cheatStatus',
+    side: t === 'player' ? 'player' : 'enemy',
+    enemyIndex: t === 'player' ? 0 : t,
+    status: cheatStatusId.value,
+    stacks,
+  })
+}
+
 const isOver = computed(() => props.state.phase === 'won' || props.state.phase === 'lost')
 /** 只有玩家回合才能操作：敌人演出期间结束回合、作弊按钮都禁用 */
-const canAct = computed(() => props.state.phase === 'player')
+const canAct = computed(() => props.state.phase === 'player' && !props.state.pending)
+
+const COMMAND_OPTIONS = [
+  { choice: 'block', label: '格挡 6' },
+  { choice: 'attack', label: '攻击 6' },
+  { choice: 'devote', label: '奉献 6' },
+] as const
+const minionsAt = (enemyIndex: number) =>
+  (props.state.minions ?? []).filter((m) => m.hp > 0 && m.enemyIndex === enemyIndex)
+const commandCards = computed(() =>
+  (props.state.minions ?? [])
+    .map((m, index) => ({ index, hp: m.hp }))
+    .filter((m) => m.hp > 0 && !(props.state.commanded ?? []).includes(m.index)),
+)
 
 /** 胜负界面要等演出队列放空：状态里早已分出胜负，但最后一击的动画必须先演完 */
 const lostShown = ref(props.state.phase === 'lost')
@@ -80,6 +120,31 @@ const drag = ref<{
 } | null>(null)
 const hoverEnemy = ref<number | null>(null)
 
+/** 选牌模式：打出「消耗手牌中状态牌」的牌后，等玩家点一张状态牌；点别处取消 */
+const pickMode = ref<{ handIndex: number } | null>(null)
+const needsPick = (cardId: string | undefined) =>
+  !!cardId && !!props.state.cards[cardId]?.effects.some((e) => e.type === 'exhaustStatusCard')
+const pickable = computed(() => {
+  const m = pickMode.value
+  if (!m) return []
+  return props.state.hand.flatMap((id, i) =>
+    i !== m.handIndex && props.state.cards[id]?.rarity === 'status' ? [i] : [],
+  )
+})
+/** 出牌；需要选状态牌的牌先进入选牌模式，手里没有状态牌就打不出 */
+function playOrPick(handIndex: number, target?: number) {
+  if (needsPick(props.state.hand[handIndex])) {
+    const has = props.state.hand.some((id, i) => i !== handIndex && props.state.cards[id]?.rarity === 'status')
+    if (has) pickMode.value = { handIndex }
+    return
+  }
+  emit('action', { type: 'playCard', handIndex, ...(target !== undefined && { target }) })
+}
+watch(
+  () => props.state.hand,
+  () => (pickMode.value = null),
+)
+
 const dragCard = computed(() =>
   drag.value ? props.state.cards[props.state.hand[drag.value.index] ?? ''] : undefined,
 )
@@ -103,7 +168,13 @@ function enemyUnder(clientX: number, clientY: number): number | null {
 }
 
 function onPress(index: number, e: PointerEvent) {
-  if (props.readonly || isOver.value || props.state.phase !== 'player') return
+  if (props.readonly || isOver.value || props.state.phase !== 'player' || props.state.pending) return
+  if (pickMode.value) {
+    const m = pickMode.value
+    pickMode.value = null
+    if (pickable.value.includes(index)) emit('action', { type: 'playCard', handIndex: m.handIndex, pick: index })
+    return
+  }
   const p = toStage(e.clientX, e.clientY)
   drag.value = { index, startX: p.x, startY: p.y, x: p.x, y: p.y, active: false }
   window.addEventListener('pointermove', onMove)
@@ -131,17 +202,15 @@ function onRelease(e: PointerEvent) {
 
   if (!d.active) {
     // 单击：不需要选目标时直接打出（自身牌，或只剩一只敌人）
-    if (card.target === 'self' || livingCount.value <= 1) {
-      emit('action', { type: 'playCard', handIndex: d.index })
-    }
+    if (card.target !== 'enemy' || livingCount.value <= 1) playOrPick(d.index)
     return
   }
 
   if (card.target === 'enemy') {
     const target = enemyUnder(e.clientX, e.clientY)
-    if (target !== null) emit('action', { type: 'playCard', handIndex: d.index, target })
+    if (target !== null) playOrPick(d.index, target)
   } else if (toStage(e.clientX, e.clientY).y < HAND_TOP) {
-    emit('action', { type: 'playCard', handIndex: d.index })
+    playOrPick(d.index)
   }
 }
 
@@ -327,12 +396,10 @@ async function playDamage(e: Ev<'damageDealt'>, { prev }: PlayCtx) {
   if (e.blocked > 0) float(el, `🛡 -${e.blocked}`, 'fx-blocked')
   if (e.amount <= 0) {
     if (e.blocked > 0) {
-      void playSfx('block')
       await glow(el, GLOW.block)
     }
     return
   }
-  void playSfx(e.target === 'player' ? 'hurt' : 'hit')
   if (cause === 'attack') slash(el)
   float(el, `-${e.amount}`, e.target === 'player' ? 'fx-hurt' : 'fx-damage')
   if (e.target === 'player') screenHit(e.amount >= 10)
@@ -350,7 +417,6 @@ const players: { [T in GameEvent['type']]?: (e: Ev<T>, ctx: PlayCtx) => Promise<
     // 玩家的防御只在徽章上演，不动整块左栏
     const isPlayer = e.target === 'player'
     const el = isPlayer ? blockEl.value : spriteOf(e.target, e.enemyIndex)
-    void playSfx('block')
     shieldUp(el, isPlayer ? 'fx-shield-sm' : undefined)
     float(el, `+${e.amount} 🛡`, 'fx-block')
     return glow(el, GLOW.block)
@@ -361,7 +427,6 @@ const players: { [T in GameEvent['type']]?: (e: Ev<T>, ctx: PlayCtx) => Promise<
   },
   healed: (e) => {
     const el = spriteOf(e.target, e.enemyIndex)
-    void playSfx('heal')
     healRing(el)
     float(el, `+${e.amount} ❤`, 'fx-heal')
     return glow(el, GLOW.heal)
@@ -386,7 +451,7 @@ const players: { [T in GameEvent['type']]?: (e: Ev<T>, ctx: PlayCtx) => Promise<
   // 只飘字，不占队列时间
   statusApplied: (e) => {
     const def = statusById[e.status]
-    if (def) float(spriteOf(e.target, e.enemyIndex), `${def.icon} ${def.name} +${e.stacks}`, `fx-${statusTone(def.kind)}`)
+    if (def) float(spriteOf(e.target, e.enemyIndex), `${def.icon} ${def.name} ${e.stacks > 0 ? '+' : ''}${e.stacks}`, `fx-${statusTone(def.kind)}`)
   },
 }
 
@@ -396,16 +461,18 @@ async function playEvent(e: GameEvent, prev?: GameEvent): Promise<void> {
 }
 
 setFxHandler(playEvent)
+setFxCards(props.state.cards)
 
 /** 界面显示值 = 真实状态 + 演出滞后量：事件的动画没演完，对应数值先不落地 */
 const enemies = computed(() =>
   props.state.enemies.map((e, i) => {
-    const n = e.def.intents.length
+    const turns = Math.max(0, (e.turns ?? 0) - (lag.intent[i] ?? 0))
     return {
       ...e,
       hp: e.hp + (lag.enemyHp[i] ?? 0),
       block: e.block + (lag.enemyBlock[i] ?? 0),
-      intentIndex: n ? (((e.intentIndex - (lag.intent[i] ?? 0)) % n) + n) % n : e.intentIndex,
+      turns,
+      intentIndex: intentIndexAt(e.def, turns),
     }
   }),
 )
@@ -421,6 +488,7 @@ watch(fxReset, () => {
 })
 onBeforeUnmount(() => {
   clearFxHandler(playEvent)
+  setFxCards(null)
   phaseToken++
   timers.forEach((id) => clearTimeout(id))
 })
@@ -433,46 +501,124 @@ onBeforeUnmount(() => {
   >
     <div
       v-if="isDev && !readonly"
-      class="absolute right-3 z-50 flex flex-col items-end gap-1"
+      class="absolute right-3 z-50 flex flex-col items-end gap-1.5"
       :class="hasRelics ? 'top-28' : 'top-16'"
     >
-      <button
-        class="px-2 py-1 rounded bg-red-700 hover:bg-red-600 text-xs text-white disabled:(opacity-40 cursor-not-allowed)"
-        :disabled="!canAct"
-        @click="emit('action', { type: 'cheatDamage', amount: 9999 })"
-      >
+      <button :class="cheatBtn" :disabled="!canAct" @click="emit('action', { type: 'cheatDamage', amount: 9999 })">
         作弊：直接胜利
       </button>
-      <button
-        class="px-2 py-1 rounded bg-red-700 hover:bg-red-600 text-xs text-white disabled:(opacity-40 cursor-not-allowed)"
-        :disabled="!canAct"
-        @click="emit('action', { type: 'cheatDraw', count: 3 })"
-      >
+      <button :class="cheatBtn" :disabled="!canAct" @click="emit('action', { type: 'cheatDraw', count: 3 })">
         作弊：抽三张牌
       </button>
-      <button
-        class="px-2 py-1 rounded bg-red-700 hover:bg-red-600 text-xs text-white disabled:(opacity-40 cursor-not-allowed)"
-        :disabled="!canAct"
-        @click="emit('action', { type: 'cheatEnergy', amount: 3 })"
-      >
+      <button :class="cheatBtn" :disabled="!canAct" @click="emit('action', { type: 'cheatEnergy', amount: 3 })">
         作弊：回复3点能量
       </button>
+      <button :class="cheatBtn" :aria-expanded="cheatOpen" @click="cheatOpen = !cheatOpen">
+        作弊：添加状态 {{ cheatOpen ? '▲' : '▼' }}
+      </button>
+      <div
+        v-if="cheatOpen"
+        class="flex flex-col gap-2 p-3 w-64 rounded-lg border border-red-400/30 bg-slate-900/95 shadow-xl backdrop-blur text-xs text-slate-100"
+      >
+        <label class="flex items-center gap-2">
+          <span class="w-8 shrink-0 text-slate-400">状态</span>
+          <select v-model="cheatStatusId" :class="cheatField" :style="cheatFieldStyle">
+            <optgroup label="增益">
+              <option v-for="d in BUFFS" :key="d.id" :value="d.id">{{ d.icon }} {{ d.name }}</option>
+            </optgroup>
+            <optgroup label="减益">
+              <option v-for="d in DEBUFFS" :key="d.id" :value="d.id">{{ d.icon }} {{ d.name }}</option>
+            </optgroup>
+          </select>
+        </label>
+        <label class="flex items-center gap-2">
+          <span class="w-8 shrink-0 text-slate-400">目标</span>
+          <select v-model="cheatTarget" :class="cheatField" :style="cheatFieldStyle">
+            <option value="player">玩家</option>
+            <option v-for="(e, i) in state.enemies" :key="i" :value="i">
+              敌人 {{ i + 1 }}：{{ e.def.name }}{{ e.hp <= 0 ? '（已死亡）' : '' }}
+            </option>
+          </select>
+        </label>
+        <label class="flex items-center gap-2">
+          <span class="w-8 shrink-0 text-slate-400">层数</span>
+          <input v-model.number="cheatStacks" type="number" step="1" :class="cheatField" :style="cheatFieldStyle" />
+        </label>
+        <p class="pl-10 -mt-1 text-slate-400">正数加层，负数扣层，扣光即移除</p>
+        <div class="flex gap-1 pl-10">
+          <button
+            v-for="n in CHEAT_STACK_PRESETS"
+            :key="n"
+            class="flex-1 h-6 rounded border text-xs transition-colors"
+            :class="
+              cheatStacks === n
+                ? 'border-red-400 bg-red-800 text-white'
+                : 'border-slate-600 bg-slate-800 text-slate-200 hover:border-red-400/60'
+            "
+            @click="cheatStacks = n"
+          >
+            {{ n }}
+          </button>
+        </div>
+        <button :class="[cheatBtn, 'h-8 justify-center text-sm']" :disabled="!canAct" @click="applyCheatStatus">
+          {{ cheatStacks < 0 ? '扣除' : '施加' }}
+        </button>
+      </div>
     </div>
 
     <div class="flex justify-center gap-10">
-      <div v-for="(enemy, i) in enemies" :key="i" :data-enemy-index="i">
+      <!-- 召唤 / 分裂出的敌人（及分裂掉的本体）死后不留尸体；按演出后的血量判断，死亡动画播完才消失 -->
+      <div
+        v-for="(enemy, i) in enemies"
+        v-show="!(enemy.vanishOnDeath && enemy.hp <= 0)"
+        :key="i"
+        :data-enemy-index="i"
+      >
         <EnemyView
           :enemy="enemy"
           :intent="intentOf(enemy)"
+          :splitting="state.phase === 'player' && willSplit(enemy, livingCount)"
+          :cards="state.cards"
           :player-statuses="state.player.statuses"
+          :player-block="state.player.block"
           :hovered="hoverEnemy === i || aim === i"
         />
+        <!-- 随从占据被转化的尸体位置 -->
+        <div
+          v-for="(m, mi) in minionsAt(i)"
+          :key="'m' + mi"
+          class="mt-1 text-center text-sm text-emerald-300"
+        >
+          🌿 随从 {{ m.hp }}/20
+        </div>
+      </div>
+    </div>
+
+    <div v-if="pickMode" class="absolute left-1/2 top-[44%] z-20 -translate-x-1/2 px-5 py-2 rounded-lg bg-black/75 text-amber-200 pointer-events-none">选择手牌中的一张状态牌消耗（点别处取消）</div>
+
+    <!-- 指挥牌：每只存活随从每回合一张，不入任何牌堆 -->
+    <div v-if="commandCards.length" class="flex justify-center gap-4 shrink-0">
+      <div
+        v-for="c in commandCards"
+        :key="c.index"
+        class="flex items-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-950/60 px-3 py-1 text-sm"
+      >
+        <span>指挥 🌿{{ c.hp }}</span>
+        <button
+          v-for="o in COMMAND_OPTIONS"
+          :key="o.choice"
+          class="btn-primary"
+          :disabled="!canAct || readonly"
+          @click="emit('action', { type: 'command', minion: c.index, choice: o.choice })"
+        >
+          {{ o.label }}
+        </button>
       </div>
     </div>
 
     <!-- 底部行固定高度：左栏、打牌区都不会被内容撑开 -->
     <div class="flex items-end justify-between h-56 shrink-0">
-      <div ref="playerEl" class="w-48 h-56 shrink-0 space-y-1 rounded-xl">
+      <div ref="playerEl" class="relative w-48 h-56 shrink-0 space-y-1 rounded-xl">
         <div class="text-sm text-slate-400">回合 {{ state.turn }}</div>
         <div
           ref="blockEl"
@@ -483,17 +629,15 @@ onBeforeUnmount(() => {
           <span class="block-icon">🛡</span>
           <span class="block-num">{{ shownBlock }}</span>
         </div>
-        <div class="relative w-16 h-16">
-          <div
-            ref="energyEl"
-            class="w-16 h-16 rounded-full bg-sky-500 flex items-center justify-center text-2xl font-bold"
-          >
-            {{ state.player.energy }}/{{ state.player.maxEnergy }}
-          </div>
-          <!-- 绝对定位在能量右侧、底边对齐向上延伸：不占布局高度，不会撑开左栏 -->
-          <div class="absolute left-full bottom-0 ml-3 max-h-56">
-            <StatusIcons :statuses="state.player.statuses" vertical />
-          </div>
+        <div
+          ref="energyEl"
+          class="w-16 h-16 rounded-full bg-sky-500 flex items-center justify-center text-2xl font-bold"
+        >
+          {{ state.player.energy }}/{{ state.player.maxEnergy }}
+        </div>
+        <!-- 相对左栏绝对定位：贴近手牌底边（手牌下移了 22px，这里留 6px 给层数角标），向上延伸，不占布局高度；高度和列数由 StatusIcons 控制 -->
+        <div class="absolute left-[4.75rem] bottom-[18px]">
+          <StatusIcons :statuses="state.player.statuses" vertical />
         </div>
         <PileButton
           kind="draw"
@@ -504,12 +648,16 @@ onBeforeUnmount(() => {
       </div>
 
       <HandView
+        class="translate-y-[22px]"
         :hand="state.hand"
         :cards="state.cards"
+        :state="state"
         :energy="state.player.energy"
         :dragging-index="drag?.active ? drag.index : null"
+        :pick-indexes="pickable"
         :player-statuses="state.player.statuses"
         :target-statuses="hoverEnemy !== null ? state.enemies[hoverEnemy]?.statuses : undefined"
+        :target-index="hoverEnemy ?? undefined"
         @press="onPress"
       />
 
@@ -611,11 +759,18 @@ onBeforeUnmount(() => {
       </div>
     </template>
 
+    <PendingPicker
+      v-if="!readonly"
+      :state="state"
+      @resolve="(picks) => emit('action', { type: 'resolve', picks })"
+    />
+
     <PileModal
       v-if="pileView"
       :title="pileView.title"
       :pile="pileView.pile"
       :cards="state.cards"
+      :evolve-counts="state.evolveCounts"
       :sorted="openPile === 'draw'"
       @close="openPile = null"
     />

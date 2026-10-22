@@ -10,7 +10,10 @@ import {
 } from './cardHarness'
 
 // 无法打出的诅咒牌另在 curseCards.test.ts 里测
-const skillIds = cardIdsOfKind('skill').filter((id) => !cards[id]!.unplayable)
+const playableSkills = cardIdsOfKind('skill').filter((id) => !cards[id]!.unplayable)
+// 需要选敌人的技能牌（asSkill）：目标行为另在下面单独测
+const skillIds = playableSkills.filter((id) => cards[id]!.target === 'self')
+const targetedSkillIds = playableSkills.filter((id) => cards[id]!.target === 'enemy')
 const blockOf = (id: string) =>
   cards[id]!.effects.reduce((n, e) => n + (e.type === 'block' && !e.perX ? e.amount : 0), 0)
 const has = (id: string, type: string) => cards[id]!.effects.some((e) => e.type === type)
@@ -36,7 +39,9 @@ describe('技能牌：卡池批量校验', () => {
         const s = setupScenario({ hand: [id], enemies: twoSlimes() })
         const { state, events } = playCard(s, id)
         expect(events.some((e) => e.type === 'invalidAction')).toBe(false)
-        expect(state.enemies.map((e) => e.hp)).toEqual([40, 40])
+        // 天命会打出牌堆顶的牌，伤害来自那张牌，不算本牌的直接伤害
+        if (!cards[id]!.effects.some((e) => e.type === 'playTop'))
+          expect(state.enemies.map((e) => e.hp)).toEqual([40, 40])
       })
 
       it('能量不足：打不出，牌留在手里', () => {
@@ -45,7 +50,7 @@ describe('技能牌：卡池批量校验', () => {
         const s = setupScenario({ hand: [id], energy: cost - 1 })
         const { state, events } = playCard(s, id)
         expect(events.some((e) => e.type === 'invalidAction')).toBe(true)
-        expect(state.hand).toEqual([id])
+        expect(state.hand.filter((c) => c !== 'wound')).toEqual([id])
       })
 
       it('牌堆全空也能打出（抽牌不会报错）', () => {
@@ -146,6 +151,37 @@ describe('技能牌：抽牌', () => {
       const { state, events } = playCard(s, id)
       expect(state.hand.length).toBeGreaterThan(0)
       if (count > 1) expect(events).toContainEqual({ type: 'reshuffled' })
+    })
+  }
+})
+
+
+describe('技能牌：选敌人的技能牌（不算攻击牌）', () => {
+  it('卡池里有这类牌', () => {
+    expect(targetedSkillIds.length).toBeGreaterThan(0)
+  })
+
+  for (const id of targetedSkillIds) {
+    describe(`${cards[id]!.name} (${id})`, () => {
+      it('冒烟：能打出、扣对能量、进对牌堆', () => {
+        expect(smokeCheck(id)).toEqual([])
+      })
+      it('效果与卡牌定义一致', () => {
+        const { actual, expected } = effectSnapshot(id)
+        expect(actual).toEqual(expected)
+      })
+      it('不计入本回合的攻击牌数', () => {
+        const { state } = playCard(setupScenario({ hand: [id], enemies: twoSlimes() }), id, 1)
+        expect(state.turnAttacks ?? 0).toBe(0)
+      })
+      it('目标已死亡：打不出，牌和能量原样保留', () => {
+        const s = setupScenario({ hand: [id], enemies: twoSlimes() })
+        s.enemies[1]!.hp = 0
+        const { state, events } = playCard(s, id, 1)
+        expect(events.some((e) => e.type === 'invalidAction')).toBe(true)
+        expect(state.hand.filter((c) => c !== 'wound')).toEqual([id])
+        expect(state.player.energy).toBe(3)
+      })
     })
   }
 })

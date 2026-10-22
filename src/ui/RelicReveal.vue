@@ -7,6 +7,7 @@ let seenSeq = 0
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { fxBatch } from '@/composables/useFx'
 import { relics as relicDefs } from '@/data/items'
+import { isNewEnchant } from '@/composables/useSfxEvents'
 import { resolveCards } from '@/engine/enchant'
 import type { CardDef } from '@/engine/types'
 import CardView from './CardView.vue'
@@ -18,6 +19,10 @@ interface Reveal {
   id?: string
   cards?: { from: string; to: string }[]
   heal?: number
+  /** 附魔（牌上镶嵌宝石）：不走升级的摇晃换牌，只播镶嵌动画和音效 */
+  enchant?: boolean
+  /** 战斗后进化：标题改为“进化” */
+  evolve?: boolean
 }
 let nextKey = 0
 
@@ -27,6 +32,7 @@ const props = defineProps<{ cards: Record<string, CardDef> }>()
 const SHAKE_MS = 900
 const CARD_HOLD_MS = 900
 const HEAL_MS = 1100
+const ENCHANT_MS = 1600
 
 /** 击打火花：白色楔形，从牌面向外放射；角度均分一圈，长度 / 宽度 / 延迟略作错落 */
 const SPARK_COUNT = 14
@@ -92,7 +98,10 @@ watch(current, (r) => {
   clearTimers()
   phase.value = 0
   if (!r) return
-  if (r.cards?.length) {
+  // 音效不在这里：见 useSfxEvents，按事件发声，与动画是否播放无关
+  if (r.enchant) {
+    timers.push(setTimeout(advance, ENCHANT_MS))
+  } else if (r.cards?.length) {
     timers.push(setTimeout(() => (phase.value = 1), SHAKE_MS))
     timers.push(setTimeout(advance, SHAKE_MS + CARD_HOLD_MS))
   } else timers.push(setTimeout(advance, HEAL_MS))
@@ -107,8 +116,10 @@ watch(
     const found: Reveal[] = []
     for (const e of b.events) {
       if (e.type === 'cardsUpgraded') found.push({ key: nextKey++, cards: e.cards })
-      else if (e.type === 'relicGained' && (e.cards?.length || e.heal))
-        found.push({ key: nextKey++, id: e.id, cards: e.cards, heal: e.heal })
+      else if (e.type === 'cardsEvolved') found.push({ key: nextKey++, cards: e.cards, evolve: true })
+      else if (e.type === 'relicGained' && (e.cards?.length || e.heal)) {
+        found.push({ key: nextKey++, id: e.id, cards: e.cards, heal: e.heal, enchant: isNewEnchant(e.cards) })
+      }
     }
     if (found.length) queue.value = [...queue.value, ...found]
   },
@@ -135,7 +146,9 @@ onBeforeUnmount(clearTimers)
       <div class="text-6xl">{{ def.icon }}</div>
       <div class="text-2xl font-bold text-amber-300">{{ def.name }}</div>
       <div class="text-slate-300">{{ def.text }}</div>
+      <div v-if="def.lore" class="text-sm italic text-slate-400">{{ def.lore }}</div>
     </div>
+    <div v-if="current.evolve" class="text-2xl font-bold text-amber-300">成长</div>
     <div
       v-if="pairs.length"
       class="flex flex-wrap justify-center items-start"
@@ -150,6 +163,13 @@ onBeforeUnmount(clearTimers)
           zIndex: i,
         }"
       >
+        <CardView
+          v-if="current.enchant"
+          :card="p.to"
+          :playable="true"
+          class="card-inlay pointer-events-none"
+        />
+        <template v-else>
         <CardView
           v-if="phase === 0"
           :card="p.from"
@@ -173,6 +193,7 @@ onBeforeUnmount(clearTimers)
             }"
           />
         </div>
+        </template>
       </div>
     </div>
     <div class="text-xs text-slate-500">点击任意处跳过</div>
@@ -192,6 +213,32 @@ onBeforeUnmount(clearTimers)
 }
 .card-flash {
   animation: card-flash 0.5s ease-out;
+}
+/* 附魔镶嵌：牌从略大处“嵌”下来，紫光一闪后收束，不摇晃也没有火花 */
+.card-inlay {
+  animation: card-inlay 1.1s ease-out both;
+}
+@keyframes card-inlay {
+  0% {
+    transform: scale(1.35);
+    filter: brightness(1.8) drop-shadow(0 0 4px #c4b5fd);
+  }
+  25% {
+    transform: scale(1.1);
+    filter: brightness(1.5) drop-shadow(0 0 26px #a78bfa);
+  }
+  35% {
+    transform: scale(1.18);
+    filter: brightness(2) drop-shadow(0 0 34px #ddd6fe);
+  }
+  60% {
+    transform: scale(1.15);
+    filter: brightness(1.2) drop-shadow(0 0 18px #a78bfa);
+  }
+  100% {
+    transform: scale(1.15);
+    filter: brightness(1) drop-shadow(0 0 10px rgba(167, 139, 250, 0.6));
+  }
 }
 /* 卡牌周围的击打火花：--a/--r/--len/--w/--d 由模板按粒子给出 */
 .spark-field {

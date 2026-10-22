@@ -33,14 +33,6 @@ export const doctorWhite: Card[] = [
     .exhaustWounds('hand', 'block', 3)
     .reward()
     .upgrade((u) => u.exhaustWounds('hand', 'block', 5)),
-  Card.white('gouge', '剜肉')
-    .icon('🔪')
-    .cost(0)
-    .targetSelf()
-    .addWound(1)
-    .draw(2)
-    .reward()
-    .upgrade((u) => u.addWound(1).draw(3)),
   Card.white('peck', '啄食')
     .icon('🐦')
     .cost(1)
@@ -53,10 +45,10 @@ export const doctorWhite: Card[] = [
     .icon('🪶')
     .cost(1)
     .targetSelf()
-    .block(4)
-    .applyStatus('regen', 1)
+    .block(3)
+    .applyStatus('regen', 3)
     .reward()
-    .upgrade((u) => u.block(7).applyStatus('regen', 2)),
+    .upgrade((u) => u.block(4).applyStatus('regen', 4)),
   Card.white('herbPouch', '草药包')
     .icon('🌱')
     .cost(0)
@@ -91,12 +83,20 @@ export const doctorWhite: Card[] = [
     .applyStatus('gash', 1, 'target')
     .reward()
     .upgrade((u) => u.damage(5).applyStatus('gash', 2, 'target')),
-  Card.white('splint', '夹板')
-    .icon('🪵')
-    .cost(1)
+  Card.white('rummage', '翻找')
+    .icon('🧰')
+    .cost(0)
     .targetSelf()
-    .block(8)
+    .fetch('discard', 1)
     .addWound(1)
     .reward()
-    .upgrade((u) => u.block(11).addWound(1)),
+    .upgrade((u) => u.fetch('discard', 2).addWound(1)),
+  Card.white('poisonStab', '未消毒的手术刀')
+    .icon('🔪')
+    .cost(1)
+    .targetEnemy()
+    .damage(5)
+    .applyStatus('poison', 3, 'target')
+    .reward()
+    .upgrade((u) => u.damage(7).applyStatus('poison', 4, 'target')),
 ]

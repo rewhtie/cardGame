@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, onBeforeUnmount, ref } from 'vue'
 import { cards } from '@/data/cards'
+import { playSfx } from '@/composables/useSfx'
 import { potions, relics } from '@/data/items'
 import { maxPotions, type RunState } from '@/engine/run'
 import type { ShopItem } from '@/engine/shop'
@@ -21,6 +22,40 @@ const removing = ref(false)
 const shop = () => props.run.shop!
 const canAfford = (item: ShopItem) => !item.sold && props.run.gold >= item.price
 const potionFull = () => props.run.potions.length >= maxPotions(props.run.relics)
+
+/** 买不起：被点的价格抖一下，并提示金币不足 */
+const shaking = ref('')
+const notice = ref('')
+let shakeTimer = 0
+let noticeTimer = 0
+async function poor(key: string) {
+  void playSfx('run.shop.poor')
+  shaking.value = ''
+  await nextTick() // 先清空再赋值，连点时动画才会重播
+  shaking.value = key
+  clearTimeout(shakeTimer)
+  shakeTimer = window.setTimeout(() => (shaking.value = ''), 450)
+  // 提示的消失时间定死：显示期间再点不会续期
+  if (notice.value) return
+  notice.value = '金币不足'
+  noticeTimer = window.setTimeout(() => (notice.value = ''), 1500)
+}
+// 音效面板复现"买不起"场景时需要从外部触发一次
+defineExpose({ poor })
+onBeforeUnmount(() => {
+  clearTimeout(shakeTimer)
+  clearTimeout(noticeTimer)
+})
+function buy(item: ShopItem, kind: 'card' | 'relic' | 'potion', i: number) {
+  if (item.sold) return
+  if (!canAfford(item)) return void poor(`${kind}${i}`)
+  emit('buy', kind, i)
+}
+function startRemove() {
+  if (shop().removed) return
+  if (props.run.gold < shop().removeCost) return void poor('remove')
+  removing.value = true
+}
 </script>
 
 <template>
@@ -46,97 +81,107 @@ const potionFull = () => props.run.potions.length >= maxPotions(props.run.relics
     <header class="title">🛒 商店</header>
 
     <div class="rows">
-      <!-- 第一行：5 张角色卡 + 3 个遗物 -->
+      <!-- 第一行：5 张角色卡 -->
       <div class="row">
         <div class="group">
           <div v-for="(item, i) in shop().cards.slice(0, 5)" :key="i" class="slot">
             <template v-if="item">
-              <div :class="{ sold: item.sold }">
+              <div :class="{ sold: item.sold, shake: shaking === `card${i}` }">
                 <CardView
                   :card="cards[item.id]!"
-                  :playable="canAfford(item)"
-                  @click="canAfford(item) && emit('buy', 'card', i)"
+                  :playable="!item.sold"
+                  @click="buy(item, 'card', i)"
                 />
               </div>
-              <ShopPrice :item="item" :gold="run.gold" />
+              <ShopPrice :item="item" :gold="run.gold" :class="{ shake: shaking === `card${i}` }" />
             </template>
-          </div>
-        </div>
-        <div class="group">
-          <div v-for="(item, i) in shop().relics" :key="item.id" class="slot">
-            <HoverTip
-              :icon="relics[item.id]?.icon ?? ''"
-              :name="relics[item.id]?.name ?? item.id"
-              :text="relics[item.id]?.text ?? ''"
-              tag="遗物"
-            >
-              <button
-                class="item"
-                :class="{ sold: item.sold }"
-                :disabled="!canAfford(item)"
-                @click="emit('buy', 'relic', i)"
-              >
-                {{ relics[item.id]?.icon }}
-              </button>
-            </HoverTip>
-            <ShopPrice :item="item" :gold="run.gold" />
           </div>
         </div>
       </div>
 
-      <!-- 第二行：2 张无色卡（暂空） + 3 瓶药水 + 删牌 -->
+      <!-- 第二行：2 张无色卡；右侧上排遗物、下排药水，再右为删牌 -->
       <div class="row">
         <div class="group">
           <div v-for="(item, i) in shop().cards.slice(5)" :key="i" class="slot">
             <template v-if="item">
-              <div :class="{ sold: item.sold }">
+              <div :class="{ sold: item.sold, shake: shaking === `card${i + 5}` }">
                 <CardView
                   :card="cards[item.id]!"
-                  :playable="canAfford(item)"
-                  @click="canAfford(item) && emit('buy', 'card', i + 5)"
+                  :playable="!item.sold"
+                  @click="buy(item, 'card', i + 5)"
                 />
               </div>
-              <ShopPrice :item="item" :gold="run.gold" />
+              <ShopPrice :item="item" :gold="run.gold" :class="{ shake: shaking === `card${i + 5}` }" />
             </template>
             <div v-else class="empty-card">无色卡</div>
           </div>
         </div>
-        <div class="group">
-          <div v-for="(item, i) in shop().potions" :key="i" class="slot">
-            <HoverTip
-              :icon="potions[item.id]?.icon ?? ''"
-              :name="potions[item.id]?.name ?? item.id"
-              :text="potions[item.id]?.text ?? ''"
-              tag="药水"
-            >
-              <button
-                class="item"
-                :class="{ sold: item.sold }"
-                :disabled="!canAfford(item) || potionFull()"
-                @click="emit('buy', 'potion', i)"
+        <div class="shelf">
+          <div class="aisle">
+            <div v-for="(item, i) in shop().relics" :key="item.id" class="slot">
+              <HoverTip
+                :icon="relics[item.id]?.icon ?? ''"
+                :name="relics[item.id]?.name ?? item.id"
+                :text="relics[item.id]?.text ?? ''"
+                :lore="relics[item.id]?.lore"
+                tag="遗物"
               >
-                {{ potions[item.id]?.icon }}
-              </button>
-            </HoverTip>
-            <ShopPrice :item="item" :gold="run.gold" />
+                <button
+                  class="item"
+                  :class="{ sold: item.sold, shake: shaking === `relic${i}` }"
+                  :disabled="item.sold"
+                  @click="buy(item, 'relic', i)"
+                >
+                  {{ relics[item.id]?.icon }}
+                </button>
+              </HoverTip>
+              <ShopPrice :item="item" :gold="run.gold" :class="{ shake: shaking === `relic${i}` }" />
+            </div>
           </div>
-          <div class="slot">
+          <div class="aisle">
+            <div v-for="(item, i) in shop().potions" :key="i" class="slot">
+              <HoverTip
+                :icon="potions[item.id]?.icon ?? ''"
+                :name="potions[item.id]?.name ?? item.id"
+                :text="potions[item.id]?.text ?? ''"
+                tag="药水"
+              >
+                <button
+                  class="item"
+                  :class="{ sold: item.sold, shake: shaking === `potion${i}` }"
+                  :disabled="item.sold || potionFull()"
+                  @click="buy(item, 'potion', i)"
+                >
+                  {{ potions[item.id]?.icon }}
+                </button>
+              </HoverTip>
+              <ShopPrice :item="item" :gold="run.gold" :class="{ shake: shaking === `potion${i}` }" />
+            </div>
+          </div>
+          <div class="slot remove-slot">
             <button
               class="item remove"
-              :class="{ sold: shop().removed }"
-              :disabled="shop().removed || run.gold < shop().removeCost"
+              :class="{ sold: shop().removed, shake: shaking === 'remove' }"
+              :disabled="shop().removed"
               title="删除一张牌"
-              @click="removing = true"
+              @click="startRemove"
             >
               🗑️
             </button>
-            <span class="price" :class="{ poor: !shop().removed && run.gold < shop().removeCost }">
+            <span
+              class="price"
+              :class="{ poor: !shop().removed && run.gold < shop().removeCost, shake: shaking === 'remove' }"
+            >
               {{ shop().removed ? '已使用' : `删牌 💰 ${shop().removeCost}` }}
             </span>
           </div>
         </div>
       </div>
     </div>
+
+    <Transition name="notice">
+      <div v-if="notice" class="notice">{{ notice }}</div>
+    </Transition>
 
     <button class="btn-primary leave" @click="emit('leave')">离开商店</button>
   </div>
@@ -175,9 +220,37 @@ const potionFull = () => props.run.potions.length >= maxPotions(props.run.relics
   gap: 1rem;
   align-items: flex-start;
 }
-.row > .group:last-child {
-  width: 15rem;
-  justify-content: flex-end;
+.shelf {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: 1fr 1fr;
+  flex: 1;
+  align-content: center;
+  justify-content: center;
+  column-gap: 3rem;
+  row-gap: 0.6rem;
+}
+.aisle {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+/* 遗物 / 药水格子定宽：价格、折扣标签变化都不会撑开排版 */
+.aisle > .slot {
+  width: 5.5rem;
+}
+.remove-slot {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  align-self: center;
+}
+.remove-slot {
+  width: 5.5rem;
+}
+.item.remove {
+  width: 4.6rem;
+  height: 4.6rem;
+  font-size: 2.2rem;
 }
 .slot {
   display: flex;
@@ -191,7 +264,7 @@ const potionFull = () => props.run.potions.length >= maxPotions(props.run.relics
   color: #fcd34d;
 }
 .price.poor {
-  color: #f87171;
+  color: #94a3b8;
 }
 .sold {
   opacity: 0.3;
@@ -232,5 +305,69 @@ const potionFull = () => props.run.potions.length >= maxPotions(props.run.relics
 }
 .leave {
   margin-top: 0.5rem;
+}
+.shake {
+  animation: shake 0.45s;
+}
+/* 商店里的卡牌悬浮上浮得更少（手牌里仍是原来的 1rem） */
+.shop :deep(.card.playable:hover) {
+  transform: translateY(-0.5rem);
+}
+/* 买不起时的抖动：卡牌先落回原位再左右晃动，和药水、遗物一致 */
+.shake :deep(.card.playable:hover) {
+  transform: none;
+  filter: none;
+}
+/* 价格是行内元素，transform 要变成 inline-flex 才生效 */
+span.shake {
+  display: inline-flex;
+}
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
+.notice {
+  position: absolute;
+  top: 5.5rem;
+  left: 50%;
+  z-index: 50;
+  transform: translateX(-50%);
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.notice-enter-active {
+  animation: notice-pop 0.25s ease-out;
+}
+.notice-leave-active {
+  transition: opacity 0.3s;
+}
+@keyframes notice-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+.notice-enter-from,
+.notice-leave-to {
+  opacity: 0;
 }
 </style>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { cards, starterDeck } from '@/data/cards'
-import { slime, slimeBoss } from '@/data/enemies'
+import { drainer, slime, slimeBoss } from '@/data/enemies'
 import type { GameMap } from './map'
 import { createRun, dispatchRun, reachableIds, type RunState } from './run'
 
@@ -164,9 +164,9 @@ describe('run 休息与占位', () => {
     expect(run.player.hp).toBe(40)
   })
 
-  it('商店等占位节点可直接离开', () => {
+  it('商店节点进入商店界面，可直接离开', () => {
     let run = atNode('1-1')
-    expect(run.screen).toBe('placeholder')
+    expect(run.screen).toBe('shop')
     run = send(run, { type: 'leave' })
     expect(run.screen).toBe('map')
   })
@@ -231,7 +231,7 @@ describe('先古房', () => {
     run = send(run, { type: 'pickCards', deckIndexes: [0] })
     expect(run.screen).toBe('map')
     expect(run.relics).toEqual(['trainingGuide'])
-    expect(run.content.deck[0]).toBe('strike*')
+    expect(run.content.deck[0]).toBe('strike@grow')
     expect(run.content.deck.filter((c) => c === 'strike')).toHaveLength(4)
   })
 
@@ -282,7 +282,7 @@ describe('先古房', () => {
     expect(run.screen).toBe('reward')
     expect(run.rewards).toEqual([])
     expect(run.relics).toEqual(['trainingGuide'])
-    expect(run.content.deck[0]).toBe('strike*')
+    expect(run.content.deck[0]).toBe('strike@grow')
   })
 
   it('非法选择被拒绝', () => {
@@ -306,5 +306,40 @@ describe('Boss 节点出怪', () => {
   it('没配置 boss 时仍用原来的敌人', () => {
     const r = send(newRun(), { type: 'chooseNode', id: 'boss', god: true })
     expect(r.battle!.enemies[0]!.def.id).toBe('slime')
+  })
+})
+
+describe('精英节点出怪', () => {
+  const eliteMap: GameMap = {
+    ...testMap,
+    floors: [[{ id: '0-0', floor: 0, col: 0, type: 'elite', next: [] }]],
+  }
+  const mk = (elite?: typeof drainer) => ({
+    ...createRun({ seed: 'TEST', cards, deck: starterDeck, enemy: slime, elite }),
+    map: eliteMap,
+  })
+  it('精英节点只出汲取者', () => {
+    const r = send(mk(drainer), { type: 'chooseNode', id: '0-0', god: true })
+    expect(r.battle!.enemies).toHaveLength(1)
+    expect(r.battle!.enemies[0]!.def.id).toBe('drainer')
+  })
+  it('事件战斗不受精英配置影响', () => {
+    const run = { ...mk(drainer), eventBattle: { enemies: [slime] } } as unknown as RunState
+    const r = send(run, { type: 'chooseNode', id: '0-0', god: true })
+    expect(r.battle!.enemies[0]!.def.id).not.toBe('drainer')
+  })
+  it('没配置 elite 时仍用原来的敌人', () => {
+    const r = send(mk(), { type: 'chooseNode', id: '0-0', god: true })
+    expect(r.battle!.enemies[0]!.def.id).toBe('slime')
+  })
+})
+
+describe('战斗内偷来的最大生命值', () => {
+  it('战斗结束后当前生命不超过整局最大生命', () => {
+    const start = send(newRun(), { type: 'chooseNode', id: '0-0' })
+    const maxHp = start.player.maxHp
+    const won = send(winBattle(start, maxHp + 5), { type: 'continue' })
+    expect(won.player.maxHp).toBe(maxHp)
+    expect(won.player.hp).toBe(maxHp)
   })
 })

@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { optionDisabled, type EventDef } from '@/engine/event'
 import type { RunState } from '@/engine/run'
+import type { CardDef } from '@/engine/types'
+import CardView from './CardView.vue'
 
 const props = defineProps<{ run: RunState; def: EventDef }>()
 defineEmits<{ choose: [index: number]; leave: [] }>()
@@ -10,6 +12,31 @@ const chosen = computed(() => props.run.event?.optionIndex != null)
 const options = computed(() =>
   props.def.options.map((opt) => ({ label: opt.label, reason: optionDisabled(props.run, opt) })),
 )
+
+const cardByName = computed(() =>
+  Object.fromEntries(Object.values(props.run.content.cards).map((c) => [c.name, c])),
+)
+
+/** 把选项文字里的【卡牌名】切出来；能对上卡牌定义的加下划线 + 悬浮牌面 */
+function parts(label: string) {
+  return label
+    .split(/(【.+?】)/)
+    .filter(Boolean)
+    .map((text) => {
+      const name = /^【(.+)】$/.exec(text)?.[1]
+      return { text, card: name ? cardByName.value[name] : undefined }
+    })
+}
+
+/** 悬浮中的卡牌预览（视口坐标，文字左侧垂直居中）；null 表示不显示 */
+const tip = ref<{ x: number; y: number; card: CardDef } | null>(null)
+function showTip(ev: MouseEvent, card: CardDef) {
+  const r = (ev.currentTarget as HTMLElement).getBoundingClientRect()
+  // 牌高约 13rem，夹在视口内避免被上下边缘截掉
+  const half = 112
+  const y = Math.min(Math.max(r.top + r.height / 2, half + 8), window.innerHeight - half - 8)
+  tip.value = { x: r.left - 12, y, card }
+}
 </script>
 
 <template>
@@ -18,7 +45,18 @@ const options = computed(() =>
       <div class="flex flex-col items-center gap-4 w-72 text-center">
         <span class="orb">{{ def.icon }}</span>
         <span class="banner">{{ def.title }}</span>
-        <p class="desc">{{ def.text }}</p>
+        <p class="desc">
+          <template v-for="(p, j) in parts(def.text)" :key="j">
+            <span
+              v-if="p.card"
+              class="term"
+              @mouseenter="showTip($event, p.card)"
+              @mouseleave="tip = null"
+              >{{ p.text }}</span
+            >
+            <template v-else>{{ p.text }}</template>
+          </template>
+        </p>
       </div>
 
       <div class="flex flex-col gap-3 w-[26rem]">
@@ -30,12 +68,34 @@ const options = computed(() =>
             :disabled="opt.reason !== null"
             @click="$emit('choose', i)"
           >
-            <span>{{ opt.label }}</span>
+            <span>
+              <template v-for="(p, j) in parts(opt.label)" :key="j">
+                <span
+                  v-if="p.card"
+                  class="term"
+                  @mouseenter="showTip($event, p.card)"
+                  @mouseleave="tip = null"
+                  >{{ p.text }}</span
+                >
+                <template v-else>{{ p.text }}</template>
+              </template>
+            </span>
           </button>
         </template>
         <button v-else class="option" @click="$emit('leave')">继续</button>
       </div>
     </div>
+
+    <!-- 卡牌预览：传送到 body，避免被舞台的 transform / 裁剪影响 -->
+    <Teleport to="body">
+      <div
+        v-if="tip"
+        class="card-tip"
+        :style="{ left: tip.x + 'px', top: tip.y + 'px' }"
+      >
+        <CardView :card="tip.card" :playable="true" />
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -106,5 +166,16 @@ const options = computed(() =>
   font-size: 0.95rem;
   line-height: 1.6;
   color: #d8c8b0;
+}
+/* 选项里的卡牌名：实线下划线 */
+.term {
+  cursor: help;
+  text-decoration: underline;
+}
+.card-tip {
+  position: fixed;
+  z-index: 2147483647;
+  transform: translate(-100%, -50%);
+  pointer-events: none;
 }
 </style>

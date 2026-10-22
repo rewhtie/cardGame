@@ -2,8 +2,8 @@
 import AnvilIcon from './AnvilIcon.vue'
 import FireIcon from './FireIcon.vue'
 
-defineProps<{ hp: number; maxHp: number; healAmount: number; canForge: boolean }>()
-defineEmits<{ rest: []; forge: []; leave: [] }>()
+defineProps<{ hp: number; maxHp: number; healAmount: number; canForge: boolean; special?: { name: string; icon: string; desc: string } | null; specialBlocked?: string | null }>()
+defineEmits<{ rest: []; forge: []; special: []; leave: [] }>()
 </script>
 
 <template>
@@ -23,6 +23,13 @@ defineEmits<{ rest: []; forge: []; leave: [] }>()
         <span class="banner">锻造</span>
         <span class="desc">升级一张牌</span>
         <span v-if="!canForge" class="note">没有可升级的牌</span>
+      </button>
+
+      <button v-if="special" class="option" :disabled="!!specialBlocked" @click="$emit('special')">
+        <span class="orb"><span class="text-5xl">{{ special.icon }}</span></span>
+        <span class="banner">{{ special.name }}</span>
+        <span class="desc">{{ special.desc }}</span>
+        <span v-if="specialBlocked" class="note">{{ specialBlocked }}</span>
       </button>
 
       <button class="option" @click="$emit('leave')">

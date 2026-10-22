@@ -150,9 +150,10 @@ describe('荆棘护甲 (thornArmor)', () => {
   })
 
   it('攻击被完全格挡时也会反弹', () => {
-    const s = setupScenario({ hand: ['thornArmor', 'ironWall'], energy: 3 })
-    const after = playSequence(s, ['thornArmor', 'ironWall']).state
+    const s = setupScenario({ hand: ['thornArmor', 'defend', 'defend'], energy: 3 })
+    const after = playSequence(s, ['thornArmor', 'defend', 'defend']).state
     const { state } = dispatch(after, { type: 'endTurn' })
+    // 两张防御共 10 点格挡，完全挡下史莱姆的 8 点攻击
     expect(state.player.hp).toBe(80)
     expect(state.enemies[0]!.hp).toBe(40 - 3)
   })

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { cards, starterDeck } from '@/data/cards'
 import { slime } from '@/data/enemies'
 import { createBattle, dispatch } from './battle'
-import { calcAttack, calcBlock } from './statuses'
+import { calcAttack, calcBlock, statusById, statusDescription, statusTip } from './statuses'
 import type { BattleState, CardDef } from './types'
 
 function start(seed = 1): BattleState {
@@ -299,29 +299,29 @@ describe('Card 构建器', () => {
     const c = cards.inflame!
     expect(c.kind).toBe('power')
     expect(c.target).toBe('self')
-    expect(c.text).toBe('获得 2 层力量')
+    expect(c.text).toBe('获得 2 层力量。')
   })
   it('消耗牌文案带"消耗"，且不是能力牌', () => {
     expect(cards.bandage).toMatchObject({
       kind: 'skill',
       exhaust: true,
-      text: '恢复 6 点生命，消耗',
+      text: '恢复 6 点生命。\n消耗',
     })
   })
   it('痛击：攻击牌 + 给予易伤', () => {
-    expect(cards.bash).toMatchObject({ kind: 'attack', text: '造成 8 点伤害，给予 2 层易伤' })
+    expect(cards.bash).toMatchObject({ kind: 'attack', text: '造成 8 点伤害，给予 2 层易伤。' })
   })
   it('附魔后状态层数与文案同步 +1', () => {
     const s = createBattle({
       seed: 1,
-      deck: ['inflame*', 'defend', 'defend', 'defend', 'defend'],
+      deck: ['inflame@grow', 'defend', 'defend', 'defend', 'defend'],
       enemy: slime,
       cards,
     }).state
-    const id = s.hand.find((c) => c.startsWith('inflame*'))!
+    const id = s.hand.find((c) => c.startsWith('inflame@grow'))!
     const { state } = dispatch({ ...s, hand: [id] }, { type: 'playCard', handIndex: 0 })
     expect(state.player.statuses.strength).toBe(2)
-    expect(state.cards[id]!.text).toBe('获得 3 层力量')
+    expect(state.cards[id]!.text).toBe('获得 3 层力量。')
   })
 })
 
@@ -329,5 +329,45 @@ describe('脆弱', () => {
   it('格挡 ×0.75，与敏捷先加后乘', () => {
     expect(calcBlock(10, { frail: 1 })).toBe(7)
     expect(calcBlock(10, { frail: 1, dexterity: 2 })).toBe(9)
+  })
+})
+
+describe('负层数', () => {
+  it('负力量减少伤害，最低 0', () => {
+    expect(calcAttack(6, { strength: -2 }, {})).toBe(4)
+    expect(calcAttack(6, { strength: -9 }, {})).toBe(0)
+  })
+  it('负敏捷减少格挡，最低 0', () => {
+    expect(calcBlock(5, { dexterity: -2 })).toBe(3)
+    expect(calcBlock(5, { dexterity: -5 })).toBe(0)
+  })
+  it('文案不出现 +-', () => {
+    expect(statusDescription('strength', -3)).not.toContain('+-')
+    expect(statusDescription('strength', -3)).toContain('-3')
+    expect(statusTip(statusById.strength!, -3).total).not.toContain('+-')
+    expect(statusDescription('strength', 3)).toContain('+3')
+  })
+})
+
+describe('受创（四舍五入的受伤加成）', () => {
+  it('每层 +20%，四舍五入', () => {
+    expect(calcAttack(6, undefined, { cracked: 1 })).toBe(7)
+    expect(calcAttack(6, undefined, { cracked: 2 })).toBe(8)
+  })
+  it('易伤单独存在仍向下取整', () => {
+    expect(calcAttack(5, undefined, { vulnerable: 1 })).toBe(7)
+  })
+  it('与易伤同时存在', () => {
+    expect(calcAttack(10, undefined, { vulnerable: 1, cracked: 1 })).toBe(18)
+  })
+})
+
+describe('statusTip 当前层数简写', () => {
+  it.each([
+    ['strength', 6, '+6'],
+    ['swordIntent', 3, '+30%'],
+    ['poison', 4, '4 点'],
+  ])('%s %i 层 → %s', (id, n, want) => {
+    expect(statusTip(statusById[id]!, n).total).toBe(want)
   })
 })

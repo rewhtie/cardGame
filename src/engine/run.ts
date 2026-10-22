@@ -1,5 +1,5 @@
 import { createBattle, dispatch as dispatchBattle } from './battle'
-import { isForgeable, rawId, upgradedId } from './enchant'
+import { evolveDeck, isForgeable, progressOf, rawId, upgradedId } from './enchant'
 import {
   NO_OPTION_TEXT,
   optionDisabled,
@@ -9,12 +9,13 @@ import {
   type EventDef,
   type EventState,
 } from './event'
+import { pickEncounter } from './encounter'
 import { findNode, generateMap, type GameMap } from './map'
 import { fieldHeal } from './potions'
 import { generateShop, type ShopState } from './shop'
-import { RELIC_RULES, relicNeedsPick, relicPotionSlots, resolveRelicPick } from './relics'
+import { RELIC_RULES, cardOnAdd, relicNeedsPick, relicPotionSlots, resolveRelicPick } from './relics'
 import { createRng, deriveSeed, sample } from './seed'
-import type { Action, BattleState, CardDef, EnemyDef, GameEvent } from './types'
+import type { Action, BattleState, CardDef, EncounterDef, EnemyDef, GameEvent } from './types'
 
 export type RunScreen =
   | 'map'
@@ -47,10 +48,16 @@ export interface RunContent {
   enemies?: EnemyDef[]
   /** Boss 节点的敌人；缺省时用 enemies */
   boss?: EnemyDef
+  /** 精英节点出的怪 */
+  elite?: EnemyDef
   /** 普通战斗节点的怪物池：每个节点按种子固定出一只；缺省时用 enemies */
   monsters?: EnemyDef[]
+  /** 固定遭遇（组合怪）：楼层命中时按概率优先于威胁值预算 */
+  encounters?: EncounterDef[]
   /** 可作为卡牌奖励出现的卡牌 id */
   rewardCards?: string[]
+  /** 通用无色牌的奖励候选：商店后 2 个卡位从这里抽，角色卡位会排除它们 */
+  colorlessCards?: string[]
   potionIds?: string[]
   relicIds?: string[]
   /** 随机事件池；缺省时事件节点退回占位界面 */
@@ -116,6 +123,8 @@ export type RunAction =
   | { type: 'openForge' }
   /** 火堆：锻造（升级）牌组中第 deckIndex 张牌 */
   | { type: 'forgeCard'; deckIndex: number }
+  /** 火堆：职业专属选项（训练 / 药剂台 / 扎根） */
+  | { type: 'campfireSpecial' }
   | { type: 'leave' }
   /** 商店：购买第 index 件商品 */
   | { type: 'buyShop'; kind: 'card' | 'relic' | 'potion'; index: number }
@@ -181,8 +190,11 @@ export function createRun(config: RunConfig): RunState {
       enemy: config.enemy,
       enemies: config.enemies,
       boss: config.boss,
+      elite: config.elite,
       monsters: config.monsters,
+      encounters: config.encounters,
       rewardCards: config.rewardCards,
+      colorlessCards: config.colorlessCards,
       potionIds: config.potionIds,
       relicIds: config.relicIds,
       events: config.events,
@@ -248,9 +260,11 @@ function chooseNode(run: RunState, id: string, god = false): RunResult {
 function battleEnemies(run: RunState, nodeId: string): EnemyDef[] {
   const type = findNode(run.map, nodeId)?.type
   if (run.content.boss && !run.eventBattle && type === 'boss') return [run.content.boss]
+  if (run.content.elite && !run.eventBattle && type === 'elite') return [run.content.elite]
   const pool = run.content.monsters
   if (pool?.length && !run.eventBattle && type === 'monster') {
-    return sample(pool, 1, createRng(deriveSeed(run.seed, `enemy:${nodeId}`)))
+    const floor = findNode(run.map, nodeId)?.floor ?? 1
+    return pickEncounter(pool, floor, run.content.encounters ?? [], createRng(deriveSeed(run.seed, `enemy:${nodeId}`)))
   }
   return run.content.enemies ?? [run.content.enemy]
 }
@@ -266,6 +280,7 @@ function startBattle(run: RunState, nodeId: string): RunResult {
     playerHp: run.player.hp,
     relics: run.relics,
     relicState: run.relicState ?? {},
+    ...(run.content.rewardCards && { discoverPool: run.content.rewardCards }),
   })
   return { state: { ...run, screen: 'battle', battle }, events }
 }
@@ -321,8 +336,16 @@ function pickCards(run: RunState, deckIndexes: number[]): RunResult {
 function battleAction(run: RunState, action: Action): RunResult {
   if (run.screen !== 'battle' || !run.battle) return invalid(run, '当前不在战斗中')
   const { state: battle, events, pre } = dispatchBattle(run.battle, action)
+  // 战斗里获得的药水（炼金）放进药水栏，栏满则丢失
+  let potions = run.potions
+  let settled = battle
+  if (battle.newPotions?.length) {
+    const room = Math.max(0, maxPotions(run.relics) - potions.length)
+    potions = [...potions, ...battle.newPotions.slice(0, room)]
+    settled = { ...battle, newPotions: [] }
+  }
   return {
-    state: { ...run, battle },
+    state: { ...run, battle: settled, potions },
     events,
     ...(pre && { pre: { ...run, battle: pre } }),
   }
@@ -388,16 +411,21 @@ function continueRun(run: RunState): RunResult {
   }
   if (battle.phase !== 'won') return invalid(run, '战斗尚未结束')
 
-  const player = { ...run.player, hp: battle.player.hp }
+  // 战斗内偷来的最大生命值随战斗结束还原：当前生命不超过整局的最大生命
+  const player = { ...run.player, hp: Math.min(run.player.maxHp, battle.player.hp) }
+  // 胜利（含敌人逃脱）后结算进化；战败不结算
+  const evo = evolveDeck(run.content.cards, run.content.deck, battle.evolveCounts ?? {})
+  const content = { ...run.content, deck: evo.deck }
+  const evolvedEvents: GameEvent[] = evo.evolved.length ? [{ type: 'cardsEvolved', cards: evo.evolved }] : []
   if (battle.escaped) {
     // 敌人逃脱：没有奖励，被偷的金币拿不回来
     return {
-      state: { ...run, screen: 'map', battle: null, player, gold: battle.gold, relicState: battle.relicState, rewards: [], eventBattle: null },
-      events: [],
+      state: { ...run, content, screen: 'map', battle: null, player, gold: battle.gold, relicState: battle.relicState, rewards: [], eventBattle: null },
+      events: evolvedEvents,
     }
   }
   const node = run.current ? findNode(run.map, run.current) : undefined
-  const rewards = generateRewards(run, run.eventBattle?.kind ?? node?.type ?? 'monster')
+  const rewards = generateRewards({ ...run, content }, run.eventBattle?.kind ?? node?.type ?? 'monster')
   if (run.eventBattle?.bonus?.gold) {
     rewards.unshift({ type: 'gold', amount: run.eventBattle.bonus.gold })
   }
@@ -412,7 +440,7 @@ function continueRun(run: RunState): RunResult {
     )
     if (id) rewards.push({ type: 'relic', id })
   }
-  return { state: { ...run, screen: 'reward', battle: null, player, gold: battle.gold, relicState: battle.relicState, rewards }, events: [] }
+  return { state: { ...run, content, screen: 'reward', battle: null, player, gold: battle.gold, relicState: battle.relicState, rewards }, events: evolvedEvents }
 }
 
 function generateRewards(run: RunState, type: string): Reward[] {
@@ -455,7 +483,7 @@ function claimReward(run: RunState, index: number, pick?: number): RunResult {
       if (pick === SKIP_PICK) return { state: next, events: [] }
       const cardId = pick === undefined ? undefined : reward.choices[pick]
       if (cardId === undefined) return invalid(run, '请选择一张卡牌')
-      const content = { ...run.content, deck: [...run.content.deck, cardId] }
+      const content = { ...run.content, deck: [...run.content.deck, cardOnAdd(run, cardId)] }
       return { state: { ...next, content }, events: [] }
     }
   }
@@ -474,6 +502,77 @@ function rest(run: RunState): RunResult {
   return {
     state: { ...run, screen: 'map', player: { ...run.player, hp } },
     events: [{ type: 'healed', target: 'player', amount: hp - run.player.hp }],
+  }
+}
+
+/** 火堆的职业专属选项 */
+export interface CampfireSpecial {
+  name: string
+  icon: string
+  desc: string
+}
+
+export const TRAIN_PLAYS = 1
+export const BREW_COUNT = 2
+export const ROOT_RATIO = 0.2
+
+export const CAMPFIRE_SPECIALS: Readonly<Record<string, CampfireSpecial>> = {
+  swordSaint: { name: '训练', icon: '🥋', desc: `所有可成长的牌，成长进度 +${TRAIN_PLAYS}` },
+  plagueDoctor: { name: '药剂台', icon: '⚗️', desc: `发现 ${BREW_COUNT} 瓶药水，自行选择拿走或放弃` },
+  ancientTree: { name: '扎根', icon: '🌱', desc: `最大生命 +当前生命的 ${ROOT_RATIO * 100}%` },
+}
+
+/** 当前职业的火堆专属选项；没有则 null（界面隐藏） */
+export const campfireSpecial = (run: RunState): CampfireSpecial | null =>
+  CAMPFIRE_SPECIALS[run.character ?? ''] ?? null
+
+/** 不能使用的原因；可用返回 null */
+export function campfireSpecialBlocked(run: RunState): string | null {
+  switch (run.character) {
+    case 'swordSaint':
+      return run.content.deck.some((c) => !!run.content.cards[rawId(c)]?.evolve) ? null : '没有可成长的牌'
+    case 'plagueDoctor':
+      return (run.content.potionIds ?? []).length ? null : '没有可制作的药水'
+    case 'ancientTree':
+      return null
+    default:
+      return '该职业没有专属选项'
+  }
+}
+
+/** 火堆专属选项：用完直接回地图；存档只在地图 / 奖励界面写入，读档不会重复结算 */
+function campfireSpecialUse(run: RunState): RunResult {
+  if (run.screen !== 'rest') return invalid(run, '当前不在休息点')
+  const blocked = campfireSpecialBlocked(run)
+  if (blocked) return invalid(run, blocked)
+  const done = (next: RunState, events: GameEvent[] = []): RunResult => ({
+    state: { ...next, screen: 'map' },
+    events,
+  })
+  switch (run.character) {
+    case 'swordSaint': {
+      const counts: Record<string, number> = {}
+      run.content.deck.forEach((id, i) => {
+        if (run.content.cards[rawId(id)]?.evolve) counts[`${id}#${i}`] = progressOf(id) + TRAIN_PLAYS
+      })
+      const evo = evolveDeck(run.content.cards, run.content.deck, counts)
+      return done(
+        { ...run, content: { ...run.content, deck: evo.deck } },
+        evo.evolved.length ? [{ type: 'cardsEvolved', cards: evo.evolved }] : [],
+      )
+    }
+    case 'plagueDoctor': {
+      const rng = createRng(deriveSeed(run.seed, `campfire:${run.current}`))
+      const pool = run.content.potionIds ?? []
+      const made = sample(pool, Math.min(BREW_COUNT, pool.length), rng)
+      // 与事件药水一致：进入待选列表，由玩家逐瓶决定拿走或放弃
+      return done({ ...run, potionOffer: [...(run.potionOffer ?? []), ...made] })
+    }
+    default: {
+      // 只涨上限，不回血
+      const gain = Math.max(1, Math.round(run.player.hp * ROOT_RATIO + 1e-9))
+      return done({ ...run, player: { ...run.player, maxHp: run.player.maxHp + gain } }, [{ type: 'maxHpGained', amount: gain }])
+    }
   }
 }
 
@@ -593,7 +692,7 @@ function buyShop(run: RunState, kind: 'card' | 'relic' | 'potion', index: number
   const paid: RunState = { ...run, gold: run.gold - item.price, shop: nextShop }
   switch (kind) {
     case 'card':
-      return { state: { ...paid, content: { ...paid.content, deck: [...paid.content.deck, item.id] } }, events: [] }
+      return { state: { ...paid, content: { ...paid.content, deck: [...paid.content.deck, cardOnAdd(paid, item.id)] } }, events: [] }
     case 'potion':
       return { state: { ...paid, potions: [...paid.potions, item.id] }, events: [] }
     case 'relic':
@@ -624,7 +723,7 @@ function cheatGrant(run: RunState, kind: 'card' | 'potion' | 'relic', id: string
   switch (kind) {
     case 'card':
       return {
-        state: { ...run, content: { ...run.content, deck: [...run.content.deck, id] } },
+        state: { ...run, content: { ...run.content, deck: [...run.content.deck, cardOnAdd(run, id)] } },
         events: [],
       }
     case 'potion':
@@ -667,6 +766,8 @@ export function dispatchRun(run: RunState, action: RunAction): RunResult {
       return openForge(run)
     case 'forgeCard':
       return forgeCard(run, action.deckIndex)
+    case 'campfireSpecial':
+      return campfireSpecialUse(run)
     case 'leave':
       return leave(run)
     case 'buyShop':

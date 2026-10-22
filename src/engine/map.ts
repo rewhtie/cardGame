@@ -104,6 +104,18 @@ function pickType(
   return pool[pool.length - 1] as NodeType
 }
 
+/** 保底：整张图至少有一个商店。随机分配没出商店时，把一个普通战斗 / 事件节点改成商店；只在缺商店时才消耗随机数，不影响已有商店的地图 */
+function ensureShop(floors: MapNode[][], rng: Rng) {
+  const nodes = floors.flat()
+  if (nodes.some((n) => n.type === 'shop')) return
+  const lo = MIN_FLOOR.shop ?? 1
+  const inRange = nodes.filter((n) => n.floor >= lo && n.floor <= FLOORS - 2)
+  const plain = inRange.filter((n) => n.type === 'monster' || n.type === 'event')
+  const pool = plain.length > 0 ? plain : inRange.filter((n) => n.type !== 'elite' && n.type !== 'rest')
+  if (pool.length === 0) return
+  ;(pool[rng.int(pool.length)] as MapNode).type = 'shop'
+}
+
 export function generateMap(seed: string): GameMap {
   const rng = createRng(deriveSeed(seed, 'map'))
   const links = buildGraph(rng)
@@ -152,6 +164,8 @@ export function generateMap(seed: string): GameMap {
       assigned.add(node.id)
     }
   }
+
+  ensureShop(floors, rng)
 
   const boss: MapNode = {
     id: BOSS_ID,

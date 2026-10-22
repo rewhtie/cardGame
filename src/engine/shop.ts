@@ -12,7 +12,7 @@ export interface ShopItem {
 }
 
 export interface ShopState {
-  /** 7 个卡位：前 5 张角色卡（第 5 张 50% 为能力牌），后 2 张无色卡（暂无内容，为 null） */
+  /** 7 个卡位：前 5 张角色卡（第 5 张 50% 为能力牌），后 2 张无色卡（没有无色卡池时为 null） */
   cards: (ShopItem | null)[]
   relics: ShopItem[]
   potions: ShopItem[]
@@ -23,9 +23,27 @@ export interface ShopState {
 export const SHOP_CLASS_CARDS = 5
 export const SHOP_COLORLESS_CARDS = 2
 const POWER_CHANCE = 0.5
+/** 各类商品的价格区间（含两端）；同一类商品里最多一件取到最高价 */
+/** 角色卡按稀有度定价 */
 const CARD_PRICE = { white: 50, blue: 75, gold: 150 } as const
-const RELIC_PRICE = 150
-const POTION_PRICE = 50
+const PRICE_RANGE = {
+  colorless: [90, 180],
+  relic: [150, 280],
+  potion: [25, 69],
+} as const
+
+function rollPrices(count: number, [min, max]: readonly [number, number], rng: Rng): number[] {
+  let maxTaken = false
+  return Array.from({ length: count }, () => {
+    const price = min + rng.int(max - min + 1)
+    if (price < max) return price
+    if (!maxTaken) {
+      maxTaken = true
+      return price
+    }
+    return min + rng.int(max - min)
+  })
+}
 const REMOVE_PRICE = 75
 const SHOP_RELICS = 3
 const SHOP_POTIONS = 3
@@ -44,7 +62,7 @@ function applySales(shop: ShopState, rng: Rng) {
   }
   for (let n = 0; n < MAX_SALES; n++) {
     const scale = SALE_DECAY ** n
-    // 只在有可打折商品的区域里抽（如暂无内容的无色卡区会被跳过）
+    // 只在有可打折商品的区域里抽（如没有无色卡池时的无色卡区会被跳过）
     const kinds = (Object.keys(SALE_WEIGHTS) as (keyof typeof SALE_WEIGHTS)[]).filter((k) =>
       groups[k].some((it) => it.discount === undefined),
     )
@@ -66,10 +84,17 @@ function applySales(shop: ShopState, rng: Rng) {
   }
 }
 
+function priced(ids: string[], range: readonly [number, number], rng: Rng): ShopItem[] {
+  const prices = rollPrices(ids.length, range, rng)
+  return ids.map((id, i) => ({ id, price: prices[i]! }))
+}
+
 export function generateShop(run: RunState): ShopState {
   const rng = createRng(deriveSeed(run.seed, `shop:${run.current}`))
   const defs = run.content.cards
-  const pool = run.content.rewardCards ?? []
+  const colorlessPool = (run.content.colorlessCards ?? []).filter((id) => defs[id])
+  // 角色卡位只从角色自己的卡里抽，无色卡留给后 2 个卡位
+  const pool = (run.content.rewardCards ?? []).filter((id) => !colorlessPool.includes(id))
   const powers = pool.filter((id) => defs[id]?.kind === 'power')
   const others = pool.filter((id) => defs[id] && defs[id].kind !== 'power')
 
@@ -80,19 +105,21 @@ export function generateShop(run: RunState): ShopState {
   const rest = pool.filter((id) => defs[id] && !picked.includes(id))
   picked.push(...sample(rest, SHOP_CLASS_CARDS - picked.length, rng))
 
-  const price = (id: string) => CARD_PRICE[defs[id]?.rarity as keyof typeof CARD_PRICE] ?? CARD_PRICE.gold
+  const price = (id: string) =>
+    CARD_PRICE[defs[id]?.rarity as keyof typeof CARD_PRICE] ?? CARD_PRICE.gold
   const unownedRelics = (run.content.relicIds ?? []).filter((id) => !run.relics.includes(id))
+
+  const colorless = sample(colorlessPool, SHOP_COLORLESS_CARDS, rng)
+  const colorlessItems = priced(colorless, PRICE_RANGE.colorless, rng)
 
   const shop: ShopState = {
     cards: [
       ...picked.map((id) => ({ id, price: price(id) })),
-      ...Array<null>(SHOP_COLORLESS_CARDS).fill(null),
+      ...colorlessItems,
+      ...Array<null>(SHOP_COLORLESS_CARDS - colorlessItems.length).fill(null),
     ],
-    relics: sample(unownedRelics, SHOP_RELICS, rng).map((id) => ({ id, price: RELIC_PRICE })),
-    potions: sample(run.content.potionIds ?? [], SHOP_POTIONS, rng).map((id) => ({
-      id,
-      price: POTION_PRICE,
-    })),
+    relics: priced(sample(unownedRelics, SHOP_RELICS, rng), PRICE_RANGE.relic, rng),
+    potions: priced(sample(run.content.potionIds ?? [], SHOP_POTIONS, rng), PRICE_RANGE.potion, rng),
     removeCost: REMOVE_PRICE,
     removed: false,
   }

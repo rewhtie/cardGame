@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { fxBatch, fxTimes, lag } from '@/composables/useFx'
+import { playSfx } from '@/composables/useSfx'
 import type { CardDef } from '@/engine/types'
 import CardAddFx from './CardAddFx.vue'
 import { isForgeable, resolveCards } from '@/engine/enchant'
 import { findNode, type NodeType } from '@/engine/map'
-import { maxPotions, type RunAction, type RunState } from '@/engine/run'
+import { campfireSpecial, campfireSpecialBlocked, maxPotions, type RunAction, type RunState } from '@/engine/run'
 import { cards } from '@/data/cards'
 import { relics } from '@/data/items'
 import { relicPickSpec } from '@/engine/relics'
@@ -71,15 +72,18 @@ const deckCards = computed(() => resolveCards(cards, props.run.content.deck))
 const showHud = computed(() => props.run.screen !== 'victory' && props.run.screen !== 'defeat')
 
 // 任何来源的玩家回血（战斗、药水、遗物、火堆）统一播放全屏回血特效
-const heal = ref({ key: 0, amount: 0 })
+const heal = ref({ key: 0, amount: 0, maxHp: false })
 let healTimer: ReturnType<typeof setTimeout> | undefined
 watch(fxBatch, (b) => {
-  const amount = b.events.reduce(
+  const healed = b.events.reduce(
     (sum, e) => (e.type === 'healed' && e.target === 'player' ? sum + e.amount : sum),
     0,
   )
+  // 最大生命增长（火堆扎根）：同一特效，文案带"最大生命"
+  const grown = b.events.reduce((sum, e) => (e.type === 'maxHpGained' ? sum + e.amount : sum), 0)
+  const amount = healed > 0 ? healed : grown
   if (amount <= 0) return
-  heal.value = { key: heal.value.key + 1, amount }
+  heal.value = { key: heal.value.key + 1, amount, maxHp: healed <= 0 }
   clearTimeout(healTimer)
   healTimer = setTimeout(() => (heal.value.amount = 0), 1100)
 })
@@ -122,6 +126,11 @@ watch(fxBatch, (b) => {
   })
   if (!items.length) return
   addFx.value = { key: addFx.value.key + 1, items }
+  // 诅咒 / 状态牌弹出的那一刻响一声；战斗内外都走这里，避免重复
+  items.forEach((x) => {
+    const bad = x.card.rarity === 'curse' || x.card.rarity === 'status'
+    setTimeout(() => void playSfx(bad ? 'battle.cardAdded.bad' : 'battle.cardAdded.normal'), x.delay)
+  })
   clearTimeout(addTimer)
   addTimer = setTimeout(
     () => (addFx.value.items = []),
@@ -149,7 +158,7 @@ watch(fxBatch, (b) => {
       :deck="run.content.deck"
       :cards="cards"
       :count="pickSpec.count"
-      :eligible="pickSpec.eligible"
+      :eligible="(id: string) => pickSpec!.eligible(id, run.content.cards)"
       @confirm="(deckIndexes) => emit('send', { type: 'pickCards', deckIndexes })"
     />
     <CardPickView
@@ -189,8 +198,11 @@ watch(fxBatch, (b) => {
       :max-hp="run.player.maxHp"
       :heal-amount="healAmount"
       :can-forge="canForge"
+      :special="campfireSpecial(run)"
+      :special-blocked="campfireSpecialBlocked(run)"
       @rest="emit('send', { type: 'rest' })"
       @forge="emit('send', { type: 'openForge' })"
+      @special="emit('send', { type: 'campfireSpecial' })"
       @leave="emit('send', { type: 'leave' })"
     />
     <ForgeView
@@ -267,7 +279,7 @@ watch(fxBatch, (b) => {
       @skip="(index) => emit('send', { type: 'skipPotion', index })"
     />
     <RelicReveal :cards="cards" />
-    <HealFx v-if="heal.amount > 0" :key="heal.key" :amount="heal.amount" />
+    <HealFx v-if="heal.amount > 0" :key="heal.key" :amount="heal.amount" :max-hp="heal.maxHp" />
     <HurtFx v-if="hurt.amount > 0" :key="hurt.key" :amount="hurt.amount" />
     <template v-if="addFx.items.length">
       <CardAddFx

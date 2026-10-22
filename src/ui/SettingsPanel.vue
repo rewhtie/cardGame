@@ -4,6 +4,8 @@ import { useRun } from '@/composables/useRun'
 import { useSettings } from '@/composables/useSettings'
 import { RESOLUTIONS, type DisplayMode } from '@/settings/settings'
 import { quitApp } from '@/platform/window'
+import { musicVolume, setMusicVolume } from '@/composables/useMusic'
+import { sfxVolume, setSfxVolume } from '@/composables/useSfx'
 import CodexView from './CodexView.vue'
 
 const emit = defineEmits<{ close: [] }>()
@@ -26,7 +28,7 @@ const showCodex = ref(false)
 /** 种子已移到对局右上角；设置里的种子板块暂时隐藏（代码保留，改成 true 即可恢复） */
 const SHOW_SEED = false
 /** 设置内的页面：主列表 / 画面设置 */
-const page = ref<'main' | 'display'>('main')
+const page = ref<'main' | 'display' | 'audio'>('main')
 const copied = ref(false)
 
 async function copy(seed: string) {
@@ -54,8 +56,8 @@ function isCurrent(width: number, height: number) {
 <template>
   <div class="mask" @click.self="$emit('close')">
     <div class="frame">
-      <button class="orb" title="关闭" @click="$emit('close')">✕</button>
-      <div class="banner">{{ page === 'main' ? '设置' : '画面设置' }}</div>
+      <button v-if="page === 'main'" class="orb" title="关闭" @click="$emit('close')">✕</button>
+      <div class="banner">{{ page === 'main' ? '设置' : page === 'audio' ? '音量设置' : '画面设置' }}</div>
 
       <div class="body">
         <button v-if="page !== 'main'" class="back" @click="page = 'main'">‹ 返回设置</button>
@@ -77,6 +79,17 @@ function isCurrent(width: number, height: number) {
               <span class="row-sub">
                 {{ settings.mode === 'fullscreen' ? '全屏' : '窗口' }}，
                 {{ settings.resolution.width }} × {{ settings.resolution.height }}
+              </span>
+            </span>
+            <span class="chev">›</span>
+          </button>
+
+          <button class="row" @click="page = 'audio'">
+            <span class="badge">🔊</span>
+            <span class="row-text">
+              <span class="row-title">音量设置</span>
+              <span class="row-sub">
+                音乐 {{ Math.round(musicVolume * 100) }}，音效 {{ Math.round(sfxVolume * 100) }}
               </span>
             </span>
             <span class="chev">›</span>
@@ -134,6 +147,40 @@ function isCurrent(width: number, height: number) {
             </span>
             <span class="chev">›</span>
           </button>
+        </template>
+
+        <template v-else-if="page === 'audio'">
+          <section class="plaque">
+            <div class="plaque-head">
+              <span class="row-title">音乐</span>
+              <span class="row-sub">{{ Math.round(musicVolume * 100) }}</span>
+            </div>
+            <input
+              class="slider"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              :value="Math.round(musicVolume * 100)"
+              @input="setMusicVolume(Number(($event.target as HTMLInputElement).value) / 100)"
+            />
+          </section>
+
+          <section class="plaque">
+            <div class="plaque-head">
+              <span class="row-title">音效</span>
+              <span class="row-sub">{{ Math.round(sfxVolume * 100) }}</span>
+            </div>
+            <input
+              class="slider"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              :value="Math.round(sfxVolume * 100)"
+              @input="setSfxVolume(Number(($event.target as HTMLInputElement).value) / 100)"
+            />
+          </section>
         </template>
 
         <template v-else>
@@ -263,16 +310,24 @@ function isCurrent(width: number, height: number) {
 }
 
 .back {
-  align-self: flex-start;
-  padding: 0.1rem 0.2rem;
-  font-size: 0.85rem;
-  color: #b09c86;
-  background: none;
-  border: 0;
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: left;
+  color: #fef3c7;
   cursor: pointer;
+  background: linear-gradient(90deg, rgba(74, 56, 44, 0.7), rgba(45, 34, 28, 0.7));
+  border: 1px solid #4a3b30;
+  border-radius: 10px;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 .back:hover {
-  color: #fbbf24;
+  border-color: #f59e0b;
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.3);
 }
 
 /* 菜单行 */
@@ -383,8 +438,8 @@ function isCurrent(width: number, height: number) {
 
 /* 小按钮 */
 .chip {
-  padding: 0.45rem 0.9rem;
-  font-size: 0.9rem;
+  padding: 0.7rem 0.9rem;
+  font-size: 1rem;
   color: #f1e6d4;
   cursor: pointer;
   background: #2d221c;
@@ -411,8 +466,8 @@ function isCurrent(width: number, height: number) {
 }
 .seg-item {
   flex: 1;
-  padding: 0.55rem 0;
-  font-size: 1rem;
+  padding: 0.8rem 0;
+  font-size: 1.05rem;
   color: #d8c8b0;
   cursor: pointer;
   background: #2d221c;
@@ -428,6 +483,13 @@ function isCurrent(width: number, height: number) {
   font-weight: 700;
   background: linear-gradient(180deg, #b45309, #78350f);
   border-color: #fcd34d;
+}
+
+.slider {
+  width: 100%;
+  height: 1.6rem;
+  accent-color: #f59e0b;
+  cursor: pointer;
 }
 
 .res-grid {

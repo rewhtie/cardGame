@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import CardPanel from './CardPanel.vue'
-import CardView from './CardView.vue'
+import UpgradableCard from './UpgradableCard.vue'
+import { isForgeable, resolveCards, upgradedId } from '@/engine/enchant'
 import type { CardDef } from '@/engine/types'
 
 const props = defineProps<{
   title: string
   pile: string[]
   cards: Readonly<Record<string, CardDef>>
+  /** 战斗中按实例 id 记的进化计数 */
+  evolveCounts?: Record<string, number>
   /** 抽牌堆需隐藏顺序 */
   sorted?: boolean
 }>()
@@ -16,9 +19,13 @@ const emit = defineEmits<{ close: [] }>()
 const items = computed(() => {
   const defs = props.pile.flatMap((id) => {
     const card = props.cards[id]
-    return card ? [card] : []
+    if (!card) return []
+    // 右键预览升级后的牌面；已升级 / 诅咒 / 状态牌没有升级版
+    const up = upgradedId(id)
+    const upgraded = isForgeable(props.cards, id) ? resolveCards(props.cards, [up])[up] : undefined
+    return [{ card, upgraded }]
   })
-  return props.sorted ? [...defs].sort((a, b) => a.id.localeCompare(b.id)) : defs
+  return props.sorted ? [...defs].sort((a, b) => a.card.id.localeCompare(b.card.id)) : defs
 })
 </script>
 
@@ -34,11 +41,12 @@ const items = computed(() => {
       @close="emit('close')"
     >
       <div v-if="items.length" class="flex flex-wrap justify-center content-start gap-4">
-        <CardView
-          v-for="(card, i) in items"
-          :key="`${i}-${card.id}`"
-          :card="card"
-          :playable="true"
+        <UpgradableCard
+          v-for="(it, i) in items"
+          :key="`${i}-${it.card.id}`"
+          :card="it.card"
+          :upgraded="it.upgraded"
+          :progress="evolveCounts?.[it.card.id]"
         />
       </div>
       <div v-else class="py-10 text-center text-slate-400">空</div>

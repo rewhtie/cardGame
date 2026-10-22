@@ -1,5 +1,7 @@
 import { reactive, ref, shallowRef } from 'vue'
-import type { GameEvent } from '@/engine/types'
+import type { CardDef, GameEvent } from '@/engine/types'
+import { playSfx } from './useSfx'
+import { sfxSlotsForEvent } from './sfxResolve'
 
 /** 最近一次 dispatch 产生的引擎事件；seq 保证相同内容也能触发 watch */
 export const fxBatch = shallowRef<{ seq: number; events: GameEvent[] }>({ seq: 0, events: [] })
@@ -110,6 +112,16 @@ let running = false
 let epoch = 0
 let idleWaiters: (() => void)[] = []
 
+/** 当前战斗的牌表，用来按牌类型选出牌音效；BattleView 挂载时设置、卸载时清除 */
+let fxCards: Record<string, CardDef> | null = null
+export function setFxCards(cards: Record<string, CardDef> | null) {
+  fxCards = cards
+}
+/** 战斗音效挂在演出队列上：事件轮到演出时，按事件与成因查槽位发声，面板复现和真实游戏走同一条路径 */
+function playEventSfx(e: GameEvent, prev?: GameEvent) {
+  for (const slot of sfxSlotsForEvent(e, prev, fxCards ?? {})) void playSfx(slot)
+}
+
 export function setFxHandler(h: FxHandler | null) {
   handler = h
 }
@@ -133,6 +145,7 @@ async function drain() {
   while (queue.length) {
     const entry = queue.shift() as Entry
     try {
+      playEventSfx(entry.event, entry.prev)
       await handler?.(entry.event, entry.prev)
     } catch {
       // 动画失败不能卡住整个队列
