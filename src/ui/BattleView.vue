@@ -229,7 +229,7 @@ onBeforeUnmount(stopDrag)
 // ---- 战斗动画：引擎事件 -> 纯视觉效果（状态已立即更新，这里只叠加表现） ----
 interface Floater {
   id: number
-  kind: 'text' | 'slash' | 'healRing' | 'shield'
+  kind: 'text' | 'slash' | 'healRing' | 'shield' | 'roar'
   x: number
   y: number
   text?: string
@@ -284,6 +284,29 @@ function healRing(el: HTMLElement | null) {
   const r = el.getBoundingClientRect()
   const p = toStage(r.left + r.width / 2, r.top + r.height / 2)
   addFloater({ id: ++floaterId, kind: 'healRing', x: p.x, y: p.y }, 1000)
+}
+
+/** 怒吼：白色气息从怪物周围向外扩散 */
+function roarAura(el: HTMLElement | null) {
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  const p = toStage(r.left + r.width / 2, r.top + r.height / 2)
+  addFloater({ id: ++floaterId, kind: 'roar', x: p.x, y: p.y }, 1000)
+}
+
+/** 蓄力完成的怒吼：体型微微胀大再复原，身形高亮闪一下 */
+function roar(el: HTMLElement | null) {
+  roarAura(el)
+  return animate(
+    el,
+    [
+      { transform: 'scale(1)', filter: 'brightness(1)' },
+      { transform: 'scale(1.1)', filter: 'brightness(2.2)', offset: 0.35 },
+      { transform: 'scale(1.1)', filter: 'brightness(1.3)', offset: 0.6 },
+      { transform: 'scale(1)', filter: 'brightness(1)' },
+    ],
+    { duration: 700, easing: 'ease-in-out' },
+  )
 }
 
 function slash(el: HTMLElement | null) {
@@ -412,6 +435,7 @@ async function playDamage(e: Ev<'damageDealt'>, { prev }: PlayCtx) {
 const players: { [T in GameEvent['type']]?: (e: Ev<T>, ctx: PlayCtx) => Promise<unknown> | void } = {
   enemyActed: (e) => {
     const el = spriteOf('enemy', e.enemyIndex)
+    if (e.intent.type === 'idle') return roar(el)
     return e.intent.type === 'attack' ? lunge(el) : glow(el, GLOW.enemyAct)
   },
   damageDealt: playDamage,
@@ -742,6 +766,13 @@ onBeforeUnmount(() => {
         <b><Emoji e="🛡" /></b>
       </div>
       <div
+        v-else-if="f.kind === 'roar'"
+        class="fx-roar absolute pointer-events-none z-30"
+        :style="{ left: `${f.x}px`, top: `${f.y}px` }"
+      >
+        <i /><i /><i />
+      </div>
+      <div
         v-else
         class="fx-heal-particles absolute pointer-events-none z-30"
         :style="{ left: `${f.x}px`, top: `${f.y}px` }"
@@ -959,6 +990,39 @@ onBeforeUnmount(() => {
   100% {
     opacity: 0;
     transform: translate(-50%, -190%) scale(1);
+  }
+}
+/* 怒吼：三圈白色气息依次向外扩散、渐隐 */
+.fx-roar {
+  width: 0;
+  height: 0;
+}
+.fx-roar i {
+  position: absolute;
+  left: -80px;
+  top: -80px;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  opacity: 0;
+  background: radial-gradient(circle, transparent 55%, rgba(255, 255, 255, 0.55) 72%, transparent 100%);
+  box-shadow: 0 0 24px 6px rgba(255, 255, 255, 0.45);
+  animation: fx-roar-ring 0.9s ease-out forwards;
+}
+.fx-roar i:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.fx-roar i:nth-child(3) {
+  animation-delay: 0.24s;
+}
+@keyframes fx-roar-ring {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.9);
   }
 }
 /* 治疗粒子：多道竖直绿色光柱从下往上飘散、渐隐 */

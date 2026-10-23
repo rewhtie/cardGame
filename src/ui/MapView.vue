@@ -4,15 +4,42 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useGodMode } from '@/composables/useGodMode'
 import { findNode, type MapNode, type NodeType } from '@/engine/map'
 import { reachableIds, type RunState } from '@/engine/run'
+import type { EnemyDef } from '@/engine/types'
+import { enemyCatalog } from '@/data/enemies'
 
 const props = defineProps<{
   run: RunState
   /** 只读：仅用于查看，不响应选点（如从状态栏打开的地图预览） */
   readonly?: boolean
 }>()
-const emit = defineEmits<{ choose: [id: string, god: boolean] }>()
+const emit = defineEmits<{ choose: [id: string, god: boolean]; cheatNext: [enemies: EnemyDef[]] }>()
 
 const { isDev, godMode } = useGodMode()
+
+// ---- 作弊：指定下场战斗的敌人（一次性，不动种子） ----
+const ROLE_LABELS = { boss: 'Boss', elite: '精英', monster: '普通', other: '其他' } as const
+const ROLE_ORDER = ['monster', 'elite', 'boss', 'other'] as const
+const enemyPickOpen = ref(false)
+/** 已勾选的敌人 id，按点选顺序（同一只可重复添加） */
+const pickedIds = ref<string[]>([])
+const enemyGroups = ROLE_ORDER.map((role) => ({
+  role,
+  label: ROLE_LABELS[role],
+  list: enemyCatalog.filter((e) => e.role === role).map((e) => e.def),
+})).filter((g) => g.list.length)
+const pickedEnemies = computed(() =>
+  pickedIds.value.map((id) => enemyCatalog.find((e) => e.def.id === id)?.def).filter((d): d is EnemyDef => !!d),
+)
+const queuedText = computed(() => props.run.cheatNextEnemies?.map((e) => e.name).join('、'))
+function applyEnemyPick() {
+  emit('cheatNext', pickedEnemies.value)
+  pickedIds.value = []
+  enemyPickOpen.value = false
+}
+function clearEnemyPick() {
+  emit('cheatNext', [])
+  pickedIds.value = []
+}
 
 const VIEW_W = 1280
 const VIEW_H = 720
@@ -300,6 +327,50 @@ function onClick(id: string, canChoose: boolean) {
       >
         上帝模式：{{ godMode ? '开' : '关' }}
       </button>
+      <button
+        class="mt-1.5 block px-3 py-1.5 rounded text-sm border"
+        :class="
+          queuedText
+            ? 'bg-rose-600 text-white border-rose-300'
+            : 'bg-slate-800/90 text-slate-300 border-slate-600'
+        "
+        @click="enemyPickOpen = !enemyPickOpen"
+      >
+        下场敌人：{{ queuedText ?? '默认' }}
+      </button>
+      <div
+        v-if="enemyPickOpen"
+        class="mt-1.5 w-72 max-h-96 overflow-y-auto rounded border border-slate-600 bg-slate-900/95 p-2 text-sm text-slate-100"
+      >
+        <div v-for="g in enemyGroups" :key="g.role" class="mb-2">
+          <div class="mb-1 text-xs text-amber-300">{{ g.label }}</div>
+          <div class="flex flex-wrap gap-1">
+            <button
+              v-for="d in g.list"
+              :key="d.id"
+              class="px-2 py-0.5 rounded border border-slate-600 bg-slate-800 hover:bg-slate-700"
+              @click="pickedIds.push(d.id)"
+            >
+              {{ d.name }}
+            </button>
+          </div>
+        </div>
+        <div class="mb-2 text-xs text-slate-300">
+          已选：{{ pickedEnemies.map((e) => e.name).join('、') || '（点上方敌人添加，可重复）' }}
+        </div>
+        <div class="flex gap-1.5">
+          <button
+            class="px-2 py-1 rounded bg-rose-600 text-white disabled:(opacity-40)"
+            :disabled="!pickedIds.length"
+            @click="applyEnemyPick"
+          >
+            设为下场敌人
+          </button>
+          <button class="px-2 py-1 rounded border border-slate-600" @click="pickedIds = []">清空选择</button>
+          <button class="px-2 py-1 rounded border border-slate-600" @click="clearEnemyPick">取消指定</button>
+        </div>
+        <p class="mt-1.5 text-xs text-slate-400">只影响下一场战斗，种子不变；打完恢复默认。</p>
+      </div>
     </div>
   </div>
 </template>

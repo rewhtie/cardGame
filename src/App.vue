@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { defineAsyncComponent, onMounted, ref, watch } from 'vue'
-import { playMenuMusic, stopMenuMusic } from '@/composables/useMusic'
+import { playMenuMusic, playRunMusic, stopMenuMusic, stopRunMusic } from '@/composables/useMusic'
 import { useRun } from '@/composables/useRun'
 import { useSettings } from '@/composables/useSettings'
 import CharacterSelectView from '@/ui/CharacterSelectView.vue'
@@ -42,8 +42,17 @@ const { run, savedGame, start, continueGame, send, retry, quit } = useRun()
 
 onMounted(init)
 
-// 没有进行中的局时（主菜单 / 选角色）播放 OST，进入游戏后停止
-watch(() => !!run.value, (inRun) => (inRun ? stopMenuMusic() : playMenuMusic()), { immediate: true })
+// 没有进行中的局时（主菜单 / 选角色）播放菜单 OST；只有进入战斗才放战斗 OST，地图等其它界面静音
+watch(
+  () => (!run.value ? 'menu' : run.value.screen === 'battle' ? 'battle' : 'quiet'),
+  (scene) => {
+    if (scene !== 'menu') stopMenuMusic()
+    if (scene !== 'battle') stopRunMusic()
+    if (scene === 'menu') playMenuMusic()
+    else if (scene === 'battle') playRunMusic()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>

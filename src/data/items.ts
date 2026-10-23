@@ -40,7 +40,7 @@ export const relics: Record<string, ItemDef> = {
     icon: '🩸',
     text: '战斗结束时恢复 6 点生命',
   },
-  ancientCoin: { id: 'ancientCoin', name: '古老硬币', icon: '🪙', text: '获得 50 金币' },
+  ancientCoin: { id: 'ancientCoin', name: '古老硬币', icon: '🪙', text: '获得 300 金币' },
   goldPouch: { id: 'goldPouch', name: '金钱袋', icon: '👝', text: '获得 150 金币' },
   trainingGuide: {
     id: 'trainingGuide',
@@ -104,7 +104,7 @@ export const relics: Record<string, ItemDef> = {
   hornCleat: { id: 'hornCleat', name: '号角扣', icon: '📯', text: '每场战斗第 2 回合开始时，获得 14 点格挡' },
   mercuryHourglass: { id: 'mercuryHourglass', name: '水银沙漏', icon: '⏳', text: '每个回合开始时，对所有敌人造成 3 点伤害' },
   // 鸦嘴医生专属
-  toxinSac: { id: 'toxinSac', name: '毒囊', icon: '🧪', text: '战斗开始时，给予所有敌人 2 层中毒', lore: '从前用来标注药量。现在鸦嘴不再标了。' },
+  toxinSac: { id: 'toxinSac', name: '毒囊', icon: '🧪', text: '战斗开始时，给予所有敌人 6 层中毒', lore: '从前用来标注药量。现在鸦嘴不再标了。' },
   scalpel: {
     id: 'scalpel',
     name: '解剖刀',
@@ -151,7 +151,7 @@ export const relics: Record<string, ItemDef> = {
     id: 'petriDish',
     name: '培养皿',
     icon: '🧫',
-    text: '每打出一张能力牌，给予所有敌人 2 层中毒',
+    text: '每打出一张能力牌，给予所有敌人 8 层中毒',
     lore: '「再观察一天就好。」同样的话，已经说了很多天。',
   },
   plagueBell: {
@@ -175,7 +175,7 @@ export const relics: Record<string, ItemDef> = {
     text: '洗牌时，弃牌堆里的伤口留在弃牌堆，不进入抽牌堆',
     lore: '战士下葬时裹的就是这一块。鸦嘴后来又把它挖了出来。',
   },
-  medicineChest: { id: 'medicineChest', name: '药箱', icon: '🧰', text: '药水栏位 +1', lore: '箱底刻着四个名字，其中三个被刮掉了。' },
+  medicineChest: { id: 'medicineChest', name: '药箱', icon: '🧰', text: '药水栏位 +2', lore: '箱底刻着四个名字，其中三个被刮掉了。' },
   sickbedAmulet: {
     id: 'sickbedAmulet',
     name: '病榻护符',

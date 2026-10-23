@@ -96,6 +96,8 @@ export interface RunState {
   /** 事件触发的战斗：胜利后奖励追加 bonus，领完奖励即清除 */
   eventBattle?: EventBattle | null
   battle: BattleState | null
+  /** 开发作弊：下一场战斗改用这组敌人，开战即清除；不改动任何种子 */
+  cheatNextEnemies?: EnemyDef[]
   content: RunContent
 }
 
@@ -136,6 +138,8 @@ export type RunAction =
   | { type: 'eventPickCard'; deckIndex: number }
   /** 开发模式上帝模式：直接获得卡牌 / 药水 / 遗物（不检查屏幕） */
   | { type: 'cheatGrant'; kind: 'card' | 'potion' | 'relic'; id: string }
+  /** 开发模式：指定下一场战斗的敌人（只生效一次）；空数组 / 不传 = 取消 */
+  | { type: 'cheatNextBattle'; enemies?: EnemyDef[] }
 
 export interface RunResult {
   state: RunState
@@ -258,6 +262,7 @@ function chooseNode(run: RunState, id: string, god = false): RunResult {
 
 /** 以当前节点创建一场战斗（地图战斗节点与事件战斗共用） */
 function battleEnemies(run: RunState, nodeId: string): EnemyDef[] {
+  if (run.cheatNextEnemies?.length) return run.cheatNextEnemies
   const type = findNode(run.map, nodeId)?.type
   if (run.content.boss && !run.eventBattle && type === 'boss') return [run.content.boss]
   if (run.content.elite && !run.eventBattle && type === 'elite') return [run.content.elite]
@@ -282,7 +287,8 @@ function startBattle(run: RunState, nodeId: string): RunResult {
     relicState: run.relicState ?? {},
     ...(run.content.rewardCards && { discoverPool: run.content.rewardCards }),
   })
-  return { state: { ...run, screen: 'battle', battle }, events }
+  const { cheatNextEnemies: _used, ...rest } = run
+  return { state: { ...rest, screen: 'battle', battle }, events }
 }
 
 function chooseAncient(run: RunState, id: string): RunResult {
@@ -741,8 +747,16 @@ function cheatGrant(run: RunState, kind: 'card' | 'potion' | 'relic', id: string
   }
 }
 
+function cheatNextBattle(run: RunState, enemies?: EnemyDef[]): RunResult {
+  if (run.screen === 'battle') return invalid(run, '战斗中无法指定')
+  const { cheatNextEnemies: _old, ...rest } = run
+  return { state: enemies?.length ? { ...rest, cheatNextEnemies: enemies } : rest, events: [] }
+}
+
 export function dispatchRun(run: RunState, action: RunAction): RunResult {
   switch (action.type) {
+    case 'cheatNextBattle':
+      return cheatNextBattle(run, action.enemies)
     case 'cheatGrant':
       return cheatGrant(run, action.kind, action.id)
     case 'chooseNode':

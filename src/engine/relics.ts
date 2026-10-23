@@ -327,11 +327,11 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
     },
   },
   // 鸦嘴医生专属
-  // 毒囊：战斗开始时给予所有敌人 2 层中毒
+  // 毒囊：战斗开始时给予所有敌人 6 层中毒
   toxinSac: {
     onBattleStart: (s, ev) =>
       s.enemies.forEach((e, i) => {
-        if (isAlive(e)) addStatus(s, 'enemy', i, 'poison', 2, ev)
+        if (isAlive(e)) addStatus(s, 'enemy', i, 'poison', 6, ev)
       }),
   },
   // 解剖刀：第一回合额外抽 2 张牌，并将 1 张伤口置入弃牌堆
@@ -374,12 +374,12 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
       s.discardPile.push(WOUND)
     },
   },
-  // 培养皿：每打出一张能力牌，给予所有敌人 2 层中毒
+  // 培养皿：每打出一张能力牌，给予所有敌人 8 层中毒
   petriDish: {
     onCardPlayed: (s, ev, card) => {
       if (card.kind !== 'power') return
       s.enemies.forEach((e, i) => {
-        if (isAlive(e)) addStatus(s, 'enemy', i, 'poison', 2, ev)
+        if (isAlive(e)) addStatus(s, 'enemy', i, 'poison', 8, ev)
       })
     },
   },
@@ -400,15 +400,15 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
       if (tickCounter(s, 'surgicalKit', 5)) heal(s, 'player', 0, 1, ev)
     },
   },
-  // 药箱：药水栏位 +1
-  medicineChest: { potionSlots: 1 },
+  // 药箱：药水栏位 +2
+  medicineChest: { potionSlots: 2 },
   // 病榻护符：回合结束时若生命不高于一半，恢复 3 点生命
   sickbedAmulet: {
     onTurnEnd: (s, ev) => {
       if (s.player.hp <= s.player.maxHp / 2) heal(s, 'player', 0, 3, ev)
     },
   },
-  ancientCoin: { onAcquire: withGold(50) },
+  ancientCoin: { onAcquire: withGold(300) },
   goldPouch: { onAcquire: withGold(150) },
   strawberry: {
     onAcquire: (run) => ({

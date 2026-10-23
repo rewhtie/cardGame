@@ -42,3 +42,6 @@ export const monsterPool: EnemyDef[] = built.pool('monster')
 
 /** 固定遭遇（组合怪）：楼层命中时按概率优先于预算组怪 */
 export const encounterList = built.encounters
+
+/** 开发作弊用：全部敌人（含精英 / Boss / 附属）及其定位 */
+export const enemyCatalog = (raw as EnemyData).enemies.map((s) => ({ def: built.byId[s.id] as EnemyDef, role: s.role }))

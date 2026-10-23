@@ -145,6 +145,7 @@ watch(fxBatch, (b) => {
       v-if="run.screen === 'map'"
       :run="run"
       @choose="(id, god) => emit('send', { type: 'chooseNode', id, god })"
+      @cheat-next="(enemies) => emit('send', { type: 'cheatNextBattle', enemies })"
     />
     <AncientView
       v-else-if="run.screen === 'ancient'"
