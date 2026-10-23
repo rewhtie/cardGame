@@ -19,6 +19,7 @@ import {
   spawnEnemy,
   livingCount,
   splitEnemies,
+  deathSplits,
   willSplit,
   runTiming,
   shiftStatus,
@@ -82,6 +83,7 @@ function turnStartPassives(s: BattleState, side: 'player' | 'enemy', idx: number
 }
 
 function endBattleIfOver(s: BattleState, events: GameEvent[]): boolean {
+  deathSplits(s, events)
   if (!s.enemies.some(isAlive)) {
     s.phase = 'won'
     fireRelics(s, 'onBattleWon', events)
@@ -268,11 +270,14 @@ function playCard(state: BattleState, handIndex: number, target?: number, pick?:
   if (pickedId !== undefined && pick !== undefined) {
     s.hand.splice(pick > handIndex ? pick - 1 : pick, 1)
     s.exhaustPile.push(pickedId)
+    events.push({ type: 'cardExhausted', cardId: pickedId })
   }
   if (card.kind === 'power') {
     // 能力牌：不进任何牌堆，效果由状态承担
-  } else if (card.exhaust) s.exhaustPile.push(restoreId(cardId))
-  else s.discardPile.push(restoreId(cardId))
+  } else if (card.exhaust) {
+    s.exhaustPile.push(restoreId(cardId))
+    events.push({ type: 'cardExhausted', cardId })
+  } else s.discardPile.push(restoreId(cardId)) // 打出的牌入弃牌堆不播飞牌动画
   if (card.kind === 'skill') s.turnSkills = (s.turnSkills ?? 0) + 1
   if (card.kind === 'attack') {
     s.turnAttacks = (s.turnAttacks ?? 0) + 1
@@ -330,11 +335,15 @@ function playTopCard(s: BattleState, events: GameEvent[]) {
   const target = firstLivingEnemy(s)
   if (!def || def.unplayable || target < 0 || (def.target === 'enemy' && !s.enemies[target])) {
     s.discardPile.push(id)
+    events.push({ type: 'cardDiscarded', cardId: id })
     return
   }
   if (def.kind === 'power') {
     // 能力牌不进任何牌堆
-  } else s.exhaustPile.push(id) // 天命打出的牌一律消耗
+  } else {
+    s.exhaustPile.push(id) // 天命打出的牌一律消耗
+    events.push({ type: 'cardExhausted', cardId: id })
+  }
   if (def.kind === 'attack') {
     s.turnAttacks = (s.turnAttacks ?? 0) + 1
     if (def.target === 'enemy') stripEnemyBuff(s, target, events)
@@ -359,7 +368,9 @@ function resolvePending(state: BattleState, picks: number[]): DispatchResult {
   if (p.kind === 'exhaust') {
     if (picks.length !== p.count || picks.some((i) => i >= s.hand.length)) return invalid(state, `需要选择 ${p.count} 张手牌`)
     const gone = new Set(picks)
-    s.exhaustPile.push(...s.hand.filter((_, i) => gone.has(i)))
+    const burned = s.hand.filter((_, i) => gone.has(i))
+    s.exhaustPile.push(...burned)
+    for (const id of burned) events.push({ type: 'cardExhausted', cardId: id })
     s.hand = s.hand.filter((_, i) => !gone.has(i))
   } else if (p.kind === 'copy') {
     if (picks.length !== 1 || picks[0]! >= s.hand.length) return invalid(state, '需要选择一张手牌')
@@ -395,6 +406,7 @@ function resolvePending(state: BattleState, picks: number[]): DispatchResult {
     const top = s.drawPile.slice(0, p.cards.length)
     const tossed = top.filter((_, i) => gone.has(i))
     s.discardPile.push(...tossed)
+    for (const id of tossed) events.push({ type: 'cardDiscarded', cardId: id })
     if (tossed.length) (s.discarded ??= []).push(...tossed)
     s.drawPile = [...top.filter((_, i) => !gone.has(i)), ...s.drawPile.slice(p.cards.length)]
   } else {
@@ -493,10 +505,12 @@ function endTurn(state: BattleState): DispatchResult {
   // 虚无：回合结束还在手里就消耗（优先于保留）
   const faded = s.hand.filter((id) => s.cards[id]?.ethereal)
   s.exhaustPile.push(...faded.map(restoreId))
+  for (const id of faded) events.push({ type: 'cardExhausted', cardId: id })
   const rest = s.hand.filter((id) => !s.cards[id]?.ethereal)
   const kept = rest.filter((id) => s.cards[id]?.retain)
   const dropped = rest.filter((id) => !s.cards[id]?.retain)
   events.push({ type: 'handDiscarded', count: dropped.length })
+  for (const id of dropped) events.push({ type: 'cardDiscarded', cardId: id })
   s.discardPile.push(...dropped.map(restoreId))
   s.hand = kept.map((id) => growRetained(s, id))
 

@@ -19,6 +19,7 @@ import ForgeView from './ForgeView.vue'
 import MapView from './MapView.vue'
 import HealFx from './HealFx.vue'
 import HurtFx from './HurtFx.vue'
+import SpearFx from './SpearFx.vue'
 import PileButton from './PileButton.vue'
 import PileModal from './PileModal.vue'
 import PotionOfferModal from './PotionOfferModal.vue'
@@ -97,6 +98,16 @@ watch(fxBatch, (b) => {
   hurt.value = { key: hurt.value.key + 1, amount }
   clearTimeout(hurtTimer)
   hurtTimer = setTimeout(() => (hurt.value.amount = 0), 900)
+})
+
+// 能力牌演出：传说中的长枪打出时，长枪从左下角螺旋射出，旋转后消失
+const spearFx = ref<{ key: number; delay: number } | null>(null)
+let spearKey = 0
+watch(fxBatch, (b) => {
+  const times = fxTimes(b.events)
+  const i = b.events.findIndex((e) => e.type === 'cardPlayed' && e.cardId === 'legendSpear')
+  if (i < 0) return
+  spearFx.value = { key: ++spearKey, delay: times[i] ?? 0 }
 })
 
 // 塞入状态牌 / 诅咒牌（敌人攻击、事件结果等）：卡牌弹出再飞向牌堆，让玩家感知到
@@ -282,6 +293,7 @@ watch(fxBatch, (b) => {
     <RelicReveal :cards="cards" />
     <HealFx v-if="heal.amount > 0" :key="heal.key" :amount="heal.amount" :max-hp="heal.maxHp" />
     <HurtFx v-if="hurt.amount > 0" :key="hurt.key" :amount="hurt.amount" />
+    <SpearFx v-if="spearFx" :key="spearFx.key" :delay="spearFx.delay" @done="spearFx = null" />
     <template v-if="addFx.items.length">
       <CardAddFx
         v-for="(it, i) in addFx.items"

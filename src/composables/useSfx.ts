@@ -246,6 +246,222 @@ async function playSplitSfx(volume = 1) {
 }
 
 /**
+ * 合成的长枪出场声，时间轴与 SpearFx 的 1 秒动画对齐：
+ * 0s 破空（高频噪声由高扫到低，枪猛地刺出）→ 0.1s 落点闷响 + 金属颤音 → 全程旋转声（气流音色上扬，颤动频率从慢到极快，对应越转越快的翻面）。
+ */
+export async function playSpearSfx(volume = 1) {
+  if (sfxVolume.value <= 0) return
+  try {
+    ctx ??= new AudioContext()
+    if (ctx.state === 'suspended') await ctx.resume()
+    const c = ctx
+    const t0 = c.currentTime
+    const DUR = 1.0
+    const out = c.createGain()
+    out.gain.value = sfxVolume.value * volume * 0.6
+    out.connect(c.destination)
+
+    // 风嗖：窄带噪声做出“呜—嗖”的风声。带通中心先急升再回落（物体掠过的多普勒感），
+    // 音量 0.09s 内冲到峰值后缓缓散去；再叠一层低通的“空气体积”，让声音不单薄
+    const WHOOSH = 0.55
+    const wlen = Math.floor(c.sampleRate * WHOOSH)
+    const wbuf = c.createBuffer(1, wlen, c.sampleRate)
+    const wd = wbuf.getChannelData(0)
+    let last = 0
+    for (let i = 0; i < wlen; i++) {
+      // 一阶低通白噪声 ≈ 粉红噪声，比纯白噪声柔和，更像风
+      last = last * 0.82 + (Math.random() * 2 - 1) * 0.18
+      wd[i] = last * 3.2
+    }
+    const wsrc = c.createBufferSource()
+    wsrc.buffer = wbuf
+    const wbp = c.createBiquadFilter()
+    wbp.type = 'bandpass'
+    wbp.Q.value = 2.6
+    wbp.frequency.setValueAtTime(380, t0)
+    wbp.frequency.exponentialRampToValueAtTime(2300, t0 + 0.11)
+    wbp.frequency.exponentialRampToValueAtTime(750, t0 + WHOOSH)
+    const wg = c.createGain()
+    wg.gain.setValueAtTime(0.0001, t0)
+    wg.gain.exponentialRampToValueAtTime(1.3, t0 + 0.09)
+    wg.gain.exponentialRampToValueAtTime(0.0001, t0 + WHOOSH)
+    wsrc.connect(wbp).connect(wg).connect(out)
+    wsrc.start(t0)
+
+    const body = c.createBiquadFilter()
+    body.type = 'lowpass'
+    body.frequency.setValueAtTime(700, t0)
+    body.frequency.exponentialRampToValueAtTime(180, t0 + 0.4)
+    const bg = c.createGain()
+    bg.gain.setValueAtTime(0.0001, t0)
+    bg.gain.exponentialRampToValueAtTime(0.6, t0 + 0.07)
+    bg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.42)
+    const bsrc = c.createBufferSource()
+    bsrc.buffer = wbuf
+    bsrc.connect(body).connect(bg).connect(out)
+    bsrc.start(t0)
+
+    // 落点：低频闷响 + 金属颤音
+    const thud = c.createOscillator()
+    const tg = c.createGain()
+    thud.type = 'sine'
+    thud.frequency.setValueAtTime(150, t0 + 0.1)
+    thud.frequency.exponentialRampToValueAtTime(45, t0 + 0.4)
+    tg.gain.setValueAtTime(0.0001, t0)
+    tg.gain.setValueAtTime(0.9, t0 + 0.1)
+    tg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.45)
+    thud.connect(tg).connect(out)
+    thud.start(t0)
+    thud.stop(t0 + 0.5)
+    for (const hz of [1760, 2349]) {
+      const o = c.createOscillator()
+      const g = c.createGain()
+      o.type = 'triangle'
+      o.frequency.value = hz
+      g.gain.setValueAtTime(0.0001, t0 + 0.1)
+      g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.115)
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.8)
+      o.connect(g).connect(out)
+      o.start(t0 + 0.1)
+      o.stop(t0 + 0.85)
+    }
+
+    // 旋转声：循环噪声过带通（音调上扬），再被一个越来越快的 LFO 调幅，听感是越转越急的呼呼声
+    const len = Math.floor(c.sampleRate * DUR)
+    const buf = c.createBuffer(1, len, c.sampleRate)
+    const d = buf.getChannelData(0)
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
+    const src = c.createBufferSource()
+    src.buffer = buf
+    const bp = c.createBiquadFilter()
+    bp.type = 'bandpass'
+    bp.Q.value = 1.4
+    bp.frequency.setValueAtTime(250, t0)
+    bp.frequency.exponentialRampToValueAtTime(2600, t0 + DUR)
+    const swirl = c.createGain()
+    swirl.gain.setValueAtTime(0.0001, t0)
+    swirl.gain.exponentialRampToValueAtTime(0.9, t0 + 0.55)
+    swirl.gain.setValueAtTime(0.9, t0 + 0.75)
+    swirl.gain.exponentialRampToValueAtTime(0.0001, t0 + DUR)
+    const am = c.createGain()
+    am.gain.value = 0.5
+    const lfo = c.createOscillator()
+    const lfoDepth = c.createGain()
+    lfo.type = 'sine'
+    lfo.frequency.setValueAtTime(3, t0)
+    lfo.frequency.exponentialRampToValueAtTime(32, t0 + DUR)
+    lfoDepth.gain.value = 0.5
+    lfo.connect(lfoDepth).connect(am.gain)
+    src.connect(bp).connect(am).connect(swirl).connect(out)
+    src.start(t0)
+    lfo.start(t0)
+    lfo.stop(t0 + DUR + 0.05)
+  } catch {
+    // 音效失败不能影响游戏
+  }
+}
+
+/**
+ * 剑阵合成音（不依赖素材）：整段一条旋转的呼啸底噪（调制频率越转越快）；
+ * 每把剑一声破空（噪声扫频上扬）+ 一声插地（闷响 + 金属颤音）。音高、长短、声像逐把随机。
+ * at 为相对现在的秒数（剑开始下落的时刻），pan -1..1 为左右声像，land 为落地耗时。
+ */
+export async function playSwordArraySfx(swords: { at: number; pan: number; land: number }[]) {
+  if (sfxVolume.value <= 0 || !swords.length) return
+  try {
+    ctx ??= new AudioContext()
+    if (ctx.state === 'suspended') await ctx.resume()
+    const c = ctx
+    const t0 = c.currentTime + 0.02
+    const out = c.createGain()
+    out.gain.value = sfxVolume.value * 0.6
+    out.connect(c.destination)
+    const rnd = (a: number, b: number) => a + Math.random() * (b - a)
+
+    // 旋转：锯齿波经带通，音量被一个越来越快的 LFO 切碎，听上去是剑在空中旋转
+    const end = Math.max(...swords.map((s) => s.at + s.land)) + 0.1
+    const whirl = c.createGain()
+    whirl.gain.setValueAtTime(0.0001, t0)
+    whirl.gain.exponentialRampToValueAtTime(0.18, t0 + end * 0.6)
+    whirl.gain.exponentialRampToValueAtTime(0.0001, t0 + end)
+    const bp = c.createBiquadFilter()
+    bp.type = 'bandpass'
+    bp.frequency.setValueAtTime(500, t0)
+    bp.frequency.exponentialRampToValueAtTime(1800, t0 + end)
+    bp.Q.value = 3
+    const saw = c.createOscillator()
+    saw.type = 'sawtooth'
+    saw.frequency.setValueAtTime(180, t0)
+    saw.frequency.exponentialRampToValueAtTime(420, t0 + end)
+    const chop = c.createGain()
+    chop.gain.value = 0.5
+    const lfo = c.createOscillator()
+    const lfoDepth = c.createGain()
+    lfo.frequency.setValueAtTime(7, t0)
+    lfo.frequency.exponentialRampToValueAtTime(34, t0 + end)
+    lfoDepth.gain.value = 0.5
+    lfo.connect(lfoDepth).connect(chop.gain)
+    saw.connect(bp).connect(chop).connect(whirl).connect(out)
+    for (const o of [saw, lfo]) {
+      o.start(t0)
+      o.stop(t0 + end + 0.05)
+    }
+
+    for (const s of swords) {
+      const pan = c.createStereoPanner()
+      pan.pan.value = s.pan
+      pan.connect(out)
+      const t = t0 + s.at
+      // 破空：高通噪声 + 带通扫频，随下坠音调上扬、响度渐强，落地前一瞬收掉
+      const dur = s.land
+      const len = Math.max(1, Math.floor(c.sampleRate * dur))
+      const buf = c.createBuffer(1, len, c.sampleRate)
+      const d = buf.getChannelData(0)
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
+      const src = c.createBufferSource()
+      const f = c.createBiquadFilter()
+      const g = c.createGain()
+      src.buffer = buf
+      f.type = 'bandpass'
+      f.Q.value = 1.4
+      f.frequency.setValueAtTime(rnd(700, 1100), t)
+      f.frequency.exponentialRampToValueAtTime(rnd(3200, 5200), t + dur)
+      g.gain.setValueAtTime(0.0001, t)
+      g.gain.exponentialRampToValueAtTime(rnd(0.5, 0.8), t + dur * 0.9)
+      g.gain.linearRampToValueAtTime(0, t + dur)
+      src.connect(f).connect(g).connect(pan)
+      src.start(t)
+      // 插地：闷响 + 一记短促的金属颤音；音高逐把随机
+      const hit = t + dur
+      const pitch = rnd(0.85, 1.2)
+      const thud = c.createOscillator()
+      const tg = c.createGain()
+      thud.type = 'sine'
+      thud.frequency.setValueAtTime(170 * pitch, hit)
+      thud.frequency.exponentialRampToValueAtTime(45, hit + 0.18)
+      tg.gain.setValueAtTime(rnd(0.7, 1), hit)
+      tg.gain.exponentialRampToValueAtTime(0.0001, hit + 0.22)
+      thud.connect(tg).connect(pan)
+      thud.start(hit)
+      thud.stop(hit + 0.25)
+      noiseBurst(c, pan, hit, 0.09, 0.6, 'bandpass', 2800 * pitch, 700)
+      const ring = c.createOscillator()
+      const rg = c.createGain()
+      ring.type = 'triangle'
+      ring.frequency.value = 1900 * pitch
+      rg.gain.setValueAtTime(0.0001, hit)
+      rg.gain.exponentialRampToValueAtTime(0.14, hit + 0.01)
+      rg.gain.exponentialRampToValueAtTime(0.0001, hit + 0.35)
+      ring.connect(rg).connect(pan)
+      ring.start(hit)
+      ring.stop(hit + 0.4)
+    }
+  } catch {
+    // 音效失败不能影响游戏
+  }
+}
+
+/**
  * 按槽位键播放。未配置 / 静音的槽位静默不播；同一槽位 40ms 内只响一次，防止多段伤害叠成爆音。
  * opts 覆盖槽位配置（遗物展示的敲击音量渐变用）；maxSeconds 只播放开头这么多秒（末尾淡出）。
  */

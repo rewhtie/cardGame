@@ -2,7 +2,7 @@ import { ref, shallowRef } from 'vue'
 import { enqueueFx, pushFx, resetFx } from './useFx'
 import { cards, colorlessRewardIds } from '@/data/cards'
 import { CHARACTER_RELIC_IDS, characterById } from '@/data/characters'
-import { drainer, encounterList, monsterPool, slime, slimeBoss, slimeGroup } from '@/data/enemies'
+import { drainer, encounterList, ghost, monsterPool, slime, slimeBoss, slimeGroup } from '@/data/enemies'
 import { events as eventDefs } from '@/data/events'
 import { potions, relics } from '@/data/items'
 import {
@@ -35,7 +35,9 @@ function content(characterId?: string): Omit<RunConfig, 'seed'> {
     enemy: slime,
     enemies: slimeGroup,
     monsters: monsterPool,
-    encounters: encounterList,    boss: slimeBoss,
+    encounters: encounterList,
+    boss: slimeBoss,
+    bosses: [slimeBoss, ghost],
     elite: drainer,
     rewardCards: character.rewardCards,
     colorlessCards: colorlessRewardIds,

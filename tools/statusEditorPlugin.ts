@@ -7,7 +7,7 @@ import { syncDocs } from './docSync'
 const FILE = fileURLToPath(new URL('../src/data/statusText.json', import.meta.url))
 const RULES_FILE = fileURLToPath(new URL('../src/data/statusRules.json', import.meta.url))
 const DECAYS = ['none', 'tick', 'turnEnd', 'playerTurnStart', 'halve', 'condition']
-const TIMINGS = ['playerStart', 'playerEnd', 'enemyStart', 'enemyEnd']
+const TIMINGS = ['playerStart', 'playerEnd', 'enemyStart', 'enemyEnd', 'ownerStart']
 
 function saveRules(data: Record<string, { decay?: string; decayAt?: string; triggerAt?: string }>) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('数据格式不对')

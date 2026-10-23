@@ -59,6 +59,20 @@ export function splitEnemies(s: BattleState, events: GameEvent[]) {
   }
 }
 
+/** 带 splitOnDeath 的敌人阵亡后：本体消失，分裂出配置的敌人（战斗结束判定前调用，保证胜负以分裂之后为准） */
+export function deathSplits(s: BattleState, events: GameEvent[]) {
+  const count = s.enemies.length
+  for (let enemyIndex = 0; enemyIndex < count; enemyIndex++) {
+    const e = s.enemies[enemyIndex]!
+    const targets = e.def.splitOnDeath ?? []
+    if (isAlive(e) || e.fled || e.deathSplit || targets.length === 0) continue
+    e.deathSplit = true
+    e.vanishOnDeath = true
+    const spawned = targets.map((def) => spawnEnemy(s, def, events)).filter((i) => i >= 0)
+    events.push({ type: 'enemySplit', enemyIndex, spawned })
+  }
+}
+
 /** 同时存活的敌人上限 */
 export const MAX_ENEMIES = 4
 
@@ -946,7 +960,10 @@ export function resolveEffect(
       const rest = pile.filter((c) => !isWound(c))
       pile.length = 0
       pile.push(...rest)
-      for (let i = 0; i < n; i++) s.exhaustPile.push(WOUND)
+      for (let i = 0; i < n; i++) {
+        s.exhaustPile.push(WOUND)
+        events.push({ type: 'cardExhausted', cardId: WOUND })
+      }
       const total = effect.per * n
       if (effect.gain === 'block')
         applyBlock(s, 'player', calcBlock(total, s.player.statuses), events, 0, true)
@@ -976,6 +993,7 @@ export function resolveEffect(
       const n = s.hand.length
       if (n > 0) {
         events.push({ type: 'handDiscarded', count: n })
+        for (const id of s.hand) events.push({ type: 'cardDiscarded', cardId: id })
         ;(s.discarded ??= []).push(...s.hand)
         s.discardPile.push(...s.hand)
         s.hand = []
@@ -1015,7 +1033,10 @@ export function resolveEffect(
         left -= picked.length
         exhausted += picked.length
         const chosen = new Set(picked)
-        for (const k of picked) s.exhaustPile.push(pile[k] as string)
+        for (const k of picked) {
+          s.exhaustPile.push(pile[k] as string)
+          events.push({ type: 'cardExhausted', cardId: pile[k] as string })
+        }
         const rest = pile.filter((_, k) => !chosen.has(k))
         pile.length = 0
         pile.push(...rest)

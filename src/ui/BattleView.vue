@@ -2,6 +2,7 @@
 import Emoji from '@/ui/Emoji.vue'
 import { willSplit } from '@/engine/effects'
 import AimArrow from './AimArrow.vue'
+import CardView from './CardView.vue'
 import EnemyView from './EnemyView.vue'
 import HandView from './HandView.vue'
 import PileButton from './PileButton.vue'
@@ -10,6 +11,9 @@ import PileModal from './PileModal.vue'
 import StatusIcons from './StatusIcons.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { clearFxHandler, fxReset, lag, setFxCards, setFxHandler, whenFxIdle } from '@/composables/useFx'
+import { playSwordArraySfx } from '@/composables/useSfx'
+import { potions as potionDefs } from '@/data/items'
+import { rawId } from '@/engine/enchant'
 import { intentIndexAt } from '@/engine/intents'
 import { BUFFS, DEBUFFS, statusById } from '@/engine/statuses'
 import type { Action, BattleState, GameEvent, Side } from '@/engine/types'
@@ -227,9 +231,30 @@ function stopDrag() {
 onBeforeUnmount(stopDrag)
 
 // ---- 战斗动画：引擎事件 -> 纯视觉效果（状态已立即更新，这里只叠加表现） ----
+/** 剑阵里一把剑的随机参数：角度单位度，时间单位秒，长度单位像素 */
+interface SwordSpec {
+  left: number
+  dx: number
+  angle: number
+  fromAngle: number
+  delay: number
+  dur: number
+  sink: number
+  turns: number
+}
 interface Floater {
   id: number
-  kind: 'text' | 'slash' | 'healRing' | 'shield' | 'roar'
+  kind: 'text' | 'slash' | 'healRing' | 'shield' | 'roar' | 'swords' | 'flask' | 'splash' | 'pileFly'
+  /** pileFly：飞向牌堆的那张牌 */
+  cardId?: string
+  swords?: SwordSpec[]
+  /** flask：飞行的位移（设计像素）与飞行时长（秒）；icon 为瓶身图标 */
+  dx?: number
+  dy?: number
+  /** flask：抛物线顶点比直线中点高出的像素 */
+  arc?: number
+  dur?: number
+  icon?: string
   x: number
   y: number
   text?: string
@@ -292,6 +317,104 @@ function roarAura(el: HTMLElement | null) {
   const r = el.getBoundingClientRect()
   const p = toStage(r.left + r.width / 2, r.top + r.height / 2)
   addFloater({ id: ++floaterId, kind: 'roar', x: p.x, y: p.y }, 1000)
+}
+
+/** 牌飞向弃牌堆 / 消耗牌堆：从手牌区出发，缩小并飞进对应按钮 */
+function flyToPile(cardId: string, pile: 'discard' | 'exhaust') {
+  const from = root.value?.querySelector<HTMLElement>('[data-hand-root]')
+  const to = root.value?.querySelector<HTMLElement>(`[data-pile="${pile}"]`)
+  if (!from || !to || !props.state.cards[cardId]) return
+  const a = from.getBoundingClientRect()
+  const b = to.getBoundingClientRect()
+  const p = toStage(a.left + a.width / 2 + (Math.random() - 0.5) * 240, a.top + a.height / 2)
+  const q = toStage(b.left + b.width / 2, b.top + b.height / 2)
+  addFloater({ id: ++floaterId, kind: 'pileFly', x: p.x, y: p.y, dx: q.x - p.x, dy: q.y - p.y, cardId, cls: pile }, 700)
+}
+
+const SWORD_COUNT = 8
+
+/**
+ * 剑阵：六把剑从屏幕上方呈扇形落下、剑尖插进敌人脚下的那条线，
+ * 横向把整个舞台平分，与敌人数量无关；插定后停一会儿再淡出
+ */
+function swordArray() {
+  const stage = root.value
+  if (!stage) return
+  const feet = [...stage.querySelectorAll<HTMLElement>('[data-enemy-index] [data-fx="sprite"]')].map(
+    (el) => toStage(0, el.getBoundingClientRect().bottom).y,
+  )
+  const y = feet.length ? Math.max(...feet) : stage.offsetHeight * 0.55
+  const width = stage.offsetWidth
+  const rnd = (a: number, b: number) => a + Math.random() * (b - a)
+  // 每把剑的下落时机、速度、插入角度（±10°）和深浅都随机，插入顺序也是乱的
+  const swords: SwordSpec[] = Array.from({ length: SWORD_COUNT }, (_, i) => {
+    const k = i - (SWORD_COUNT - 1) / 2
+    const angle = rnd(-10, 10)
+    return {
+      left: ((i + 0.5) / SWORD_COUNT) * width,
+      dx: -k * (width / SWORD_COUNT) * rnd(0.4, 0.9),
+      angle,
+      fromAngle: angle - k * rnd(8, 16),
+      delay: rnd(0, 0.25),
+      dur: rnd(0.22, 0.32),
+      sink: rnd(-6, 12),
+      turns: Math.round(rnd(2, 4)),
+    }
+  })
+  addFloater({ id: ++floaterId, kind: 'swords', x: width, y, swords }, SWORD_SHOW_MS)
+  void playSwordArraySfx(
+    swords.map((s) => ({ at: s.delay, land: s.dur, pan: (s.left / width) * 2 - 1 })),
+  )
+}
+
+const SWORD_SHOW_MS = 1400
+
+const FLASK_FLIGHT_MS = 560
+const SPLASH_COLOR: Record<string, string> = {
+  firePotion: '#fb923c',
+  poisonPotion: '#4ade80',
+  weakPotion: '#a78bfa',
+  fearPotion: '#f472b6',
+  healPotion: '#4ade80',
+  elixirPotion: '#4ade80',
+  regenPotion: '#4ade80',
+  guardPotion: '#38bdf8',
+  fortressPotion: '#38bdf8',
+  energyPotion: '#facc15',
+}
+
+/** 投掷药水：药瓶从玩家身上划弧飞向目标（敌人；对自己用则落进费用区域），命中处炸开一团药液；飞行演完才兑现，随后的伤害 / 状态才落地 */
+function throwPotion(potionId: string, enemyIndex?: number) {
+  const from = spriteOf('player')
+  const to = enemyIndex === undefined ? energyEl.value : spriteOf('enemy', enemyIndex)
+  if (!from || !to) return
+  const a = from.getBoundingClientRect()
+  const b = to.getBoundingClientRect()
+  const p0 = toStage(a.left + a.width / 2, a.top + a.height / 3)
+  const p1 = toStage(b.left + b.width / 2, b.top + b.height / 2)
+  addFloater(
+    {
+      id: ++floaterId,
+      kind: 'flask',
+      x: p0.x,
+      y: p0.y,
+      dx: p1.x - p0.x,
+      dy: p1.y - p0.y,
+      arc: 200 + Math.abs(p1.x - p0.x) * 0.2,
+      dur: FLASK_FLIGHT_MS / 1000,
+      icon: potionDefs[potionId]?.icon ?? '🧪',
+    },
+    FLASK_FLIGHT_MS,
+  )
+  return new Promise((resolve) =>
+    later(FLASK_FLIGHT_MS, () => {
+      addFloater(
+        { id: ++floaterId, kind: 'splash', x: p1.x, y: p1.y, cls: SPLASH_COLOR[potionId] ?? '#e5e7eb' },
+        700,
+      )
+      resolve(undefined)
+    }),
+  )
 }
 
 /** 蓄力完成的怒吼：体型微微胀大再复原，身形高亮闪一下 */
@@ -437,6 +560,22 @@ const players: { [T in GameEvent['type']]?: (e: Ev<T>, ctx: PlayCtx) => Promise<
     const el = spriteOf('enemy', e.enemyIndex)
     if (e.intent.type === 'idle') return roar(el)
     return e.intent.type === 'attack' ? lunge(el) : glow(el, GLOW.enemyAct)
+  },
+  cardPlayed: (e) => {
+    if (rawId(e.cardId) !== 'bladeMasterPower') return
+    swordArray()
+    return new Promise((resolve) => later(650, () => resolve(undefined)))
+  },
+  potionUsed: (e) => throwPotion(e.potionId, e.enemyIndex),
+  cardDiscarded: async (e, { prev }) => {
+    // 虚无牌先消耗，消耗动画演完再弃剩下的手牌
+    if (prev?.type === 'cardExhausted') await new Promise((r) => later(350, () => r(undefined)))
+    flyToPile(e.cardId, 'discard')
+    await new Promise((r) => later(70, () => r(undefined)))
+  },
+  cardExhausted: async (e) => {
+    flyToPile(e.cardId, 'exhaust')
+    await new Promise((r) => later(110, () => r(undefined)))
   },
   damageDealt: playDamage,
   blockGained: (e) => {
@@ -690,12 +829,14 @@ onBeforeUnmount(() => {
       <div class="w-48 flex flex-col items-end gap-2">
         <div class="flex items-center gap-4">
           <PileButton
+            data-pile="discard"
             kind="discard"
             label="弃牌堆"
             :count="state.discardPile.length"
             @click="openPile = 'discard'"
           />
           <PileButton
+            data-pile="exhaust"
             kind="exhaust"
             label="消耗牌堆"
             :count="state.exhaustPile.length"
@@ -753,6 +894,14 @@ onBeforeUnmount(() => {
         <Emoji :e="f.text" />
       </div>
       <div
+        v-else-if="f.kind === 'pileFly' && f.cardId && state.cards[f.cardId]"
+        class="fx-pile-fly absolute pointer-events-none z-30"
+        :class="f.cls"
+        :style="{ left: `${f.x}px`, top: `${f.y}px`, '--dx': `${f.dx}px`, '--dy': `${f.dy}px` }"
+      >
+        <CardView :card="state.cards[f.cardId]!" :playable="true" class="pointer-events-none" />
+      </div>
+      <div
         v-else-if="f.kind === 'slash'"
         class="fx-slash absolute pointer-events-none z-30"
         :style="{ left: `${f.x}px`, top: `${f.y}px` }"
@@ -771,6 +920,66 @@ onBeforeUnmount(() => {
         :style="{ left: `${f.x}px`, top: `${f.y}px` }"
       >
         <i /><i /><i />
+      </div>
+      <div
+        v-else-if="f.kind === 'flask'"
+        class="fx-flask absolute pointer-events-none z-30"
+        :style="{ left: `${f.x}px`, top: `${f.y}px`, '--dx': `${f.dx}px`, '--dy': `${f.dy}px`, '--arc': `${f.arc}px`, '--dur': `${f.dur}s` }"
+      >
+        <b><Emoji :e="f.icon ?? '🧪'" /></b>
+      </div>
+      <div
+        v-else-if="f.kind === 'splash'"
+        class="fx-splash absolute pointer-events-none z-30"
+        :style="{ left: `${f.x}px`, top: `${f.y}px`, '--c': f.cls }"
+      >
+        <i /><i v-for="n in 8" :key="n" :style="{ '--r': `${n * 45 + 12}deg` }" />
+      </div>
+      <div
+        v-else-if="f.kind === 'swords'"
+        class="fx-swords absolute pointer-events-none z-30"
+        :style="{ left: '0px', top: `${f.y}px`, width: `${f.x}px` }"
+      >
+        <i
+          v-for="(s, n) in f.swords"
+          :key="n"
+          :style="{
+            left: `${s.left}px`,
+            bottom: `${-s.sink}px`,
+            '--dx': `${s.dx}px`,
+            '--a': `${s.angle}deg`,
+            '--a0': `${s.fromAngle}deg`,
+            '--delay': `${s.delay}s`,
+            '--dur': `${s.dur}s`,
+          }"
+        >
+          <svg viewBox="0 0 40 220" width="34" height="187" :style="{ animationDuration: `${s.dur}s`, animationDelay: `${s.delay}s` }">
+            <defs>
+              <linearGradient id="sw-blade" x1="0" x2="1">
+                <stop offset="0" stop-color="#94a3b8" />
+                <stop offset="0.5" stop-color="#f1f5f9" />
+                <stop offset="1" stop-color="#cbd5e1" />
+              </linearGradient>
+              <linearGradient id="sw-gold" x1="0" x2="1">
+                <stop offset="0" stop-color="#b45309" />
+                <stop offset="0.5" stop-color="#fde68a" />
+                <stop offset="1" stop-color="#b45309" />
+              </linearGradient>
+            </defs>
+            <!-- 剑身：柳叶形锋面，中线一道血槽，尖端朝下 -->
+            <path d="M14 62 L26 62 L27 176 L20 220 L13 176 Z" fill="url(#sw-blade)" stroke="#475569" stroke-width="0.8" />
+            <path d="M20 62 L27 176 L20 220 Z" fill="#ffffff" opacity="0.35" />
+            <path d="M20 70 L20 178" stroke="#64748b" stroke-width="2" stroke-linecap="round" opacity="0.7" />
+            <!-- 护手：两端上翘的弯月形 -->
+            <path d="M2 52 Q8 66 20 62 Q32 66 38 52 Q30 56 20 54 Q10 56 2 52 Z" fill="url(#sw-gold)" stroke="#78350f" stroke-width="0.8" />
+            <circle cx="20" cy="58" r="3" fill="#dc2626" stroke="#7f1d1d" stroke-width="0.6" />
+            <!-- 剑柄：缠绳 + 剑首 -->
+            <rect x="17" y="20" width="6" height="32" rx="2" fill="#451a03" />
+            <path d="M17 26 L23 29 M17 32 L23 35 M17 38 L23 41 M17 44 L23 47" stroke="#d97706" stroke-width="1.2" />
+            <circle cx="20" cy="14" r="6" fill="url(#sw-gold)" stroke="#78350f" stroke-width="0.8" />
+            <path d="M20 8 L20 2" stroke="#78350f" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </i>
       </div>
       <div
         v-else
@@ -1025,6 +1234,155 @@ onBeforeUnmount(() => {
     transform: scale(1.9);
   }
 }
+/* 投掷药水：外层匀速横移，内层抛物线纵移 + 旋转，合成一条弧线 */
+.fx-flask {
+  width: 0;
+  height: 0;
+  animation: fx-flask-x var(--dur) linear forwards;
+}
+.fx-flask b {
+  position: absolute;
+  left: -16px;
+  top: -16px;
+  font-size: 32px;
+  line-height: 32px;
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.7));
+  animation: fx-flask-y var(--dur) linear forwards;
+}
+@keyframes fx-flask-x {
+  to {
+    transform: translateX(var(--dx));
+  }
+}
+@keyframes fx-flask-y {
+  0% {
+    transform: translateY(0) rotate(0deg) scale(0.8);
+    animation-timing-function: ease-out;
+  }
+  45% {
+    transform: translateY(calc(var(--dy) * 0.5 - var(--arc))) rotate(300deg) scale(1.15);
+    animation-timing-function: ease-in;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(var(--dy)) rotate(640deg) scale(1);
+    opacity: 0;
+  }
+}
+/* 药瓶碎裂：中心一圈药液扩散 + 八滴飞溅 */
+.fx-splash {
+  width: 0;
+  height: 0;
+}
+.fx-splash i:first-child {
+  position: absolute;
+  left: -60px;
+  top: -60px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--c) 0%, transparent 70%);
+  opacity: 0;
+  animation: fx-splash-pool 0.6s ease-out forwards;
+}
+.fx-splash i:not(:first-child) {
+  position: absolute;
+  left: -5px;
+  top: -5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: 0 0 8px var(--c);
+  animation: fx-splash-drop 0.6s ease-out forwards;
+}
+@keyframes fx-splash-pool {
+  0% {
+    opacity: 0.95;
+    transform: scale(0.3);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+@keyframes fx-splash-drop {
+  0% {
+    opacity: 1;
+    transform: rotate(var(--r)) translateX(10px);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--r)) translateX(80px) scale(0.4);
+  }
+}
+/* 剑阵：剑尖朝下，容器顶边 = 敌人脚下的线，剑身向上伸出 */
+.fx-swords {
+  height: 0;
+}
+.fx-swords i {
+  position: absolute;
+  width: 34px;
+  height: 187px;
+  margin-left: -17px;
+  transform-origin: 50% 100%;
+  opacity: 0;
+  filter: drop-shadow(0 0 7px rgba(186, 230, 253, 0.85));
+  animation:
+    fx-sword-drop var(--dur) cubic-bezier(0.5, 0, 0.9, 0.6) var(--delay) both,
+    fx-sword-fade 0.4s ease-in 1.0s forwards;
+}
+/* 下坠时绕剑身轴线翻面（水平压扁再翻回来），落地前转正 */
+.fx-swords i svg {
+  display: block;
+  animation: fx-sword-spin linear both;
+}
+@keyframes fx-sword-drop {
+  0% {
+    opacity: 0;
+    transform: translate(var(--dx), -700px) rotate(var(--a0));
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(var(--a));
+  }
+}
+@keyframes fx-sword-spin {
+  0% {
+    transform: scaleX(1);
+  }
+  18% {
+    transform: scaleX(-0.15);
+  }
+  34% {
+    transform: scaleX(1);
+  }
+  48% {
+    transform: scaleX(-0.9);
+  }
+  60% {
+    transform: scaleX(0.2);
+  }
+  72% {
+    transform: scaleX(1);
+  }
+  84% {
+    transform: scaleX(-0.4);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+@keyframes fx-sword-fade {
+  to {
+    opacity: 0;
+  }
+}
 /* 治疗粒子：多道竖直绿色光柱从下往上飘散、渐隐 */
 .fx-heal-particles {
   width: 150px;
@@ -1113,6 +1471,22 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 14px 3px rgba(253, 230, 138, 0.9);
   transform: rotate(-35deg);
   animation: fx-slash 0.3s ease-out forwards;
+}
+.fx-pile-fly {
+  animation: fx-pile-fly 0.65s cubic-bezier(0.5, 0, 0.8, 0.4) forwards;
+}
+.fx-pile-fly.exhaust {
+  filter: sepia(1) saturate(4) hue-rotate(-30deg) drop-shadow(0 0 16px rgba(251, 146, 60, 0.9));
+}
+@keyframes fx-pile-fly {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.75);
+  }
+  100% {
+    opacity: 0.2;
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.12);
+  }
 }
 @keyframes fx-slash {
   0% {

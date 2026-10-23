@@ -188,6 +188,8 @@ export interface EnemyDef {
   startStatuses?: Record<string, number>
   /** 生命降到一半以下时分裂出的敌人，按顺序追加（需要配合 split 状态） */
   splitInto?: EnemyDef[]
+  /** 死亡时分裂出的敌人（各带自己的满血，本体不留尸体）；见 effects 的 deathSplits */
+  splitOnDeath?: EnemyDef[]
 }
 
 /** 固定遭遇：楼层在 [minFloor, maxFloor] 内的普通战斗有一定概率直接出这一组 */
@@ -231,6 +233,8 @@ export interface EnemyState {
   turns?: number
   /** 召唤 / 分裂产生的敌人，以及分裂掉的本体：死后不留尸体（界面不再显示） */
   vanishOnDeath?: boolean
+  /** 已执行过死亡分裂，避免重复触发 */
+  deathSplit?: boolean
   /** 被偷取后的最大生命值；缺省取 def.maxHp */
   maxHpOverride?: number
   statuses: Record<string, number>
@@ -324,6 +328,9 @@ export type GameEvent =
   | { type: 'reshuffled' }
   | { type: 'energyGained'; amount: number }
   | { type: 'handDiscarded'; count: number }
+  /** 一张牌进入弃牌堆 / 消耗牌堆（仅用于演出；打出与回合结束两处会发） */
+  | { type: 'cardDiscarded'; cardId: string }
+  | { type: 'cardExhausted'; cardId: string }
   | { type: 'perfectBlock' }
   | { type: 'statusApplied'; target: Side; status: string; stacks: number; enemyIndex?: number }
   | { type: 'statusRemoved'; target: Side; status: string; enemyIndex?: number }

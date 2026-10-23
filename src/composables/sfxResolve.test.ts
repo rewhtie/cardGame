@@ -82,6 +82,8 @@ describe('sfxSlotsForEvent', () => {
       cardDrawn: { type: 'cardDrawn', cardId: 'strike' },
       reshuffled: { type: 'reshuffled' },
       energyGained: { type: 'energyGained', amount: 1 },
+      cardDiscarded: { type: 'cardDiscarded', cardId: 'strike' },
+      cardExhausted: { type: 'cardExhausted', cardId: 'strike' },
       handDiscarded: { type: 'handDiscarded', count: 1 },
       perfectBlock: { type: 'perfectBlock' },
       statusApplied: { type: 'statusApplied', target: 'player', status: 'strength', stacks: 1 },

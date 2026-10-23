@@ -124,7 +124,7 @@ const DECAY: Record<string, string> = {
   none: '常驻',
   tick: '每回合 -1',
   turnEnd: '回合结束清空',
-  playerTurnStart: '玩家回合开始清空',
+  playerTurnStart: '回合开始清空',
   halve: '每回合减半',
   condition: '满足条件时消耗',
 }

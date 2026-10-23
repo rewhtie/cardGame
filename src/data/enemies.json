@@ -392,6 +392,76 @@
           "block": 6
         }
       ]
+    },
+    {
+      "id": "ghost-wisp",
+      "name": "幽魂",
+      "icon": "👻",
+      "role": "other",
+      "maxHp": 1,
+      "startStatuses": {
+        "incorporeal": 999
+      },
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 999
+        }
+      ]
+    },
+    {
+      "id": "ghost",
+      "name": "幽灵",
+      "icon": "👻",
+      "role": "boss",
+      "maxHp": 240,
+      "splitOnDeath": [
+        "ghost-wisp",
+        "ghost-wisp",
+        "ghost-wisp"
+      ],
+      "loopFrom": 2,
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 10,
+          "hits": 3
+        },
+        {
+          "type": "debuff",
+          "status": "vulnerable",
+          "stacks": 99,
+          "also": [
+            {
+              "type": "debuff",
+              "status": "frail",
+              "stacks": 99
+            }
+          ]
+        },
+        {
+          "type": "buff",
+          "status": "incorporeal",
+          "stacks": 1,
+          "also": [
+            {
+              "type": "addCards",
+              "cardId": "stun",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "type": "attack",
+          "damage": 10,
+          "hits": 3
+        },
+        {
+          "type": "attack",
+          "damage": 15,
+          "hits": 3
+        }
+      ]
     }
   ],
   "encounters": []

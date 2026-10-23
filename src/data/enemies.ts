@@ -23,6 +23,7 @@ export const mediumAcidSlime = get('medium-acid-slime')
 export const largeSpikeSlime = get('large-spike-slime')
 export const largeAcidSlime = get('large-acid-slime')
 export const slimeBoss = get('slime-boss')
+export const ghost = get('ghost')
 export const drainer = get('drainer')
 export const statue = get('statue')
 

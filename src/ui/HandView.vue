@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import CardView from './CardView.vue'
 import { progressOf } from '@/engine/enchant'
 import { previewDamage } from '@/engine/preview'
@@ -25,6 +25,39 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ press: [handIndex: number, event: PointerEvent] }>()
 
+// 新进入手牌的牌（抽牌 / 复制 / 发现 / 回收）统一播放入场动画。
+// 手牌 key 含下标，打出一张牌会让后面的牌换 key，所以不用 Transition，
+// 而是对比前后手牌（按牌 id 的多重集合）找出新增的牌，再对对应牌槽做 WAAPI 动画。
+const rootEl = ref<HTMLElement | null>(null)
+watch(
+  () => [...props.hand],
+  async (now, before) => {
+    const pool = new Map<string, number>()
+    for (const id of before ?? []) pool.set(id, (pool.get(id) ?? 0) + 1)
+    const fresh: number[] = []
+    // 从后往前匹配：同 id 的重复牌里，新增的总是排在末尾
+    for (let i = now.length - 1; i >= 0; i--) {
+      const left = pool.get(now[i]!) ?? 0
+      if (left > 0) pool.set(now[i]!, left - 1)
+      else fresh.unshift(i)
+    }
+    if (!fresh.length) return
+    await nextTick()
+    fresh.forEach((index, k) => {
+      const el = rootEl.value?.querySelector<HTMLElement>(`[data-hand-slot="${index}"]`)
+      el?.animate(
+        [
+          { opacity: 0, transform: 'translateY(-90px) scale(0.45)' },
+          { opacity: 1, transform: 'translateY(8px) scale(1.06)', offset: 0.7 },
+          { opacity: 1, transform: 'translateY(0) scale(1)' },
+        ],
+        { duration: 420, delay: k * 80, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill: 'backwards' },
+      )
+    })
+  },
+  { immediate: true },
+)
+
 const items = computed(() =>
   props.hand.flatMap((id, index) => {
     const card = props.cards[id]
@@ -47,10 +80,11 @@ const items = computed(() =>
 
 <template>
   <!-- 占满两侧面板之间的空间；放不下时各牌槽等比收窄，卡面叠放，悬浮的牌置顶显示全貌 -->
-  <div class="flex-1 min-w-0 flex justify-center gap-3 min-h-56">
+  <div ref="rootEl" data-hand-root class="flex-1 min-w-0 flex justify-center gap-3 min-h-56">
     <div
       v-for="item in items"
       :key="`${item.index}-${item.card.id}`"
+      :data-hand-slot="item.index"
       class="relative z-0 basis-36 shrink min-w-0 last:shrink-0 hover:z-10"
     >
       <CardView

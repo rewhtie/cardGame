@@ -2,7 +2,7 @@
 
 # 敌人与遭遇
 
-共 16 个敌人、0 个固定遭遇。数据来自 `src/data/enemies.json`。
+共 18 个敌人、0 个固定遭遇。数据来自 `src/data/enemies.json`。
 
 ## 敌人
 
@@ -24,6 +24,8 @@
 | small-slime | 小史莱姆 | 其他 |  | 20 |  | 1. 攻击 5<br>2. 防御 4 |  |
 | slime | 史莱姆 | 其他 |  | 40 |  | 1. 攻击 8<br>2. 防御 6<br>3. 攻击 12 |  |
 | spore-slime | 孢子史莱姆 | 其他 |  | 40 |  | 1. 给你 1 层 weak<br>2. 攻击 8<br>3. 防御 6 |  |
+| ghost-wisp | 幽魂 | 其他 |  | 1 | incorporeal×999 | 1. 攻击 999 |  |
+| ghost | 幽灵 | Boss |  | 240 |  | 1. 攻击 10×3<br>2. 给你 99 层 vulnerable；给你 99 层 frail<br>3. 自身 1 层 incorporeal；塞 1 张 stun<br>4. 攻击 10×3<br>5. 攻击 15×3<br>（走完回到第 3 个） |  |
 
 ## 固定遭遇
 

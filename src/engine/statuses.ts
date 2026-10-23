@@ -30,13 +30,14 @@ export interface StatusDef {
   /** number：层数就是数值，直接显示数字（力量、敏捷…）；count：能力型，层数是份数，叠加后显示成小号 ×N；value：纯数值（没有“层”的概念），显示数字，说明只有一句 */
   display?: 'number' | 'count' | 'value'
   /**
-   * none：层数永久常驻；turnEnd：到时点清空（默认玩家回合结束）；playerTurnStart：到时点清空（默认玩家回合开始）；
+   * none：层数永久常驻；turnEnd：到时点清空（默认玩家回合结束）；playerTurnStart：到时点清空（默认持有者自己的回合开始：玩家 = 玩家回合开始，敌人 = 敌方回合开始、行动前）；
    * tick：到时点 -1，减到 0 移除；halve：到时点减半（向下取整），减到 0 移除；
    * condition：满足条件时才消耗，逻辑写在引擎里（剑意、感电之类），状态面板里不能新建
    */
   decay: Decay
-  /** 衰减 / 清空发生的时点；缺省：tick、halve 跟所有者的回合走（玩家回合结束、敌人行动前），turnEnd 为玩家回合结束，playerTurnStart 为玩家回合开始 */
-  decayAt?: Timing
+  /** 衰减 / 清空发生的时点；缺省：tick、halve 跟所有者的回合走（玩家回合结束、敌人行动前；只有回合结束触发的则在持有者回合结束），turnEnd 为持有者回合结束（敌人身上的减益仍按玩家回合结束），playerTurnStart 为持有者回合开始 */
+  /** 'ownerStart' 表示持有者自己的回合开始（玩家 = 玩家回合开始，敌人 = 敌方回合开始、行动前） */
+  decayAt?: Timing | 'ownerStart'
   /** onTurnStart / onTurnEnd 触发的时点；缺省：所有者自己回合的开始 / 结束 */
   triggerAt?: Timing
   modifyDamageDealt?: (stacks: number) => Mod
@@ -296,10 +297,10 @@ export const STATUSES: StatusDef[] = [
     display: 'count',
     name: '无实体',
     icon: '👻',
-    text: '每次受到的伤害降为 1，每个回合 -1 层',
+    text: '每次受到的伤害降为 1，每个回合开始时 -1 层',
     kind: 'buff',
     decay: 'tick',
-    decayAt: 'playerStart',
+    decayAt: 'ownerStart',
   },
   {
     id: 'woundSpawn',
@@ -309,7 +310,7 @@ export const STATUSES: StatusDef[] = [
     text: '每次受到伤害，往抽牌堆随机位置塞入 N 张伤口',
     kind: 'buff',
     decay: 'turnEnd',
-    decayAt: 'playerStart',
+    decayAt: 'ownerStart',
   },
   {
     id: 'damageCap',
@@ -527,11 +528,12 @@ export const fillStacks = (text: string, stacks: number | string) =>
 export const statusDescription = (id: string, stacks: number) =>
   `${statusById[id]?.name ?? id} ${stacks}：${fillStacks(statusById[id]?.text ?? '', stacks)}`
 
-export const TIMING_TEXT: Record<Timing, string> = {
+export const TIMING_TEXT: Record<Timing | 'ownerStart', string> = {
   playerStart: '玩家回合开始时',
   playerEnd: '玩家回合结束时',
   enemyStart: '敌方回合开始时（敌人行动前）',
   enemyEnd: '敌方回合结束时（敌人行动后）',
+  ownerStart: '回合开始时',
 }
 
 export const DECAY_LABEL: Record<Decay, string> = {
@@ -548,10 +550,13 @@ type Owner = 'player' | 'enemy'
 /** 清空 / 衰减实际发生的时点 */
 export function decayTiming(def: StatusDef, side: Owner): Timing | null {
   if (def.decay === 'none' || def.decay === 'condition') return null
+  if (def.decayAt === 'ownerStart') return side === 'player' ? 'playerStart' : 'enemyStart'
   if (def.decayAt) return def.decayAt
   // 回合结束清空的增益跟着持有者走：敌人带着的撑到自己出手之后（减益仍在玩家回合结束清）
   if (def.decay === 'turnEnd') return side === 'enemy' && def.kind === 'buff' ? 'enemyEnd' : 'playerEnd'
-  if (def.decay === 'playerTurnStart') return 'playerStart'
+  if (def.decay === 'playerTurnStart') return side === 'player' ? 'playerStart' : 'enemyStart'
+  // 只在回合结束触发的（再生）：先触发再衰减，衰减也放在持有者的回合结束
+  if (def.onTurnEnd && !def.onTurnStart) return side === 'player' ? 'playerEnd' : 'enemyEnd'
   return side === 'player' ? 'playerEnd' : 'enemyStart'
 }
 

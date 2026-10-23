@@ -22,6 +22,8 @@ export interface EnemySpec {
   loopFrom?: number
   /** 分裂出的敌人 id，按顺序追加 */
   splitInto?: string[]
+  /** 死亡时分裂出的敌人 id（各自满血，本体消失） */
+  splitOnDeath?: string[]
 }
 
 /** 固定遭遇：指定楼层范围内，普通战斗有一定概率直接出这一组 */
@@ -91,13 +93,14 @@ export function validateEnemyData(data: EnemyData): string[] {
         if (it.type === 'summon' && !has(it.enemy)) errors.push(`${at}：召唤的敌人 ${it.enemy} 不存在`)
       }
     }
-    for (const s of e.splitInto ?? []) {
+    for (const s of [...(e.splitInto ?? []), ...(e.splitOnDeath ?? [])]) {
       if (!has(s)) errors.push(`${at}：分裂出的敌人 ${s} 不存在`)
     }
   }
   // 引用成环会让构建无限递归
   const refs = (e: EnemySpec) => [
     ...(e.splitInto ?? []),
+    ...(e.splitOnDeath ?? []),
     ...e.intents.flatMap((i) => [i, ...(i.also ?? [])].flatMap((a) => (a.type === 'summon' ? [a.enemy] : []))),
   ]
   const byId = new Map(data.enemies.map((e) => [e.id, e]))
@@ -149,6 +152,7 @@ export function buildEnemies(data: EnemyData) {
         ...(also?.length && { also: also.map(action) }),
       })),
       ...(s.splitInto?.length && { splitInto: s.splitInto.map(build) }),
+      ...(s.splitOnDeath?.length && { splitOnDeath: s.splitOnDeath.map(build) }),
     }
     cache.set(id, def)
     return def

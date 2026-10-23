@@ -48,6 +48,8 @@ export interface RunContent {
   enemies?: EnemyDef[]
   /** Boss 节点的敌人；缺省时用 enemies */
   boss?: EnemyDef
+  /** Boss 候选池：每局按种子固定抽一个；缺省时用 boss */
+  bosses?: EnemyDef[]
   /** 精英节点出的怪 */
   elite?: EnemyDef
   /** 普通战斗节点的怪物池：每个节点按种子固定出一只；缺省时用 enemies */
@@ -194,6 +196,7 @@ export function createRun(config: RunConfig): RunState {
       enemy: config.enemy,
       enemies: config.enemies,
       boss: config.boss,
+      bosses: config.bosses,
       elite: config.elite,
       monsters: config.monsters,
       encounters: config.encounters,
@@ -264,7 +267,10 @@ function chooseNode(run: RunState, id: string, god = false): RunResult {
 function battleEnemies(run: RunState, nodeId: string): EnemyDef[] {
   if (run.cheatNextEnemies?.length) return run.cheatNextEnemies
   const type = findNode(run.map, nodeId)?.type
-  if (run.content.boss && !run.eventBattle && type === 'boss') return [run.content.boss]
+  if (!run.eventBattle && type === 'boss') {
+    const bosses = run.content.bosses?.length ? run.content.bosses : run.content.boss ? [run.content.boss] : []
+    if (bosses.length) return [bosses[Math.floor(createRng(deriveSeed(run.seed, 'boss')).float() * bosses.length)]!]
+  }
   if (run.content.elite && !run.eventBattle && type === 'elite') return [run.content.elite]
   const pool = run.content.monsters
   if (pool?.length && !run.eventBattle && type === 'monster') {
