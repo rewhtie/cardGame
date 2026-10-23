@@ -4,10 +4,11 @@ import { nextTick, onBeforeUnmount, ref } from 'vue'
 import { cards } from '@/data/cards'
 import { playSfx } from '@/composables/useSfx'
 import { potions, relics } from '@/data/items'
+import { upgradeCard } from '@/engine/enchant'
 import { maxPotions, type RunState } from '@/engine/run'
 import type { ShopItem } from '@/engine/shop'
 import CardPickView from './CardPickView.vue'
-import CardView from './CardView.vue'
+import UpgradableCard from './UpgradableCard.vue'
 import HoverTip from './HoverTip.vue'
 import ShopPrice from './ShopPrice.vue'
 
@@ -47,6 +48,12 @@ onBeforeUnmount(() => {
   clearTimeout(shakeTimer)
   clearTimeout(noticeTimer)
 })
+/** 右键预览升级后的牌面；诅咒 / 状态牌没有升级版 */
+const upgradedOf = (id: string) => {
+  const card = cards[id]!
+  return card.rarity === 'curse' || card.rarity === 'status' ? undefined : upgradeCard(card)
+}
+
 function buy(item: ShopItem, kind: 'card' | 'relic' | 'potion', i: number) {
   if (item.sold) return
   if (!canAfford(item)) return void poor(`${kind}${i}`)
@@ -88,9 +95,9 @@ function startRemove() {
           <div v-for="(item, i) in shop().cards.slice(0, 5)" :key="i" class="slot">
             <template v-if="item">
               <div :class="{ sold: item.sold, shake: shaking === `card${i}` }">
-                <CardView
+                <UpgradableCard
                   :card="cards[item.id]!"
-                  :playable="!item.sold"
+                  :upgraded="upgradedOf(item.id)"
                   @click="buy(item, 'card', i)"
                 />
               </div>
@@ -106,9 +113,9 @@ function startRemove() {
           <div v-for="(item, i) in shop().cards.slice(5)" :key="i" class="slot">
             <template v-if="item">
               <div :class="{ sold: item.sold, shake: shaking === `card${i + 5}` }">
-                <CardView
+                <UpgradableCard
                   :card="cards[item.id]!"
-                  :playable="!item.sold"
+                  :upgraded="upgradedOf(item.id)"
                   @click="buy(item, 'card', i + 5)"
                 />
               </div>

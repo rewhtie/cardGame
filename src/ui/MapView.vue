@@ -235,14 +235,20 @@ function onClick(id: string, canChoose: boolean) {
           :stroke="n.reachable ? '#fbbf24' : COLORS[n.node.type]"
           stroke-width="2"
         />
-        <text
-          text-anchor="middle"
-          dominant-baseline="central"
-          :font-size="n.node.type === 'boss' ? 28 : 18"
+        <foreignObject
+          :x="-NODE_R - 10"
+          :y="-NODE_R - 10"
+          :width="(NODE_R + 10) * 2"
+          :height="(NODE_R + 10) * 2"
           pointer-events="none"
         >
-          <Emoji :e="ICONS[n.node.type]" />
-        </text>
+          <div
+            class="w-full h-full flex items-center justify-center leading-none"
+            :style="{ fontSize: `${n.node.type === 'boss' ? 28 : 18}px` }"
+          >
+            <Emoji :e="ICONS[n.node.type]" />
+          </div>
+        </foreignObject>
       </g>
     </svg>
 
