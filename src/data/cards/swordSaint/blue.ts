@@ -16,7 +16,7 @@ export const swordSaintBlue: Card[] = [
     .targetEnemy()
     .damageHits(5, 2)
     .reward()
-    .evolve(20, 'frenzySlash')
+    .evolve(10, 'frenzySlash')
     .upgrade((u) => u.damage(8).damage(8)),
   // 进化目标，不进奖励
   Card.blue('frenzySlash', '乱舞')

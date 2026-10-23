@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { attackBonusAt } from '@/engine/intents'
 import { enemyAttack } from '@/engine/blades'
 import { statusById } from '@/engine/statuses'
@@ -98,10 +99,10 @@ const intentTip = computed(() => {
     :class="enemy.hp <= 0 ? 'opacity-30 grayscale pointer-events-none delay-[700ms]' : ''"
   >
     <div v-if="splitting && enemy.hp > 0" class="text-lg font-bold text-purple-300">
-      <HoverTip icon="❓" name="？？？" text="意图被打断：本回合将分裂成两只" color="#c4b5fd">❓ ？？？</HoverTip>
+      <HoverTip icon="❓" name="？？？" text="意图被打断：本回合将分裂成两只" color="#c4b5fd"><Emoji e="❓" /> ？？？</HoverTip>
     </div>
     <div v-else-if="stunned && enemy.hp > 0" class="text-lg font-bold text-yellow-300">
-      <HoverTip icon="💫" name="晕眩" text="意图被打断：本回合无法行动，晕眩结束后恢复原来的意图" color="#fde047">💫 晕眩</HoverTip>
+      <HoverTip icon="💫" name="晕眩" text="意图被打断：本回合无法行动，晕眩结束后恢复原来的意图" color="#fde047"><Emoji e="💫" /> 晕眩</HoverTip>
     </div>
     <div
       v-else-if="intent && enemy.hp > 0"
@@ -120,25 +121,25 @@ const intentTip = computed(() => {
         :color="intentTip.color"
       >
         <template v-if="intent.type === 'attack'">
-          ⚔ {{ dmg }}<template v-if="(intent.hits ?? 1) > 1">×{{ intent.hits }}</template>
-          <span v-if="intent.addCards" class="ml-1">🟢{{ intent.addCards.count }}</span>
+          <Emoji e="⚔" /> {{ dmg }}<template v-if="(intent.hits ?? 1) > 1">×{{ intent.hits }}</template>
+          <span v-if="intent.addCards" class="ml-1"><Emoji e="🟢" />{{ intent.addCards.count }}</span>
         </template>
-        <template v-else-if="intent.type === 'defend'">🛡 {{ intent.block }}</template>
+        <template v-else-if="intent.type === 'defend'"><Emoji e="🛡" /> {{ intent.block }}</template>
         <template v-else-if="intent.type === 'addCards'">{{ cardName(intent.cardId) }} ×{{ intent.count }}</template>
-        <template v-else-if="intent.type === 'idle'">💤 蓄力</template>
-        <template v-else-if="intent.type === 'summon'">📣 召唤</template>
-        <template v-else-if="intent.type === 'steal'">🪙 偷 {{ intent.amount }}</template>
-        <template v-else-if="intent.type === 'flee'">💨 逃跑</template>
+        <template v-else-if="intent.type === 'idle'"><Emoji e="💤" /> 蓄力</template>
+        <template v-else-if="intent.type === 'summon'"><Emoji e="📣" /> 召唤</template>
+        <template v-else-if="intent.type === 'steal'"><Emoji e="🪙" /> 偷 {{ intent.amount }}</template>
+        <template v-else-if="intent.type === 'flee'"><Emoji e="💨" /> 逃跑</template>
         <template v-else>
-          {{ intent.type === 'debuff' ? '🔻' : '🔺' }} {{ statusById[intent.status]?.icon }}
+          <Emoji :e="intent.type === 'debuff' ? '🔻' : '🔺'" /> <Emoji :e="statusById[intent.status]?.icon" />
           {{ intent.stacks }}
         </template>
-        <span v-for="(a, k) in intent.also ?? []" :key="k" class="ml-1 text-base">+{{ TIP_ICON[a.type] }}</span>
+        <span v-for="(a, k) in intent.also ?? []" :key="k" class="ml-1 text-base">+<Emoji :e="TIP_ICON[a.type]" /></span>
       </HoverTip>
     </div>
     <div
       data-fx="sprite"
-      class="w-40 h-40 rounded-full bg-emerald-500 flex items-center justify-center text-5xl transition-all duration-150"
+      class="w-40 h-40 rounded-full bg-transparent flex items-center justify-center text-5xl transition-all duration-150"
       :class="
         enemy.hp <= 0
           ? dying
@@ -151,7 +152,7 @@ const intentTip = computed(() => {
               : ''
       "
     >
-      {{ enemy.def.icon ?? '🟢' }}
+      <Emoji :e="enemy.def.icon ?? '🟢'" />
     </div>
     <div class="font-bold">{{ enemy.def.name }}</div>
     <div class="relative w-48 h-4">
@@ -168,7 +169,7 @@ const intentTip = computed(() => {
         class="absolute left-full -ml-3 -mt-1 top-1/2 -translate-y-1/2 w-10 h-10 drop-shadow-[0_0_6px_rgba(56,189,248,0.8)]"
       >
         <span class="absolute inset-0 flex items-center justify-center text-4xl leading-none"
-          >🛡</span
+          ><Emoji e="🛡" /></span
         >
         <span
           class="absolute inset-0 flex items-center justify-center text-xs leading-none font-black text-white [text-shadow:0_0_4px_#0c4a6e,0_0_4px_#0c4a6e]"
@@ -178,8 +179,8 @@ const intentTip = computed(() => {
       </div>
     </div>
     <div class="text-sm">
-      ❤ {{ enemy.hp }}/{{ enemy.maxHpOverride ?? enemy.def.maxHp }}
-      <span v-if="enemy.stolenGold" class="ml-2 text-amber-300">🪙 {{ enemy.stolenGold }}</span>
+      <Emoji e="❤" /> {{ enemy.hp }}/{{ enemy.maxHpOverride ?? enemy.def.maxHp }}
+      <span v-if="enemy.stolenGold" class="ml-2 text-amber-300"><Emoji e="🪙" /> {{ enemy.stolenGold }}</span>
     </div>
     <StatusIcons :statuses="enemy.statuses" />
   </div>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed, ref } from 'vue'
 import {
   BUFFS,
@@ -111,7 +112,7 @@ const hookDetails = computed(() => {
 <template>
   <div class="ed">
     <header class="ed-head">
-      <span class="ed-title">☠️ 状态面板</span>
+      <span class="ed-title"><Emoji e="☠️" /> 状态面板</span>
       <span class="ed-tag">仅开发模式 · 只读</span>
       <span class="ed-hint">所有内容取自 statuses.ts；要改效果或文字，直接改代码</span>
       <button class="ed-btn" style="margin-left: auto" @click="$emit('close')">关闭</button>
@@ -129,7 +130,7 @@ const hookDetails = computed(() => {
             :class="{ active: d.id === selectedId }"
             @click="selectedId = d.id"
           >
-            <span>{{ d.icon }}</span>
+            <span><Emoji :e="d.icon" /></span>
             <span class="ed-item-name">{{ d.name }}</span>
           </div>
         </template>
@@ -137,7 +138,7 @@ const hookDetails = computed(() => {
 
       <main v-if="current && preview" class="ed-form">
         <div class="ed-card">
-          <h3>{{ current.icon }} {{ current.name }}　<span class="ed-item-sub">{{ current.id }}</span></h3>
+          <h3><Emoji :e="current.icon" /> {{ current.name }}　<span class="ed-item-sub">{{ current.id }}</span></h3>
           <div>{{ current.text }}</div>
           <div class="ed-item-sub" style="margin-top: 6px">
             {{ current.kind === 'buff' ? '正面' : '负面' }}　显示：{{ DISPLAY_LABEL[current.display ?? 'number'] }}

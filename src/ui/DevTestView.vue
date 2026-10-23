@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { cards } from '@/data/cards'
 import { pushFx } from '@/composables/useFx'
@@ -85,7 +86,7 @@ onBeforeUnmount(stop)
   <div class="absolute inset-0 z-30 bg-slate-950 text-slate-100 flex">
     <!-- 左侧图鉴：点卡面即开始自动测试 -->
     <aside class="w-80 flex-none flex flex-col border-r border-slate-700 bg-slate-900">
-      <div class="px-4 pt-3 pb-2 text-lg font-bold text-amber-400">🧪 卡牌测试台</div>
+      <div class="px-4 pt-3 pb-2 text-lg font-bold text-amber-400"><Emoji e="🧪" /> 卡牌测试台</div>
       <div class="flex gap-1 px-3 pb-2">
         <button
           v-for="k in KINDS"

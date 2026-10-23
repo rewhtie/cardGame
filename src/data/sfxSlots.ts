@@ -69,6 +69,8 @@ export const SFX_SLOTS: SlotDef[] = [
     ['run.shop.poor', '商店买不起'],
     ['run.forge.upgrade', '锻造 / 升级敲击'],
     ['run.enchant', '附魔镶嵌'],
+    ['run.evolve', '卡牌成长（蓄力裂开 + 爆发）'],
+    ['run.train', '卡牌训练（成长未满，裂痕加深）'],
     ['run.relic.gained', '获得遗物'],
     ['run.hpLost', '战斗外失血'],
   ]),

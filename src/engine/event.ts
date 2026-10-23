@@ -141,6 +141,13 @@ export function resolveOutcomes(
         }
         const r = grant(state, id)
         events.push(...r.events)
+        // 需要玩家选牌的遗物：暂停，剩余结果存进 event.pending，选完牌后继续
+        if (r.state.screen === 'pick' && r.state.event) {
+          return {
+            state: say({ ...r.state, event: { ...r.state.event, pending: rest } }, '获得一件遗物'),
+            events,
+          }
+        }
         state = say(r.state, '获得一件遗物')
         break
       }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed, ref } from 'vue'
 import { attackBonusAt, intentIndexAt } from '@/engine/intents'
 import raw from '@/data/enemies.json'
@@ -321,7 +322,7 @@ function revert() {
 <template>
   <div class="ed">
     <header class="ed-head">
-      <span class="ed-title">👹 敌人编辑器</span>
+      <span class="ed-title"><Emoji e="👹" /> 敌人编辑器</span>
       <span class="ed-tag">仅开发模式</span>
       <span class="ed-hint">保存后写回 src/data/enemies.json，新开一局生效</span>
       <span v-if="message" class="ed-msg" :class="message.ok ? 'ok' : 'err'">{{ message.text }}</span>
@@ -362,7 +363,7 @@ function revert() {
             :class="{ active: e.id === selectedId }"
             @click="selectedId = e.id"
           >
-            <span>{{ e.icon || '👾' }}</span>
+            <span><Emoji :e="e.icon || '👾'" /></span>
             <span class="ed-item-name">{{ e.name }}</span>
             <span class="ed-item-sub">{{ e.maxHp }}血<template v-if="e.threat"> · 威胁{{ e.threat }}</template></span>
           </div>
@@ -515,7 +516,7 @@ function revert() {
 
         <section class="ed-card">
           <h3>死亡 / 半血分裂（需配合 split 状态）</h3>
-          <div v-for="(s, i) in current.splitInto ?? []" :key="i" class="ed-intent">
+          <div v-for="(_s, i) in current.splitInto ?? []" :key="i" class="ed-intent">
             <select v-model="(current.splitInto as string[])[i]" class="ed-ctl">
               <option v-for="x in data.enemies" :key="x.id" :value="x.id">{{ x.name }}</option>
             </select>
@@ -586,7 +587,7 @@ function revert() {
 
         <section class="ed-card">
           <h3>敌人（总威胁值 {{ encThreat(currentEnc) }}）</h3>
-          <div v-for="(id, i) in currentEnc.enemies" :key="i" class="ed-intent">
+          <div v-for="(_id, i) in currentEnc.enemies" :key="i" class="ed-intent">
             <select v-model="currentEnc.enemies[i]" class="ed-ctl">
               <option v-for="x in data.enemies" :key="x.id" :value="x.id">
                 {{ x.name }}（{{ ROLE_LABEL[x.role] }} · {{ x.maxHp }}血）

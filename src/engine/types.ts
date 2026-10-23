@@ -119,6 +119,8 @@ export interface CardDef {
   kind: 'attack' | 'skill' | 'power'
   /** 打出后进消耗牌堆（能力牌无效） */
   exhaust?: boolean
+  /** 虚无：回合结束时若还在手牌中，被消耗（优先于保留） */
+  ethereal?: boolean
   /** 保留：回合结束时留在手牌里 */
   retain?: boolean
   /** 每在手中停留（保留）一回合，伤害 +n；蓄势用，按战斗实例各自累积 */
@@ -311,6 +313,8 @@ export type Side = 'player' | 'enemy'
 
 export type GameEvent =
   | { type: 'cardsEvolved'; cards: { from: string; to: string }[] }
+  /** 成长进度推进但还没成长：to 是带新进度的牌 id（火堆训练用，播裂痕加深的表现） */
+  | { type: 'cardsTrained'; cards: { from: string; to: string }[] }
   | { type: 'cardPlayed'; cardId: string; handIndex: number }
   | { type: 'potionGained'; potionId: string }
   | { type: 'potionUsed'; potionId: string; enemyIndex?: number }

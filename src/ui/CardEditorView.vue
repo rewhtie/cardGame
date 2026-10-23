@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed, ref } from 'vue'
 import { Card, editableCards } from '@/data/cards'
+import { saveCardOverrides } from '@/data/cards/overrides'
 import type { CardSpec, EditableRarity } from '@/data/cards/cardSpec'
 import { upgradeCard } from '@/engine/enchant'
 import type { CardDef } from '@/engine/types'
@@ -8,6 +10,9 @@ import CardEffectsEditor from './CardEffectsEditor.vue'
 import CardView from './CardView.vue'
 
 defineEmits<{ close: [] }>()
+
+/** 开发模式：保存直接改写源码，可新增 / 删除 / 换职业；发布版：只能调整已有卡牌，改动存在本机 */
+const DEV = import.meta.env.DEV
 
 const DIRS = [
   { value: 'warrior', label: '战士' },
@@ -31,14 +36,16 @@ interface Entry {
   /** 磁盘上当前所在的稀有度文件 */
   fileRarity: EditableRarity
   spec: CardSpec
+  /** 内置原版数据（还原基准） */
+  base: CardSpec
   /** 上次保存 / 载入时的快照，用于判断是否有未保存改动 */
   saved: string
 }
 
 const entries = ref<Entry[]>(
-  editableCards().map(({ dir, spec }) => {
+  editableCards().map(({ dir, spec, base }) => {
     const copy = structuredClone(spec)
-    return { dir, fileDir: dir, fileRarity: spec.rarity, spec: copy, saved: JSON.stringify(copy) }
+    return { dir, fileDir: dir, fileRarity: spec.rarity, spec: copy, base, saved: JSON.stringify(copy) }
   }),
 )
 
@@ -59,6 +66,8 @@ const list = computed(() =>
 )
 const current = computed(() => entries.value.find((e) => e.spec.id === selectedId.value) ?? null)
 const dirty = (e: Entry) => JSON.stringify(e.spec) !== e.saved || e.dir !== e.fileDir
+/** 与内置原版不同（发布版里即玩家改过的卡） */
+const modified = (e: Entry) => JSON.stringify(e.spec) !== JSON.stringify(e.base)
 const dirtyCount = computed(() => entries.value.filter(dirty).length)
 const dirLabel = (dir: string) => DIRS.find((d) => d.value === dir)?.label ?? dir
 
@@ -134,7 +143,7 @@ const hasEvolve = computed({
   set: (on: boolean) => {
     const spec = current.value?.spec
     if (!spec) return
-    if (on) spec.evolve = { plays: 20, into: spec.id }
+    if (on) spec.evolve = { plays: 10, into: spec.id }
     else delete spec.evolve
   },
 })
@@ -203,7 +212,46 @@ const upgradeExhaust = computed({
   },
 })
 
+/** 发布版：把与原版不同的卡整理成改动记录写入本机；和原版一致的不记 */
+function persistOverrides() {
+  saveCardOverrides(Object.fromEntries(entries.value.filter(modified).map((e) => [e.spec.id, e.spec])))
+}
+
+/** 发布版保存：改动存在本机，下次启动游戏时生效 */
+function saveLocal(e: Entry) {
+  // 经构建器过一遍，字段顺序与原版一致，才能准确判断“是否改过”；改坏了无法构建会在这里报错
+  try {
+    e.spec = Card.fromSpec(e.spec).spec()
+  } catch (err) {
+    message.value = { ok: false, text: `✘ 这张卡的数据无法使用：${(err as Error).message}` }
+    return
+  }
+  e.saved = JSON.stringify(e.spec)
+  persistOverrides()
+  message.value = { ok: true, text: `✔ 已保存：${e.spec.name}（重启游戏后生效）` }
+}
+
+/** 发布版：把这张卡恢复成内置原版 */
+function restoreCard(e: Entry) {
+  e.spec = structuredClone(e.base)
+  e.saved = JSON.stringify(e.spec)
+  persistOverrides()
+  message.value = { ok: true, text: `✔ 已还原：${e.spec.name}（重启游戏后生效）` }
+}
+
+/** 发布版：还原全部改动 */
+function restoreAll() {
+  if (!window.confirm('确定把所有卡牌还原成初始数据？你的改动会丢失。')) return
+  entries.value.forEach((e) => {
+    e.spec = structuredClone(e.base)
+    e.saved = JSON.stringify(e.spec)
+  })
+  persistOverrides()
+  message.value = { ok: true, text: '✔ 已还原全部卡牌（重启游戏后生效）' }
+}
+
 async function save(e: Entry) {
+  if (!DEV) return saveLocal(e)
   saving.value = true
   message.value = null
   try {
@@ -272,11 +320,13 @@ function revert(e: Entry) {
 <template>
   <div class="ed">
     <header class="ed-head">
-      <span class="ed-title">🛠 卡牌编辑器</span>
-      <span class="ed-tag">仅开发模式</span>
-      <span class="ed-hint">保存会直接改写 src/data/cards 下的源码；不会自动刷新页面，要在游戏里看到效果请手动刷新（F5）</span>
+      <span class="ed-title"><Emoji e="🛠" /> 卡牌编辑器</span>
+      <span v-if="DEV" class="ed-tag">仅开发模式</span>
+      <span v-if="DEV" class="ed-hint">保存会直接改写 src/data/cards 下的源码；不会自动刷新页面，要在游戏里看到效果请手动刷新（F5）</span>
+      <span v-else class="ed-hint">只能调整已有卡牌，改动保存在本机，重启游戏后生效</span>
       <span v-if="message" class="ed-msg" :class="message.ok ? 'ok' : 'err'">{{ message.text }}</span>
       <span v-if="dirtyCount" class="ed-dirty">{{ dirtyCount }} 张未保存</span>
+      <button v-if="!DEV" class="ed-btn" :disabled="!entries.some(modified)" @click="restoreAll">全部还原</button>
       <button class="ed-btn ed-close" @click="$emit('close')">关闭</button>
     </header>
 
@@ -303,11 +353,12 @@ function revert(e: Entry) {
             :class="[`r-${e.spec.rarity}`, { active: e.spec.id === selectedId }]"
             @click="selectedId = e.spec.id"
           >
-            <span class="ed-item-icon">{{ e.spec.icon }}</span>
+            <span class="ed-item-icon"><Emoji :e="e.spec.icon" /></span>
             <span class="ed-item-main">
               <span class="ed-item-name">{{ e.spec.name }}</span>
               <span class="ed-item-sub">{{ dirLabel(e.dir) }} · {{ RARITY_SHORT[e.spec.rarity] }}</span>
             </span>
+            <span v-if="!DEV && modified(e)" class="ed-dot" title="已修改（与初始数据不同）">✎</span>
             <span v-if="dirty(e)" class="ed-dot" title="有未保存的改动">●</span>
             <span class="ed-cost">{{ e.spec.cost }}</span>
           </li>
@@ -334,13 +385,13 @@ function revert(e: Entry) {
 
             <label class="ed-field">
               <span>职业（选择职业专属卡）</span>
-              <select v-model="current.dir" class="ed-ctl">
+              <select v-model="current.dir" class="ed-ctl" :disabled="!DEV">
                 <option v-for="d in DIRS" :key="d.value" :value="d.value">{{ d.label }}</option>
               </select>
             </label>
             <label class="ed-field">
               <span>稀有度</span>
-              <select v-model="current.spec.rarity" class="ed-ctl">
+              <select v-model="current.spec.rarity" class="ed-ctl" :disabled="!DEV">
                 <option v-for="r in RARITIES" :key="r.value" :value="r.value">{{ r.label }}</option>
               </select>
             </label>
@@ -361,7 +412,7 @@ function revert(e: Entry) {
             </label>
             <label class="ed-field">
               <span>初始牌组张数</span>
-              <input v-model.number="current.spec.starter" type="number" min="0" class="ed-ctl" />
+              <input v-model.number="current.spec.starter" type="number" min="0" class="ed-ctl" :disabled="!DEV" />
             </label>
           </div>
         </section>
@@ -370,8 +421,9 @@ function revert(e: Entry) {
           <h3>特性</h3>
           <div class="ed-checks">
             <label><input v-model="current.spec.exhaust" type="checkbox" /> 消耗（打出后移出本场战斗）</label>
+            <label><input v-model="current.spec.ethereal" type="checkbox" /> 虚无（回合结束时还在手牌中则消耗）</label>
             <label><input v-model="current.spec.retain" type="checkbox" /> 保留（回合结束时留在手牌）</label>
-            <label><input v-model="current.spec.reward" type="checkbox" /> 加入奖励卡池</label>
+            <label><input v-model="current.spec.reward" type="checkbox" :disabled="!DEV" /> 加入奖励卡池</label>
             <label><input v-model="current.spec.unplayable" type="checkbox" /> 无法打出</label>
             <label><input v-model="current.spec.innate" type="checkbox" /> 固有（第一回合必定抽上手）</label>
             <label class="inline">
@@ -386,7 +438,7 @@ function revert(e: Entry) {
               全场寄生合计 ≥ N 时免费
               <input v-model.number="freeParasite" type="number" min="0" class="ed-ctl ed-mini" />
             </label>
-            <label><input v-model="freeIntent" type="checkbox" /> 有剑意时免费打出（不消耗剑意）</label>
+            <label><input v-model="freeIntent" type="checkbox" /> 有剑意时免费打出（要消耗剑意请再加一条「失去 1 层剑意」）</label>
             <label class="inline">
               回合结束时失去生命
               <input v-model.number="current.spec.endTurnLoseHp" type="number" min="0" class="ed-ctl ed-mini" />
@@ -465,11 +517,12 @@ function revert(e: Entry) {
 
         <div class="ed-bar">
           <button class="ed-btn primary" :disabled="saving || !dirty(current)" @click="save(current)">
-            {{ saving ? '保存中…' : '💾 保存到代码' }}
+            <template v-if="saving">保存中…</template><template v-else><Emoji e="💾" /> {{ DEV ? '保存到代码' : '保存' }}</template>
           </button>
           <button class="ed-btn" :disabled="!dirty(current)" @click="revert(current)">↩ 还原改动</button>
           <span v-if="!dirty(current)" class="ed-note">没有未保存的改动</span>
-          <button class="ed-btn danger" :disabled="saving" @click="remove(current)">🗑 删除卡牌</button>
+          <button v-if="DEV" class="ed-btn danger" :disabled="saving" @click="remove(current)"><Emoji e="🗑" /> 删除卡牌</button>
+          <button v-else class="ed-btn danger" :disabled="!modified(current)" @click="restoreCard(current)">↺ 还原为初始数据</button>
         </div>
       </main>
       <main v-else class="ed-empty">← 从左侧选择一张卡牌开始编辑</main>

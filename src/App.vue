@@ -14,9 +14,9 @@ const DevTestView = import.meta.env.DEV
   ? defineAsyncComponent(() => import('@/ui/DevTestView.vue'))
   : null
 
-const CardEditorView = import.meta.env.DEV
-  ? defineAsyncComponent(() => import('@/ui/CardEditorView.vue'))
-  : null
+/** 卡牌编辑器：开发模式改源码；打包后给玩家调整已有卡牌（从设置进入） */
+const CardEditorView = defineAsyncComponent(() => import('@/ui/CardEditorView.vue'))
+const isDev = import.meta.env.DEV
 
 const SfxEditorView = import.meta.env.DEV
   ? defineAsyncComponent(() => import('@/ui/SfxEditorView.vue'))
@@ -63,7 +63,7 @@ watch(() => !!run.value, (inRun) => (inRun ? stopMenuMusic() : playMenuMusic()),
     />
     <!-- 开发模式入口：竖排在左侧居中，数量增减不会互相挤出屏幕 -->
     <div
-      v-if="!run && (DevTestView || CardEditorView || SfxEditorView || EnemyEditorView || StatusEditorView)"
+      v-if="!run && (DevTestView || (isDev && CardEditorView) || SfxEditorView || EnemyEditorView || StatusEditorView)"
       class="absolute left-0 top-1/2 z-10 -translate-y-1/2 flex flex-col gap-2"
     >
       <button
@@ -75,7 +75,7 @@ watch(() => !!run.value, (inRun) => (inRun ? stopMenuMusic() : playMenuMusic()),
         🧪 卡牌测试
       </button>
       <button
-        v-if="CardEditorView"
+        v-if="isDev"
         class="dev-entry bg-emerald-500 hover:bg-emerald-400"
         title="开发模式：卡牌编辑器"
         @click="showEditor = true"
@@ -119,7 +119,7 @@ watch(() => !!run.value, (inRun) => (inRun ? stopMenuMusic() : playMenuMusic()),
     >
       ⚙
     </button>
-    <SettingsPanel v-if="showSettings" @close="showSettings = false" />
+    <SettingsPanel v-if="showSettings" @close="showSettings = false" @cards="showSettings = false; showEditor = true" />
   </StageFrame>
 </template>
 

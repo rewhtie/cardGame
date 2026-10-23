@@ -4,11 +4,12 @@ let seenSeq = 0
 </script>
 
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { fxBatch } from '@/composables/useFx'
 import { relics as relicDefs } from '@/data/items'
 import { isNewEnchant } from '@/composables/useSfxEvents'
-import { resolveCards } from '@/engine/enchant'
+import { progressOf, resolveCards } from '@/engine/enchant'
 import type { CardDef } from '@/engine/types'
 import CardView from './CardView.vue'
 import HealFx from './HealFx.vue'
@@ -23,6 +24,8 @@ interface Reveal {
   enchant?: boolean
   /** 战斗后进化：标题改为“进化” */
   evolve?: boolean
+  /** 成长进度推进但未满：旧牌按进度裂开几道缝，不爆发 */
+  train?: boolean
 }
 let nextKey = 0
 
@@ -33,6 +36,36 @@ const SHAKE_MS = 900
 const CARD_HOLD_MS = 900
 const HEAL_MS = 1100
 const ENCHANT_MS = 1600
+/** 成长：先裂开（蓄力），再爆出蓝光、新牌冲破旧牌面 */
+const EVOLVE_CRACK_MS = 1500
+const EVOLVE_HOLD_MS = 1500
+/** 成长未满：裂痕逐条出现后停留的总时长 */
+const TRAIN_MS = 2300
+
+/** 裂纹：从牌心向外的折线（牌面 144×208），pathLength=1，按 delay 依次延伸 */
+const CRACKS = [
+  { d: 'M72 104 L60 84 L66 62 L52 40 L56 8', delay: 0.1 },
+  { d: 'M72 104 L90 90 L86 66 L104 48 L100 16', delay: 0.25 },
+  { d: 'M72 104 L96 118 L116 112 L136 134', delay: 0.4 },
+  { d: 'M72 104 L80 128 L66 146 L74 172 L62 204', delay: 0.55 },
+  { d: 'M72 104 L50 120 L34 114 L8 136', delay: 0.7 },
+  { d: 'M72 104 L44 98 L24 80 L6 88', delay: 0.85 },
+]
+
+/** 碎片：以牌心为顶点，把牌面切成 8 个三角，爆发时各自沿外侧方向飞散 */
+const RIM: [number, number][] = [[0, 0], [50, 0], [100, 0], [100, 50], [100, 100], [50, 100], [0, 100], [0, 50]]
+const SHARDS = RIM.map((a, i) => {
+  const b = RIM[(i + 1) % RIM.length]!
+  const mx = (a[0] + b[0]) / 2 - 50
+  const my = (a[1] + b[1]) / 2 - 50
+  const len = Math.hypot(mx, my) || 1
+  return {
+    clip: `polygon(50% 50%, ${a[0]}% ${a[1]}%, ${b[0]}% ${b[1]}%)`,
+    dx: Math.round((mx / len) * (150 + (i % 3) * 30)),
+    dy: Math.round((my / len) * (170 + (i % 3) * 30)),
+    rot: (i % 2 ? 1 : -1) * (25 + (i % 4) * 14),
+  }
+})
 
 /** 击打火花：白色楔形，从牌面向外放射；角度均分一圈，长度 / 宽度 / 延迟略作错落 */
 const SPARK_COUNT = 14
@@ -67,7 +100,12 @@ const pairs = computed(() => {
   return list.flatMap((c) => {
     const from = defs[c.from]
     const to = defs[c.to]
-    return from && to ? [{ from, to }] : []
+    if (!from || !to) return []
+    // 成长进度占比 -> 裂痕条数：至少 1 条，未满最多 CRACKS.length - 1 条，留出最后的“冲破”
+    const plays = from.evolve?.plays ?? 1
+    const progress = progressOf(c.to)
+    const cracks = Math.max(1, Math.min(CRACKS.length - 1, Math.round((CRACKS.length * progress) / plays)))
+    return [{ from, to, progress, plays, cracks }]
   })
 })
 
@@ -101,9 +139,12 @@ watch(current, (r) => {
   // 音效不在这里：见 useSfxEvents，按事件发声，与动画是否播放无关
   if (r.enchant) {
     timers.push(setTimeout(advance, ENCHANT_MS))
+  } else if (r.train) {
+    timers.push(setTimeout(advance, TRAIN_MS))
   } else if (r.cards?.length) {
-    timers.push(setTimeout(() => (phase.value = 1), SHAKE_MS))
-    timers.push(setTimeout(advance, SHAKE_MS + CARD_HOLD_MS))
+    const crack = r.evolve ? EVOLVE_CRACK_MS : SHAKE_MS
+    timers.push(setTimeout(() => (phase.value = 1), crack))
+    timers.push(setTimeout(advance, crack + (r.evolve ? EVOLVE_HOLD_MS : CARD_HOLD_MS)))
   } else timers.push(setTimeout(advance, HEAL_MS))
 })
 
@@ -116,6 +157,7 @@ watch(
     const found: Reveal[] = []
     for (const e of b.events) {
       if (e.type === 'cardsUpgraded') found.push({ key: nextKey++, cards: e.cards })
+      else if (e.type === 'cardsTrained') found.push({ key: nextKey++, cards: e.cards, train: true })
       else if (e.type === 'cardsEvolved') found.push({ key: nextKey++, cards: e.cards, evolve: true })
       else if (e.type === 'relicGained' && (e.cards?.length || e.heal)) {
         found.push({ key: nextKey++, id: e.id, cards: e.cards, heal: e.heal, enchant: isNewEnchant(e.cards) })
@@ -143,12 +185,13 @@ onBeforeUnmount(clearTimers)
     @wheel.stop
   >
     <div v-if="def" :key="current.key" class="reveal-pop flex flex-col items-center gap-2">
-      <div class="text-6xl">{{ def.icon }}</div>
+      <div class="text-6xl"><Emoji :e="def.icon" /></div>
       <div class="text-2xl font-bold text-amber-300">{{ def.name }}</div>
       <div class="text-slate-300">{{ def.text }}</div>
       <div v-if="def.lore" class="text-sm italic text-slate-400">{{ def.lore }}</div>
     </div>
     <div v-if="current.evolve" class="text-2xl font-bold text-amber-300">成长</div>
+    <div v-else-if="current.train" class="text-2xl font-bold text-sky-300">成长进度</div>
     <div
       v-if="pairs.length"
       class="flex flex-wrap justify-center items-start"
@@ -169,6 +212,52 @@ onBeforeUnmount(clearTimers)
           :playable="true"
           class="card-inlay pointer-events-none"
         />
+        <template v-else-if="current.train">
+          <!-- 未满：旧牌轻颤，裂痕按进度占比一条条爬开，蓝光随进度变亮，停住不爆发 -->
+          <div
+            class="evo-train absolute inset-0"
+            :style="{ '--p': p.progress / p.plays }"
+          >
+            <CardView :card="p.from" :playable="true" :progress="p.progress" class="pointer-events-none" />
+            <svg class="evo-crack" viewBox="0 0 144 208" fill="none">
+              <path
+                v-for="(c, k) in CRACKS.slice(0, p.cracks)"
+                :key="k"
+                :d="c.d"
+                pathLength="1"
+                :style="{ '--cd': `${0.15 + k * 0.28}s` }"
+              />
+            </svg>
+          </div>
+        </template>
+        <template v-else-if="current.evolve">
+          <!-- 蓄力：旧牌震颤、蓝光渐亮、裂纹一条条爬开 -->
+          <div v-if="phase === 0" class="evo-old absolute inset-0">
+            <CardView :card="p.from" :playable="true" class="pointer-events-none" />
+            <svg class="evo-crack" viewBox="0 0 144 208" fill="none">
+              <path
+                v-for="(c, k) in CRACKS"
+                :key="k"
+                :d="c.d"
+                pathLength="1"
+                :style="{ '--cd': `${c.delay}s` }"
+              />
+            </svg>
+          </div>
+          <!-- 爆发：新牌从中心冲出，旧牌面碎成 8 片向外飞散 -->
+          <template v-else>
+            <div class="evo-ring" />
+            <CardView :card="p.to" :playable="true" class="evo-new pointer-events-none" />
+            <div
+              v-for="(sh, k) in SHARDS"
+              :key="k"
+              class="evo-shard absolute inset-0 pointer-events-none"
+              :style="{ clipPath: sh.clip, '--dx': `${sh.dx}px`, '--dy': `${sh.dy}px`, '--rot': `${sh.rot}deg` }"
+            >
+              <CardView :card="p.from" :playable="true" />
+            </div>
+          </template>
+        </template>
         <template v-else>
         <CardView
           v-if="phase === 0"
@@ -268,6 +357,93 @@ onBeforeUnmount(clearTimers)
 /* 换牌瞬间：尖刺向四面炸开 */
 .spark-burst {
   animation: spark-burst 0.55s step-end var(--d) forwards;
+}
+/* 成长·蓄力：旧牌越抖越亮，蓝色光晕渐强 */
+.evo-old {
+  animation: evo-charge 1.5s ease-in forwards;
+}
+@keyframes evo-charge {
+  0% { transform: scale(1); filter: brightness(1) drop-shadow(0 0 0 #38bdf8); }
+  20% { transform: scale(1.03) translateX(-2px); }
+  35% { transform: scale(1.05) translateX(3px) rotate(0.6deg); }
+  50% { transform: scale(1.07) translateX(-4px) rotate(-0.8deg); filter: brightness(1.15) drop-shadow(0 0 12px #38bdf8); }
+  70% { transform: scale(1.1) translateX(5px) rotate(1deg); }
+  85% { transform: scale(1.13) translateX(-6px) rotate(-1.2deg); filter: brightness(1.6) drop-shadow(0 0 26px #7dd3fc); }
+  100% { transform: scale(1.16); filter: brightness(2.4) drop-shadow(0 0 40px #e0f2fe); }
+}
+.evo-crack {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  filter: drop-shadow(0 0 4px #7dd3fc);
+}
+.evo-crack path {
+  stroke: #e0f2fe;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: evo-crack-grow 0.45s ease-out var(--cd) forwards;
+}
+@keyframes evo-crack-grow {
+  to { stroke-dashoffset: 0; }
+}
+/* 成长·未满：轻颤一下后停住，光晕强度随进度占比 --p（0~1）增大 */
+.evo-train {
+  animation: evo-train 1.4s ease-out forwards;
+}
+@keyframes evo-train {
+  0% { transform: scale(1); filter: none; }
+  20% { transform: scale(1.04) translateX(-3px) rotate(-0.8deg); }
+  40% { transform: scale(1.06) translateX(3px) rotate(0.8deg); }
+  60% { transform: scale(1.07) translateX(-2px) rotate(-0.5deg); }
+  100% {
+    transform: scale(1.1);
+    filter: brightness(calc(1 + var(--p) * 0.6)) drop-shadow(0 0 calc(8px + var(--p) * 26px) rgba(56, 189, 248, 0.9));
+  }
+}
+/* 成长·爆发：新牌从小处冲出并过曝，随后回落 */
+.evo-new {
+  position: relative;
+  z-index: 1;
+  animation: evo-new 1.1s ease-out both;
+}
+@keyframes evo-new {
+  0% { transform: scale(0.45); opacity: 0; filter: brightness(4) drop-shadow(0 0 30px #e0f2fe); }
+  25% { transform: scale(1.38); opacity: 1; filter: brightness(2.6) drop-shadow(0 0 50px #38bdf8); }
+  55% { transform: scale(1.14); filter: brightness(1.4) drop-shadow(0 0 28px #38bdf8); }
+  100% { transform: scale(1.1); filter: brightness(1) drop-shadow(0 0 14px rgba(56, 189, 248, 0.6)); }
+}
+/* 旧牌碎片：沿各自方向飞出并旋转、淡去 */
+.evo-shard {
+  z-index: 2;
+  animation: evo-shard 0.9s cubic-bezier(0.15, 0.7, 0.3, 1) forwards;
+}
+@keyframes evo-shard {
+  0% { transform: translate(0, 0) rotate(0deg) scale(1.16); opacity: 1; filter: brightness(2.4); }
+  70% { opacity: 0.8; }
+  100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(0.9); opacity: 0; filter: brightness(1.4); }
+}
+/* 冲击波：蓝色光环从牌心扩散 */
+.evo-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10rem;
+  height: 10rem;
+  margin: -5rem 0 0 -5rem;
+  border-radius: 9999px;
+  border: 4px solid #7dd3fc;
+  box-shadow: 0 0 40px 10px rgba(56, 189, 248, 0.7), inset 0 0 30px rgba(125, 211, 252, 0.6);
+  pointer-events: none;
+  animation: evo-ring 0.9s ease-out forwards;
+}
+@keyframes evo-ring {
+  from { transform: scale(0.2); opacity: 1; }
+  to { transform: scale(3.4); opacity: 0; }
 }
 @keyframes reveal-pop {
   from {

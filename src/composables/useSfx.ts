@@ -62,6 +62,139 @@ export function preloadSfx() {
 
 const lastPlayed = new Map<string, number>()
 
+/** 合成：一小段带衰减的噪声（裂纹的“咔”、碎片的“哗啦”）；filter 为 highpass / bandpass 的中心频率 */
+function noiseBurst(c: AudioContext, out: AudioNode, at: number, dur: number, gain: number, type: BiquadFilterType, freq: number, freqEnd = freq) {
+  const len = Math.max(1, Math.floor(c.sampleRate * dur))
+  const buf = c.createBuffer(1, len, c.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
+  const src = c.createBufferSource()
+  const f = c.createBiquadFilter()
+  const g = c.createGain()
+  src.buffer = buf
+  f.type = type
+  f.frequency.setValueAtTime(freq, at)
+  if (freqEnd !== freq) f.frequency.exponentialRampToValueAtTime(freqEnd, at + dur)
+  g.gain.setValueAtTime(gain, at)
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur)
+  src.connect(f).connect(g).connect(out)
+  src.start(at)
+}
+
+/** 合成的训练声（成长未满）：短促的蓄力嗡鸣，两声裂纹“咔”，收尾一记低沉的闷响，不爆发 */
+async function playTrainSfx(volume = 1) {
+  if (sfxVolume.value <= 0) return
+  try {
+    ctx ??= new AudioContext()
+    if (ctx.state === 'suspended') await ctx.resume()
+    const c = ctx
+    const t0 = c.currentTime
+    const out = c.createGain()
+    out.gain.value = sfxVolume.value * volume * 0.5
+    out.connect(c.destination)
+    const hum = c.createGain()
+    hum.gain.setValueAtTime(0.0001, t0)
+    hum.gain.exponentialRampToValueAtTime(0.3, t0 + 0.9)
+    hum.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.3)
+    hum.connect(out)
+    const o = c.createOscillator()
+    o.type = 'triangle'
+    o.frequency.setValueAtTime(130, t0)
+    o.frequency.exponentialRampToValueAtTime(260, t0 + 1.0)
+    o.connect(hum)
+    o.start(t0)
+    o.stop(t0 + 1.35)
+    ;[0.35, 0.7].forEach((t, i) => noiseBurst(c, out, t0 + t, 0.07, 0.5 + i * 0.2, 'highpass', 3800 + i * 600))
+    const thud = c.createOscillator()
+    const tg = c.createGain()
+    thud.type = 'sine'
+    thud.frequency.setValueAtTime(120, t0 + 1.0)
+    thud.frequency.exponentialRampToValueAtTime(50, t0 + 1.3)
+    tg.gain.setValueAtTime(0.7, t0 + 1.0)
+    tg.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.35)
+    thud.connect(tg).connect(out)
+    thud.start(t0 + 1.0)
+    thud.stop(t0 + 1.4)
+  } catch {
+    // 音效失败不能影响游戏
+  }
+}
+
+/**
+ * 合成的卡牌成长声，时间轴与 RelicReveal 的成长动画对齐：
+ * 0~1.5s 蓄力（低频嗡鸣渐升渐强 + 六声越来越响的裂纹“咔”），1.5s 爆发（低频冲击 + 碎片哗啦 + 一串上行的晶体和弦）。
+ */
+async function playEvolveSfx(volume = 1) {
+  if (sfxVolume.value <= 0) return
+  try {
+    ctx ??= new AudioContext()
+    if (ctx.state === 'suspended') await ctx.resume()
+    const c = ctx
+    const t0 = c.currentTime
+    const BURST = 1.5
+    const out = c.createGain()
+    out.gain.value = sfxVolume.value * volume * 0.55
+    out.connect(c.destination)
+
+    // 蓄力嗡鸣：双锯齿略失谐，音高与音量一路上扬，爆发前一瞬收掉
+    const hum = c.createGain()
+    hum.gain.setValueAtTime(0.0001, t0)
+    hum.gain.exponentialRampToValueAtTime(0.5, t0 + BURST - 0.05)
+    hum.gain.linearRampToValueAtTime(0, t0 + BURST)
+    const lp = c.createBiquadFilter()
+    lp.type = 'lowpass'
+    lp.frequency.setValueAtTime(300, t0)
+    lp.frequency.exponentialRampToValueAtTime(2400, t0 + BURST)
+    lp.connect(hum).connect(out)
+    for (const detune of [-8, 8]) {
+      const o = c.createOscillator()
+      o.type = 'sawtooth'
+      o.detune.value = detune
+      o.frequency.setValueAtTime(110, t0)
+      o.frequency.exponentialRampToValueAtTime(440, t0 + BURST)
+      o.connect(lp)
+      o.start(t0)
+      o.stop(t0 + BURST + 0.02)
+    }
+
+    // 裂纹：与动画里六条裂纹生长的起点同步，越来越响
+    ;[0.1, 0.25, 0.4, 0.55, 0.7, 0.85].forEach((t, i) => {
+      noiseBurst(c, out, t0 + t, 0.06, 0.35 + i * 0.1, 'highpass', 3500 + i * 500)
+    })
+
+    // 爆发：低频冲击
+    const thud = c.createOscillator()
+    const tg = c.createGain()
+    thud.type = 'sine'
+    thud.frequency.setValueAtTime(180, t0 + BURST)
+    thud.frequency.exponentialRampToValueAtTime(40, t0 + BURST + 0.4)
+    tg.gain.setValueAtTime(1, t0 + BURST)
+    tg.gain.exponentialRampToValueAtTime(0.0001, t0 + BURST + 0.45)
+    thud.connect(tg).connect(out)
+    thud.start(t0 + BURST)
+    thud.stop(t0 + BURST + 0.5)
+    // 爆发：冲击波的“呼”与碎片的哗啦
+    noiseBurst(c, out, t0 + BURST, 0.6, 0.9, 'bandpass', 5000, 400)
+    for (let i = 0; i < 8; i++) noiseBurst(c, out, t0 + BURST + 0.04 + i * 0.05 + Math.random() * 0.03, 0.05, 0.5, 'highpass', 5000 + Math.random() * 3000)
+    // 爆发：晶体和弦，自低向高依次点亮
+    ;[659.25, 830.61, 987.77, 1318.5, 1661.2].forEach((hz, i) => {
+      const at = t0 + BURST + 0.05 + i * 0.07
+      const o = c.createOscillator()
+      const g = c.createGain()
+      o.type = 'triangle'
+      o.frequency.value = hz
+      g.gain.setValueAtTime(0.0001, at)
+      g.gain.exponentialRampToValueAtTime(0.35, at + 0.02)
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 1.1)
+      o.connect(g).connect(out)
+      o.start(at)
+      o.stop(at + 1.15)
+    })
+  } catch {
+    // 音效失败不能影响游戏
+  }
+}
+
 /** 合成的黏液分裂声：一串音高上扬的"咕啾"气泡 + 湿润的噪声拖尾，不依赖素材文件 */
 async function playSplitSfx(volume = 1) {
   if (sfxVolume.value <= 0) return
@@ -123,10 +256,10 @@ export async function playSfx(slot: string, opts?: { volume?: number; maxSeconds
   if (!shouldPlay(lastPlayed.get(slot), now)) return
   const file = pickFile(config, Math.random)
   const url = file ? urls[file] : undefined
-  if (!url && config.synth !== 'split') return
+  if (!url && !config.synth) return
   lastPlayed.set(slot, now)
   const volume = (config.volume ?? 1) * (opts?.volume ?? 1)
-  if (!url) return void (await playSplitSfx(volume))
+  if (!url) return void (await (config.synth === 'evolve' ? playEvolveSfx(volume) : config.synth === 'train' ? playTrainSfx(volume) : playSplitSfx(volume)))
   const maxSeconds = opts?.maxSeconds ?? config.maxSeconds
   try {
     ctx ??= new AudioContext()

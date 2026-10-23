@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { cards as allCards } from '@/data/cards'
 import { cardText, evolvedId, progressOf, resolveCards } from '@/engine/enchant'
@@ -193,7 +194,7 @@ const tag = computed(() => {
     <div class="frame">
       <div class="inner">
         <div class="art">
-          <span class="icon">{{ card.icon ?? type.icon }}</span>
+          <span class="icon"><Emoji :e="card.icon ?? type.icon" /></span>
         </div>
         <div class="banner">{{ card.name }}</div>
         <div class="type">— {{ tag }} —</div>
@@ -242,7 +243,7 @@ const tag = computed(() => {
         :style="{ left: evolveTip.x + 'px', top: evolveTip.y + 'px' }"
       >
         <div class="info-name">
-          {{ evolveTarget.icon ?? '' }} 成长为：{{ evolveTarget.name }}
+          <Emoji :e="evolveTarget.icon ?? ''" /> 成长为：{{ evolveTarget.name }}
         </div>
         <div class="info-text">{{ cardText(evolveTarget) }}</div>
         <div class="info-duration">
@@ -256,7 +257,7 @@ const tag = computed(() => {
         :style="{ left: tip.x + 'px', top: tip.y + 'px' }"
       >
         <div class="info-name">
-          {{ tip.def.icon }} {{ tip.def.name }}
+          <Emoji :e="tip.def.icon" /> {{ tip.def.name }}
           <span class="info-kind">{{ tip.def.kind === 'buff' ? '增益' : '减益' }}</span>
         </div>
         <div class="info-text">

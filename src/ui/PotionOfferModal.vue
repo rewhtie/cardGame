@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed } from 'vue'
 import { potions as defs } from '@/data/items'
 import CardPanel from './CardPanel.vue'
@@ -20,7 +21,7 @@ const full = computed(() => props.held.length >= props.capacity)
     >
       <div class="flex flex-col gap-3">
         <div v-for="(id, i) in offer" :key="`${id}-${i}`" class="row">
-          <span class="icon">{{ defs[id]?.icon ?? '🧪' }}</span>
+          <span class="icon"><Emoji :e="defs[id]?.icon ?? '🧪'" /></span>
           <span class="flex-1">
             <span class="name">{{ defs[id]?.name ?? id }}</span>
             <span class="desc">{{ defs[id]?.text }}</span>

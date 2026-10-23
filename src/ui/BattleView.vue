@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { willSplit } from '@/engine/effects'
 import AimArrow from './AimArrow.vue'
 import EnemyView from './EnemyView.vue'
@@ -590,7 +591,7 @@ onBeforeUnmount(() => {
           :key="'m' + mi"
           class="mt-1 text-center text-sm text-emerald-300"
         >
-          🌿 随从 {{ m.hp }}/20
+          <Emoji e="🌿" /> 随从 {{ m.hp }}/20
         </div>
       </div>
     </div>
@@ -604,7 +605,7 @@ onBeforeUnmount(() => {
         :key="c.index"
         class="flex items-center gap-2 rounded-lg border border-emerald-400/60 bg-emerald-950/60 px-3 py-1 text-sm"
       >
-        <span>指挥 🌿{{ c.hp }}</span>
+        <span>指挥 <Emoji e="🌿" />{{ c.hp }}</span>
         <button
           v-for="o in COMMAND_OPTIONS"
           :key="o.choice"
@@ -627,7 +628,7 @@ onBeforeUnmount(() => {
           class="block-badge"
           :class="(shownBlock) > 0 ? 'block-badge-on' : 'block-badge-off'"
         >
-          <span class="block-icon">🛡</span>
+          <span class="block-icon"><Emoji e="🛡" /></span>
           <span class="block-num">{{ shownBlock }}</span>
         </div>
         <div
@@ -725,7 +726,7 @@ onBeforeUnmount(() => {
         :class="f.cls"
         :style="{ left: `${f.x}px`, top: `${f.y}px` }"
       >
-        {{ f.text }}
+        <Emoji :e="f.text" />
       </div>
       <div
         v-else-if="f.kind === 'slash'"
@@ -738,7 +739,7 @@ onBeforeUnmount(() => {
         :class="f.cls"
         :style="{ left: `${f.x}px`, top: `${f.y}px` }"
       >
-        <b>🛡</b>
+        <b><Emoji e="🛡" /></b>
       </div>
       <div
         v-else

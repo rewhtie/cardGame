@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed, ref, watch } from 'vue'
 import { cards } from '@/data/cards'
 import { potions, relics } from '@/data/items'
 import { type Reward, type RunState } from '@/engine/run'
 import CardPanel from './CardPanel.vue'
-import CardView from './CardView.vue'
+import UpgradableCard from './UpgradableCard.vue'
+import { upgradeCard } from '@/engine/enchant'
 
 const props = defineProps<{ run: RunState }>()
 const emit = defineEmits<{ claim: [index: number, pick?: number]; finish: [] }>()
@@ -66,11 +68,15 @@ function choose(pick: number) {
   >
     <CardPanel v-if="pickingReward" title="选择一张卡牌" closable @close="picking = null">
       <div class="flex justify-center gap-6">
-        <CardView
+        <UpgradableCard
           v-for="(id, i) in pickingReward.choices"
           :key="id"
           :card="cards[id]!"
-          :playable="true"
+          :upgraded="
+            cards[id]!.rarity === 'curse' || cards[id]!.rarity === 'status'
+              ? undefined
+              : upgradeCard(cards[id]!)
+          "
           @click="choose(i)"
         />
       </div>
@@ -84,7 +90,7 @@ function choose(pick: number) {
           class="reward"
           @click="onClaim(i, r)"
         >
-          <span class="icon">{{ describe(r).icon }}</span>
+          <span class="icon"><Emoji :e="describe(r).icon" /></span>
           <span class="flex-1">
             <span class="name">{{ describe(r).title }}</span>
             <span class="desc">{{ describe(r).text }}</span>

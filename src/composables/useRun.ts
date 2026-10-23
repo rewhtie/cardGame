@@ -111,8 +111,9 @@ export function useRun() {
         } else if (state.screen === 'reward' && prev.screen === 'reward') {
           // 领取奖励的每一步都不覆盖存档：读档回到刚结算完、尚未选择任何奖励的那一刻
           run.value = state
-        } else if (state.screen === 'map' && prev.screen !== 'reward') {
-          // 休息、锻造、事件结束后回到地图：不覆盖存档，读档仍回到选节点时，可重新选择
+        } else if (state.screen === 'map') {
+          // 奖励点「继续」、休息、锻造、事件结束后回到地图：不覆盖存档，
+          // 读档仍回到选节点时 / 刚结算完的奖励界面，可重新选择
           run.value = state
         } else {
           setRun(state)

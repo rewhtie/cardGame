@@ -96,7 +96,7 @@ export const warriorBlue: Card[] = [
   Card.blue('bloodBattle', '血战')
     .icon('🩸')
     .cost(1)
-    .targetEnemy()
+    .targetSelf()
     .loseHp(3)
     .gainEnergy(2)
     .reward()
@@ -108,4 +108,12 @@ export const warriorBlue: Card[] = [
     .applyStatus('thorns', 2)
     .reward()
     .upgrade((u) => u.applyStatus('thorns', 3)),
+  Card.blue('pommelStrike', '速攻')
+    .icon('🗡️')
+    .cost(1)
+    .targetEnemy()
+    .damage(8)
+    .draw(1)
+    .reward()
+    .upgrade((u) => u.damage(10).draw(2)),
 ]

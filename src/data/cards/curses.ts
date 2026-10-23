@@ -3,7 +3,7 @@ import { Card } from './card'
 /** 状态牌、诅咒牌与带代价的强牌：不进奖励池和初始牌组，只能从事件获得 */
 export const curseCards: Card[] = [
   Card.status('wound', '伤口').icon('🩹').cost(0).unplayable().text('无法打出'),
-  Card.status('stun', '晕眩').icon('💫').cost(0).unplayable().text('无法打出'),
+  Card.status('stun', '晕眩').icon('💫').cost(0).unplayable().ethereal().text('无法打出。虚无（回合结束时若在手牌中，消耗）'),
   Card.status('slimed', '粘液').icon('🟢').cost(1).exhaust().text('消耗'),
   Card.curse('burn', '灼伤')
     .icon('🔥')

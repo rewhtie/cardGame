@@ -45,8 +45,9 @@ export function joinEffectTexts(effects: readonly Effect[], allEnemies = false):
 function mergeKey(e: Extract<Effect, { type: 'applyStatus' }>, allEnemies: boolean): string | undefined {
   if (e.to === 'self') {
     const def = statusById[e.status]
-    return e.temp || (def?.display === 'count' && def.kind === 'buff') ? undefined : 'self'
+    return e.temp || e.stacks < 0 || (def?.display === 'count' && def.kind === 'buff') ? undefined : 'self'
   }
+  if (e.stacks < 0) return undefined
   return e.to === 'target' && !allEnemies ? 'target' : 'all'
 }
 
@@ -94,6 +95,10 @@ export function effectText(e: Effect): string {
     case 'applyStatus': {
       const name = statusById[e.status]?.name ?? e.status
       const def = statusById[e.status]
+      if (e.stacks < 0) {
+        const lose = `失去 ${-e.stacks} 层${name}`
+        return e.to === 'self' ? lose : e.to === 'target' ? `目标${lose}` : `所有敌人${lose}`
+      }
       // 能力型增益：直接写它的效果（N 代入给予的层数），不再写"获得 N 层"
       if (e.to === 'self' && def?.display === 'count' && def.kind === 'buff') return fillStacks(def.text, e.stacks)
       if (e.to === 'self' && e.temp) return `获得 ${e.stacks} 点临时${name}`
@@ -217,6 +222,7 @@ export class Card {
   private _power = false
   private _exhaust = false
   private _retain = false
+  private _ethereal = false
   private _retainGrow = 0
   private _skill = false
   private _unplayable = false
@@ -247,6 +253,7 @@ export class Card {
     else c.targetEnemy()
     if (spec.asSkill && (spec.target === 'enemy' || spec.target === 'allEnemies')) c.asSkill()
     if (spec.exhaust) c.exhaust()
+    if (spec.ethereal) c.ethereal()
     if (spec.retain) c.retain()
     if (spec.retainGrow) c.retainGrow(spec.retainGrow)
     if (spec.innate) c.innate()
@@ -288,6 +295,7 @@ export class Card {
       target: this._power ? 'power' : this._target,
       ...(this._skill && this._target !== 'self' && !this._power && { asSkill: true }),
       exhaust: this._exhaust,
+      ...(this._ethereal && { ethereal: true }),
       ...(this._retain && { retain: true }),
       ...(this._retainGrow > 0 && { retainGrow: this._retainGrow }),
       ...(this._innate && { innate: true }),
@@ -383,6 +391,11 @@ export class Card {
   power() {
     this._power = true
     this._target = 'self'
+    return this
+  }
+  /** 虚无：回合结束时若还在手牌中，被消耗 */
+  ethereal() {
+    this._ethereal = true
     return this
   }
   /** 保留：回合结束时留在手牌 */
@@ -668,6 +681,7 @@ export class Card {
     u._target = this._target
     u._power = this._power
     u._exhaust = this._exhaust
+    u._ethereal = this._ethereal
     u._retain = this._retain
     u._retainGrow = this._retainGrow
     u._innate = this._innate
@@ -707,6 +721,7 @@ export class Card {
       target: this._target,
       kind,
       ...(exhaust && { exhaust: true }),
+      ...(this._ethereal && { ethereal: true }),
       ...(this._retain && { retain: true }),
       ...(this._retainGrow > 0 && { retainGrow: this._retainGrow }),
       ...(this._innate && { innate: true }),
@@ -719,7 +734,7 @@ export class Card {
       effects: this._effects,
       text:
         this._text ??
-        `${this._innate ? '固有\n' : ''}${this._retain ? '保留\n' : ''}${this._freeIntent ? '有剑意时免费\n' : ''}${effectsText}${exhaust ? '\n消耗' : ''}`,
+        `${this._innate ? '固有\n' : ''}${this._ethereal ? '虚无\n' : ''}${this._retain ? '保留\n' : ''}${this._freeIntent ? '有剑意时免费\n' : ''}${effectsText}${exhaust ? '\n消耗' : ''}`,
     }
   }
 }

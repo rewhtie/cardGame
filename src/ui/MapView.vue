@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useGodMode } from '@/composables/useGodMode'
 import { findNode, type MapNode, type NodeType } from '@/engine/map'
@@ -240,7 +241,7 @@ function onClick(id: string, canChoose: boolean) {
           :font-size="n.node.type === 'boss' ? 28 : 18"
           pointer-events="none"
         >
-          {{ ICONS[n.node.type] }}
+          <Emoji :e="ICONS[n.node.type]" />
         </text>
       </g>
     </svg>
@@ -267,7 +268,7 @@ function onClick(id: string, canChoose: boolean) {
             @mouseenter="hovered = t"
             @mouseleave="hovered = null"
           >
-            <span class="legend-icon">{{ ICONS[t] }}</span>
+            <span class="legend-icon"><Emoji :e="ICONS[t]" /></span>
             <span class="legend-label">{{ LABELS[t] }}</span>
             <span class="legend-count">{{ counts[t] }}</span>
           </button>

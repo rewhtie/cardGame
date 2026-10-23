@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed, ref } from 'vue'
 import { cards } from '@/data/cards'
 import { characters } from '@/data/characters'
@@ -80,7 +81,7 @@ function grant(kind: 'card' | 'potion' | 'relic', id: string) {
     <!-- 左侧职业栏：平时收起只露出图标，悬停时整条伸出并显示名称 -->
     <nav class="rail" aria-label="职业筛选">
       <button class="rail-item" :class="{ active: charId === null }" @click="charId = null">
-        <span class="rail-icon">📚</span>
+        <span class="rail-icon"><Emoji e="📚" /></span>
         <span class="rail-name">全部</span>
       </button>
       <button
@@ -90,7 +91,7 @@ function grant(kind: 'card' | 'potion' | 'relic', id: string) {
         :class="{ active: charId === c.id }"
         @click="charId = c.id"
       >
-        <span class="rail-icon">{{ c.icon }}</span>
+        <span class="rail-icon"><Emoji :e="c.icon" /></span>
         <span class="rail-name">{{ c.name }}</span>
       </button>
     </nav>
@@ -126,7 +127,7 @@ function grant(kind: 'card' | 'potion' | 'relic', id: string) {
           :key="r.id"
           class="flex items-center gap-4 p-4 rounded-lg bg-slate-900/70 border border-amber-500/30"
         >
-          <span class="text-4xl">{{ r.icon }}</span>
+          <span class="text-4xl"><Emoji :e="r.icon" /></span>
           <div class="flex-1">
             <div class="font-bold text-amber-300">{{ r.name }}</div>
             <div class="text-sm text-slate-300">{{ r.text }}</div>

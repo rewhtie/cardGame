@@ -5,6 +5,7 @@ export const warriorWhite: Card[] = [
   Card.white('strike', '打击')
     .icon('⚔️')
     .cost(1)
+    .targetEnemy()
     .damage(6)
     .starter(5)
     .upgrade((u) => u.damage(9)),
@@ -15,14 +16,6 @@ export const warriorWhite: Card[] = [
     .damage(6, true)
     .reward()
     .upgrade((u) => u.damage(8, true)),
-  Card.white('pommelStrike', '速攻')
-    .icon('🗡️')
-    .cost(1)
-    .targetEnemy()
-    .damage(8)
-    .draw(1)
-    .reward()
-    .upgrade((u) => u.damage(10).draw(2)),
   Card.white('crippleStrike', '致残打击')
     .icon('🦵')
     .cost(1)

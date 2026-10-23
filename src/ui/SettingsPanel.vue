@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed, ref } from 'vue'
 import { useRun } from '@/composables/useRun'
 import { useSettings } from '@/composables/useSettings'
@@ -8,7 +9,7 @@ import { musicVolume, setMusicVolume } from '@/composables/useMusic'
 import { sfxVolume, setSfxVolume } from '@/composables/useSfx'
 import CodexView from './CodexView.vue'
 
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; cards: [] }>()
 
 const { settings, setMode, setResolution } = useSettings()
 const { run, seedInput, savedGame, continueGame, quit } = useRun()
@@ -24,6 +25,7 @@ function quickRestart() {
   emit('close')
 }
 
+const isDev = import.meta.env.DEV
 const showCodex = ref(false)
 /** 种子已移到对局右上角；设置里的种子板块暂时隐藏（代码保留，改成 true 即可恢复） */
 const SHOW_SEED = false
@@ -64,7 +66,7 @@ function isCurrent(width: number, height: number) {
 
         <template v-if="page === 'main'">
           <button class="row" @click="showCodex = true">
-            <span class="badge">📖</span>
+            <span class="badge"><Emoji e="📖" /></span>
             <span class="row-text">
               <span class="row-title">图鉴</span>
               <span class="row-sub">查看所有卡牌与遗物</span>
@@ -72,8 +74,17 @@ function isCurrent(width: number, height: number) {
             <span class="chev">›</span>
           </button>
 
+          <button v-if="!run && !isDev" class="row" @click="emit('cards')">
+            <span class="badge"><Emoji e="🛠" /></span>
+            <span class="row-text">
+              <span class="row-title">卡牌调整</span>
+              <span class="row-sub">修改卡牌数值，可一键还原</span>
+            </span>
+            <span class="chev">›</span>
+          </button>
+
           <button class="row" @click="page = 'display'">
-            <span class="badge">🖥</span>
+            <span class="badge"><Emoji e="🖥" /></span>
             <span class="row-text">
               <span class="row-title">画面设置</span>
               <span class="row-sub">
@@ -85,7 +96,7 @@ function isCurrent(width: number, height: number) {
           </button>
 
           <button class="row" @click="page = 'audio'">
-            <span class="badge">🔊</span>
+            <span class="badge"><Emoji e="🔊" /></span>
             <span class="row-text">
               <span class="row-title">音量设置</span>
               <span class="row-sub">
@@ -123,7 +134,7 @@ function isCurrent(width: number, height: number) {
           </section>
 
           <button v-if="run" class="row" @click="toMenu">
-            <span class="badge">🏠</span>
+            <span class="badge"><Emoji e="🏠" /></span>
             <span class="row-text">
               <span class="row-title">回到主菜单</span>
               <span class="row-sub">存档保留，可从主菜单继续</span>

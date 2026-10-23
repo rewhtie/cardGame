@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed } from 'vue'
 import { STATUSES, statusTip } from '@/engine/statuses'
 
@@ -100,7 +101,7 @@ function placeTip(e: MouseEvent) {
       :class="item.def.kind === 'buff' ? 'is-buff' : 'is-debuff'"
       @mouseenter="placeTip"
     >
-      {{ item.def.icon }}
+      <Emoji :e="item.def.icon" />
       <!-- 数值型：显示层数本身；能力型：只有叠到 2 层以上才显示小号 ×N -->
       <span
         v-if="item.def.display !== 'count'"
@@ -117,7 +118,7 @@ function placeTip(e: MouseEvent) {
 
       <div class="tip" :class="item.def.kind === 'buff' ? 'tip-buff' : 'tip-debuff'">
         <div class="tip-title">
-          <span class="text-base">{{ item.def.icon }}</span>
+          <span class="text-base"><Emoji :e="item.def.icon" /></span>
           <span>{{ item.def.name }}</span>
           <span class="tip-kind">{{ item.def.kind === 'buff' ? '增益' : '减益' }}</span>
         </div>
@@ -133,15 +134,15 @@ function placeTip(e: MouseEvent) {
     </div>
     <!-- 通用「临时层数」图标：只有同一状态永久、临时层数并存时才出现 -->
     <div v-if="temps.length" class="tip-host group relative w-8 h-8 flex items-center justify-center rounded-md border-2 text-base cursor-help hover:z-30 is-buff" @mouseenter="placeTip">
-      ⏳
+      <Emoji e="⏳" />
       <span class="absolute -right-1.5 -bottom-1.5 min-w-4 px-1 rounded-full bg-slate-950 border border-slate-600 text-[10px] leading-4 text-center text-white font-bold">{{ total }}</span>
       <div class="tip tip-buff">
         <div class="tip-title">
-          <span class="text-base">⏳</span>
+          <span class="text-base"><Emoji e="⏳" /></span>
           <span>临时层数</span>
           <span class="tip-kind">增益</span>
         </div>
-        <div v-for="t in temps" :key="t.key" class="tip-text">{{ t.icon }} {{ t.name }}：永久 {{ t.perm }}，临时 {{ t.temp }}（{{ tempText(t.temp) }}）</div>
+        <div v-for="t in temps" :key="t.key" class="tip-text"><Emoji :e="t.icon" /> {{ t.name }}：永久 {{ t.perm }}，临时 {{ t.temp }}（{{ tempText(t.temp) }}）</div>
         <div class="tip-duration">永久和临时层数同时存在的状态</div>
       </div>
     </div>

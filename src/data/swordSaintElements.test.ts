@@ -14,7 +14,7 @@ const play = (s: BattleState, i = 0) => dispatch(s, { type: 'playCard', handInde
 const TABLE: [string, string, number][] = [
   ['slash', 'white', 1], ['desperate', 'blue', 1], ['lastStandPower', 'gold', 1],
   ['frostSlash', 'white', 1], ['coldWave', 'blue', 1], ['frostWorld', 'gold', 1],
-  ['thunderClap', 'white', 1], ['chainLightning', 'blue', 1], ['thunderGodPower', 'gold', 2],
+  ['thunderClap', 'white', 1], ['chainLightning', 'blue', 1], ['thunderGodPower', 'gold', 1],
   ['flameTongue', 'white', 1], ['firestorm', 'blue', 1], ['burnSky', 'gold', 2],
 ]
 
@@ -36,13 +36,13 @@ describe('属性剑新牌', () => {
     s.player.hp = Math.floor(s.player.maxHp / 2)
     expect(play(s).enemies[0]!.hp).toBe(84)
   })
-  it('焚天：灼伤 4 层 → 12 点并翻倍为 8；无灼伤 → 0 点不报错', () => {
+  it('焚天：基础 12 + 灼伤 4 层 × 3 = 24 点并翻倍为 8；无灼伤 → 12 点不报错', () => {
     const s = fight(['burnSky'])
     s.enemies[0]!.statuses = { burn: 4 }
     const r = play(s)
-    expect(r.enemies[0]!.hp).toBe(88)
+    expect(r.enemies[0]!.hp).toBe(76)
     expect(r.enemies[0]!.statuses.burn).toBe(8)
-    expect(play(fight(['burnSky'])).enemies[0]!.hp).toBe(100)
+    expect(play(fight(['burnSky'])).enemies[0]!.hp).toBe(88)
   })
   it('按目标状态加成：after 可选清除或保持', () => {
     const run = (after?: 'keep' | 'clear') => {

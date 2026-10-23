@@ -52,7 +52,7 @@ export function validateSave(body: SaveBody, existingFiles: string[]): void {
       throw new Error(`${key} 的音量必须在 0~3 之间`)
     if (c.maxSeconds !== undefined && !(c.maxSeconds > 0))
       throw new Error(`${key} 的截取秒数必须大于 0`)
-    if (c.synth !== undefined && c.synth !== 'split') throw new Error(`${key} 的合成音类型未知`)
+    if (c.synth !== undefined && c.synth !== 'split' && c.synth !== 'evolve' && c.synth !== 'train') throw new Error(`${key} 的合成音类型未知`)
   }
 }
 

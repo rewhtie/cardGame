@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed, onBeforeUnmount, ref } from 'vue'
 import type { RunSave } from '@/engine/save'
 
@@ -53,7 +54,7 @@ const EMBERS = Array.from({ length: 18 }, (_, i) => ({
     />
 
     <div class="hero">
-      <div class="flame">🔥</div>
+      <div class="flame"><Emoji e="🔥" /></div>
       <h1 class="logo">CardFire</h1>
       <div class="tagline"><span /> 卡牌 · 爬塔 · 远征 <span /></div>
     </div>

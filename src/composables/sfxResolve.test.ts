@@ -95,6 +95,7 @@ describe('sfxSlotsForEvent', () => {
       relicGained: { type: 'relicGained', id: 'r' },
       cardsUpgraded: { type: 'cardsUpgraded', cards: [] },
       cardsEvolved: { type: 'cardsEvolved', cards: [] },
+      cardsTrained: { type: 'cardsTrained', cards: [] },
       turnStarted: { type: 'turnStarted', turn: 1 },
       enemyActed: { type: 'enemyActed', intent: { type: 'idle' }, enemyIndex: 0 },
       cardAdded: { type: 'cardAdded', cardId: 'wound', count: 1 },

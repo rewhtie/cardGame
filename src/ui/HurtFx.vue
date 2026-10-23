@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 /** 全屏受伤特效：边缘泛红光并抖一下，中间砸出失去量；不挡点击。与 HealFx 成对 */
 defineProps<{ amount: number }>()
 </script>
 
 <template>
   <div class="hurt-screen">
-    <div class="hurt-text">-{{ amount }} 💔</div>
+    <div class="hurt-text">-{{ amount }} <Emoji e="💔" /></div>
   </div>
 </template>
 

@@ -32,10 +32,9 @@ describe('剑圣卡牌与职业', () => {
     expect(CHARACTER_RELIC_IDS).toContain('swordHeart')
   })
 
-  it('附魔成长：无想一剑的伤害与每层加成同步 +1', () => {
-    const e = growCard(cards.nothingSlash!).effects[0] as { amount: number; perStack?: { per: number } }
+  it('附魔成长：无瑕的伤害 +1', () => {
+    const e = growCard(cards.nothingSlash!).effects[0] as { amount: number }
     expect(e.amount).toBe(17)
-    expect(e.perStack?.per).toBe(5)
   })
 
   it('进化目标不进奖励池', () => {

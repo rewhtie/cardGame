@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { sfxMap } from '@/data/sfxMap'
 import { SFX_SLOTS } from '@/data/sfxSlots'
@@ -87,7 +88,13 @@ function onNumber(field: 'volume' | 'maxSeconds', e: Event) {
   patch({ [field]: raw === '' || !Number.isFinite(n) ? undefined : n })
 }
 const toggleSilent = () => patch({ silent: !config.value.silent })
-const restoreSynth = () => patch({ files: undefined, synth: 'split', silent: undefined })
+/** 有内置合成音的槽位 */
+const SYNTH_SLOTS: Record<string, 'split' | 'evolve' | 'train'> = {
+  'battle.enemy.split': 'split',
+  'run.evolve': 'evolve',
+  'run.train': 'train',
+}
+const restoreSynth = () => patch({ files: undefined, synth: SYNTH_SLOTS[selected.value], silent: undefined })
 
 function audition(name: string) {
   const url = sfxUrl(name)
@@ -184,7 +191,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="ed">
     <header class="ed-head">
-      <span class="ed-title">🔊 音效编辑器</span>
+      <span class="ed-title"><Emoji e="🔊" /> 音效编辑器</span>
       <span class="ed-tag">仅开发模式</span>
       <span class="ed-hint">保存后改写 src/data/sfxMap.ts 并把导入文件放进 src/assets/sfx</span>
       <span v-if="message" class="ed-msg" :class="message.ok ? 'ok' : 'err'">{{ message.text }}</span>
@@ -246,7 +253,7 @@ onBeforeUnmount(() => {
             <label>音量 <input class="ed-num" :value="config.volume ?? ''" placeholder="1" @change="onNumber('volume', $event)" /></label>
             <label>最长秒数 <input class="ed-num" :value="config.maxSeconds ?? ''" placeholder="不截取" @change="onNumber('maxSeconds', $event)" /></label>
             <label class="ed-check"><input type="checkbox" :checked="config.silent" @change="toggleSilent" /> 设为静音</label>
-            <button v-if="slotDef.key === 'battle.enemy.split'" class="ed-btn sm" @click="restoreSynth">恢复合成音</button>
+            <button v-if="slotDef.key in SYNTH_SLOTS" class="ed-btn sm" @click="restoreSynth">恢复合成音</button>
           </div>
         </section>
 

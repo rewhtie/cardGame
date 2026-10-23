@@ -334,8 +334,25 @@ const move = (i: number, d: -1 | 1) => {
           </select>
         </label>
         <label class="fx-field">
+          <span>方式</span>
+          <select
+            class="fx-ctl"
+            :value="eff.stacks < 0 ? 'lose' : 'gain'"
+            @change="eff.stacks = (($event.target as HTMLSelectElement).value === 'lose' ? -1 : 1) * Math.abs(eff.stacks || 1)"
+          >
+            <option value="gain">获得 / 给予</option>
+            <option value="lose">失去</option>
+          </select>
+        </label>
+        <label class="fx-field">
           <span>层数</span>
-          <input v-model.number="eff.stacks" type="number" class="fx-ctl fx-num" />
+          <input
+            :value="Math.abs(eff.stacks)"
+            type="number"
+            min="1"
+            class="fx-ctl fx-num"
+            @input="eff.stacks = (eff.stacks < 0 ? -1 : 1) * Math.abs(Number(($event.target as HTMLInputElement).value))"
+          />
         </label>
         <label class="fx-field">
           <span>对象</span>
@@ -345,7 +362,7 @@ const move = (i: number, d: -1 | 1) => {
             <option value="allEnemies">全体敌人</option>
           </select>
         </label>
-        <label v-if="eff.to === 'self'" class="fx-check" title="层数在玩家回合结束时失去">
+        <label v-if="eff.to === 'self' && eff.stacks > 0" class="fx-check" title="层数在玩家回合结束时失去">
           <input v-model="eff.temp" type="checkbox" /> 临时（回合结束失去）
         </label>
       </template>

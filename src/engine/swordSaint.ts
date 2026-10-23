@@ -5,27 +5,40 @@ import type { BattleState, CardDef, GameEvent } from './types'
 export const SWORD_STRIKE_ID = 'swordStrike'
 export const SWORD_MANUAL = 'swordManual'
 
-/** 这张牌现在是否免费，以及免费的来源（技能吃剑意，剑击吃剑流；技能优先，一张牌只走一种；诅咒 / 状态牌不吃剑意） */
+/**
+ * 这张牌现在是否免费，以及免费的来源。所有适用于这张牌的来源同时生效、同时各消耗 1 层：
+ * 类型 / 虚无的免费状态、剑意（技能牌）、剑流（剑击）。诅咒 / 状态牌不吃这些。
+ * 牌自带的免费条件（参天古树、有剑意时免费）让牌免费，此时不消耗任何来源。
+ */
 export function playCost(
   s: BattleState,
   card: CardDef,
-): { free: boolean; viaIntent: boolean; viaFlow: boolean } {
-  // 参天古树：全场寄生层数够了，免费打出（不消耗剑意 / 剑流）
-  if (card.freeIfParasiteTotal !== undefined && parasiteTotal(s) >= card.freeIfParasiteTotal) {
-    return { free: true, viaIntent: false, viaFlow: false }
+): { free: boolean; viaIntent: boolean; viaFlow: boolean; viaStatuses: string[] } {
+  const has = (id: string) => (s.player.statuses[id] ?? 0) > 0
+  const plain = card.rarity !== 'status' && card.rarity !== 'curse'
+  const viaStatuses = plain && card.cost !== 0 ? freeStatusesFor(card).filter(has) : []
+  const native =
+    (card.freeIfParasiteTotal !== undefined && parasiteTotal(s) >= card.freeIfParasiteTotal) ||
+    (!!card.freeIfSwordIntent && has('swordIntent'))
+  // 牌自带条件免费时什么都不额外消耗（伤害随剑意的牌自己会清空剑意，先扣 1 层会少算一层）
+  if (native) return { free: true, viaIntent: false, viaFlow: false, viaStatuses: [] }
+  const viaIntent = card.kind === 'skill' && plain && has('swordIntent')
+  const viaFlow = rawId(card.id) === SWORD_STRIKE_ID && has('swordFlow')
+  return {
+    free: viaStatuses.length > 0 || viaIntent || viaFlow,
+    viaIntent,
+    viaFlow,
+    viaStatuses,
   }
-  // 有剑意时免费的牌：不额外消耗剑意（伤害随剑意的牌自己会清空剑意，先扣 1 层会少算一层）
-  if (card.freeIfSwordIntent && (s.player.statuses.swordIntent ?? 0) > 0) {
-    return { free: true, viaIntent: false, viaFlow: false }
-  }
-  if (card.kind === 'skill' && card.rarity !== 'status' && card.rarity !== 'curse' && (s.player.statuses.swordIntent ?? 0) > 0) {
-    return { free: true, viaIntent: true, viaFlow: false }
-  }
-  if (rawId(card.id) === SWORD_STRIKE_ID && (s.player.statuses.swordFlow ?? 0) > 0) {
-    return { free: true, viaIntent: false, viaFlow: true }
-  }
-  return { free: false, viaIntent: false, viaFlow: false }
 }
+
+const FREE_BY_KIND = { attack: 'freeAttack', skill: 'freeSkill', power: 'freePower' } as const
+
+/** 这张牌可以吃哪些"下一张免费"状态（类型 + 虚无，适用的都吃） */
+const freeStatusesFor = (card: CardDef): string[] => [
+  FREE_BY_KIND[card.kind],
+  ...(card.ethereal ? ['freeEthereal'] : []),
+]
 
 /** 界面显示用的费用：免费时为 0 */
 export function displayCost(s: BattleState, card: CardDef): number | 'X' {

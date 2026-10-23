@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { nextTick, onBeforeUnmount, ref } from 'vue'
 import { cards } from '@/data/cards'
 import { playSfx } from '@/composables/useSfx'
@@ -78,7 +79,7 @@ function startRemove() {
       "
     />
 
-    <header class="title">🛒 商店</header>
+    <header class="title"><Emoji e="🛒" /> 商店</header>
 
     <div class="rows">
       <!-- 第一行：5 张角色卡 -->
@@ -132,7 +133,7 @@ function startRemove() {
                   :disabled="item.sold"
                   @click="buy(item, 'relic', i)"
                 >
-                  {{ relics[item.id]?.icon }}
+                  <Emoji :e="relics[item.id]?.icon" />
                 </button>
               </HoverTip>
               <ShopPrice :item="item" :gold="run.gold" :class="{ shake: shaking === `relic${i}` }" />
@@ -152,7 +153,7 @@ function startRemove() {
                   :disabled="item.sold || potionFull()"
                   @click="buy(item, 'potion', i)"
                 >
-                  {{ potions[item.id]?.icon }}
+                  <Emoji :e="potions[item.id]?.icon" />
                 </button>
               </HoverTip>
               <ShopPrice :item="item" :gold="run.gold" :class="{ shake: shaking === `potion${i}` }" />
@@ -166,13 +167,13 @@ function startRemove() {
               title="删除一张牌"
               @click="startRemove"
             >
-              🗑️
+              <Emoji e="🗑️" />
             </button>
             <span
               class="price"
               :class="{ poor: !shop().removed && run.gold < shop().removeCost, shake: shaking === 'remove' }"
             >
-              {{ shop().removed ? '已使用' : `删牌 💰 ${shop().removeCost}` }}
+              <template v-if="shop().removed">已使用</template><template v-else>删牌 <Emoji e="💰" /> {{ shop().removeCost }}</template>
             </span>
           </div>
         </div>

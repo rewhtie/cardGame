@@ -33,4 +33,29 @@ export const colorlessBlue: Card[] = [
     .redraw(0)
     .reward()
     .upgrade((u) => u.redraw(1)),
+  // 连击示例：打出后下一张攻击牌免费；打出的若也是这类牌，就一张接一张连下去
+  Card.blue('chainStrike', '连环斩')
+    .icon('⚡')
+    .cost(1)
+    .targetEnemy()
+    .damage(5)
+    .applyStatus('freeAttack', 1)
+    .reward()
+    .upgrade((u) => u.damage(7).applyStatus('freeAttack', 1)),
+  Card.blue('calmFlow', '行云流水')
+    .icon('✨')
+    .cost(0)
+    .targetSelf()
+    .applyStatus('freeSkill', 1)
+    .draw(1)
+    .reward()
+    .upgrade((u) => u.draw(2).applyStatus('freeSkill', 1)),
+  // 能力牌示例：每回合第一张攻击牌免费
+  Card.blue('assault', '突击')
+    .icon('🏹')
+    .cost(1)
+    .power()
+    .applyStatus('freeAttackEachTurn', 1)
+    .reward()
+    .upgrade((u) => u.cost(0)),
 ]

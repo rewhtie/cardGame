@@ -11,7 +11,14 @@ const MAX_UNITS = 3
 /** 楼层命中固定遭遇时，直接出固定组合的概率；其余仍按预算组怪 */
 const FIXED_CHANCE = 0.5
 
-export const floorBudget = (floor: number) => {
+/** 机制互相放大、同场战损过高的怪，按预算组怪时不会凑在一起（固定遭遇不受限） */
+const EXCLUSIVE: readonly (readonly [string, string])[] = [
+  ['summoner', 'goblin'],
+  ['summoner', 'split-slime'],
+]
+const clashes = (a: EnemyDef, b: EnemyDef) => EXCLUSIVE.some(([x, y]) => (a.id === x && b.id === y) || (a.id === y && b.id === x))
+
+export const floorBudget =(floor: number) => {
   const t = Math.min(1, Math.max(0, (floor - 1) / (FLOORS - 3)))
   return BUDGET_FIRST + (BUDGET_LAST - BUDGET_FIRST) * t
 }
@@ -39,7 +46,7 @@ export function pickEncounter(
 
   let left = budget - threat(picked[0] as EnemyDef)
   while (picked.length < MAX_UNITS) {
-    const fill = affordable.filter((e) => threat(e) <= left && !picked.includes(e))
+    const fill = affordable.filter((e) => threat(e) <= left && !picked.includes(e) && !picked.some((p) => clashes(p, e)))
     if (fill.length === 0) break
     const e = fill[rng.int(fill.length)] as EnemyDef
     picked.push(e)

@@ -25,6 +25,8 @@ export interface CardSpec {
   /** 需要选敌人但不算攻击牌的技能牌（仅 target 为 enemy / allEnemies 时有意义） */
   asSkill?: boolean
   exhaust: boolean
+  /** 虚无：回合结束时若还在手牌中则消耗 */
+  ethereal?: boolean
   /** 保留：回合结束时留在手牌 */
   retain?: boolean
   /** 蓄势：每保留一回合，第一段伤害 +n（隐含保留） */

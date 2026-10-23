@@ -27,7 +27,7 @@ export const potions: Record<string, ItemDef> = {
   gamblerPotion: { id: 'gamblerPotion', name: '赌徒特酿', icon: '🎲', text: '弃掉所有手牌，再抽等量的牌' },
   memoryPotion: { id: 'memoryPotion', name: '液态记忆', icon: '🫗', text: '从弃牌堆取回 1 张牌到手牌' },
   fortressPotion: { id: 'fortressPotion', name: '堡垒药水', icon: '🏰', text: '获得 25 点格挡' },
-  elixirPotion: { id: 'elixirPotion', name: '强效治疗药水', icon: '❤️‍🩹', text: '恢复 40 点生命' },
+  elixirPotion: { id: 'elixirPotion', name: '强效治疗药水', icon: 'potion-yellow', text: '恢复 40 点生命' },
   thunderPotion: { id: 'thunderPotion', name: '雷电药水', icon: '🌩️', text: '获得 2 层感电' },
   weakAllPotion: { id: 'weakAllPotion', name: '衰弱雾瓶', icon: '🌫️', text: '使所有敌人获得 2 层虚弱' },
   fearAllPotion: { id: 'fearAllPotion', name: '惊惧雾瓶', icon: '👁️', text: '使所有敌人获得 2 层易伤' },

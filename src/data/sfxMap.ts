@@ -15,6 +15,8 @@ export const sfxMap: SfxMap = {
   'battle.heal.enemy': { files: ['heal-2.ogg'] },
   'battle.heal.player': { files: ['heal-2.ogg'] },
   'run.enchant': { files: ['enchant-1.mp3'] },
+  'run.evolve': { synth: 'evolve' },
+  'run.train': { synth: 'train' },
   'run.forge.upgrade': { files: ['forge-1.ogg', 'forge-2.ogg'], maxSeconds: 0.5 },
   'run.gold.gain': { files: ['coin-1.ogg', 'coin-2.ogg'] },
   'run.gold.spend': { files: ['coin-2.ogg'] },

@@ -322,7 +322,7 @@ function pickCards(run: RunState, deckIndexes: number[]): RunResult {
   if (run.screen !== 'pick' || !pending) return invalid(run, '当前不在选牌界面')
   const result = resolveRelicPick(run, pending.id, deckIndexes)
   if (!result) return invalid(run, '选择的牌不合法')
-  return {
+  const picked: RunResult = {
     state: {
       ...result.run,
       screen: pending.back,
@@ -331,6 +331,13 @@ function pickCards(run: RunState, deckIndexes: number[]): RunResult {
     },
     events: [{ type: 'relicGained', id: pending.id, cards: result.cards }],
   }
+  // 事件里获得的遗物：继续结算被暂停的剩余结果
+  const ev = picked.state.event
+  if (pending.back !== 'event' || !ev || ev.pending.length === 0) return picked
+  const rng = createRng(deriveSeed(run.seed, `event:${run.current}:relic:${ev.result.length}`))
+  const resumed: RunState = { ...picked.state, event: { ...ev, pending: [] } }
+  const r = afterEventOutcomes(resolveOutcomes(resumed, ev.pending, rng, acquireRelic))
+  return { ...r, events: [...picked.events, ...r.events] }
 }
 
 function battleAction(run: RunState, action: Action): RunResult {
@@ -556,10 +563,10 @@ function campfireSpecialUse(run: RunState): RunResult {
         if (run.content.cards[rawId(id)]?.evolve) counts[`${id}#${i}`] = progressOf(id) + TRAIN_PLAYS
       })
       const evo = evolveDeck(run.content.cards, run.content.deck, counts)
-      return done(
-        { ...run, content: { ...run.content, deck: evo.deck } },
-        evo.evolved.length ? [{ type: 'cardsEvolved', cards: evo.evolved }] : [],
-      )
+      return done({ ...run, content: { ...run.content, deck: evo.deck } }, [
+        ...(evo.evolved.length ? [{ type: 'cardsEvolved' as const, cards: evo.evolved }] : []),
+        ...(evo.trained.length ? [{ type: 'cardsTrained' as const, cards: evo.trained }] : []),
+      ])
     }
     case 'plagueDoctor': {
       const rng = createRng(deriveSeed(run.seed, `campfire:${run.current}`))
@@ -618,7 +625,7 @@ function chooseEventOption(run: RunState, index: number): RunResult {
   ]
   const withCost = { ...paid, event: { ...paid.event!, result: [...costLines, ...paid.event!.result] } }
   const rng = createRng(deriveSeed(run.seed, `event:${run.current}:${index}`))
-  const resolved = resolveOutcomes(withCost, opt.outcomes, rng, grantRelic)
+  const resolved = resolveOutcomes(withCost, opt.outcomes, rng, acquireRelic)
   const costHp = opt.cost?.hp ?? 0
   return afterEventOutcomes(
     costHp > 0
@@ -629,7 +636,7 @@ function chooseEventOption(run: RunState, index: number): RunResult {
 
 /** 事件结果结算后：若触发了战斗则开战，否则停在事件界面 */
 function afterEventOutcomes(r: RunResult): RunResult {
-  if (r.state.screen === 'eventPick' || !r.state.eventBattle || r.state.screen === 'battle') return r
+  if (r.state.screen === 'eventPick' || r.state.screen === 'pick' || !r.state.eventBattle || r.state.screen === 'battle') return r
   const battle = startBattle(r.state, r.state.current as string)
   return { state: battle.state, events: [...r.events, ...battle.events] }
 }
@@ -660,7 +667,7 @@ function eventPickCard(run: RunState, deckIndex: number): RunResult {
     event: { ...ev, pick: null, pending: [], result: [...ev.result, line] },
   }
   const rng = createRng(deriveSeed(run.seed, `event:${run.current}:pick:${ev.result.length}`))
-  const r = afterEventOutcomes(resolveOutcomes(resumed, pending, rng, grantRelic))
+  const r = afterEventOutcomes(resolveOutcomes(resumed, pending, rng, acquireRelic))
   return { ...r, events: [...events, ...r.events] }
 }
 

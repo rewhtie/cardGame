@@ -22,9 +22,9 @@ describe('无瑕：有剑意时免费', () => {
     const r = play(s)
     expect(r.events.some((e) => e.type === 'invalidAction')).toBe(false)
     expect(r.state.player.energy).toBe(0)
-    // 基础 16 + 每层 4 = 24，再吃剑意 +10%×2 层：24 × 1.2 = 28.8 → 29
-    expect(r.state.enemies[0]!.hp).toBe(500 - 29)
-    expect(r.state.player.statuses.swordIntent).toBeUndefined() // 剑意由伤害效果清空，免费本身不多扣
+    // 基础 16，再吃剑意 +10%×2 层：16 × 1.2 = 19.2 → 19
+    expect(r.state.enemies[0]!.hp).toBe(500 - 19)
+    expect(r.state.player.statuses.swordIntent).toBe(1) // 免费本身不扣，由「失去 1 层剑意」效果扣 1 层
   })
 
   it('没有剑意：照常 2 费，能量不足打不出', () => {

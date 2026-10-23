@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { potions as potionDefs, relics as relicDefs } from '@/data/items'
 import { POTION_RULES, fieldHeal } from '@/engine/potions'
@@ -214,7 +215,7 @@ const hintOf = (id: string | undefined) => {
         <path d="M24 8c-1 3 0 4 0 5 1-1 2-3 0-5z" fill="#ef4444" stroke="#ef4444" />
       </svg>
 
-      <span class="stat text-red-300">❤ {{ hp }}/{{ maxHp }}</span>
+      <span class="stat text-red-300"><Emoji e="❤" /> {{ hp }}/{{ maxHp }}</span>
 
       <!-- 药水栏：固定槽位，空槽显示虚线框 -->
       <span class="flex gap-1.5">
@@ -238,7 +239,7 @@ const hintOf = (id: string | undefined) => {
               ]"
               @pointerdown="onPress(i - 1, $event)"
               @contextmenu.prevent="menu = menu === i - 1 ? null : i - 1"
-              >{{ potionDefs[potions[i - 1]!]!.icon }}</span
+              ><Emoji :e="potionDefs[potions[i - 1]!]!.icon" /></span
             >
           </HoverTip>
           <span
@@ -264,7 +265,7 @@ const hintOf = (id: string | undefined) => {
       </span>
 
       <span class="stat text-amber-300 gold-stat">
-        <span :key="goldFx?.key ?? 0" :class="goldFx ? 'gold-pop' : ''">💰 {{ gold }}</span>
+        <span :key="goldFx?.key ?? 0" :class="goldFx ? 'gold-pop' : ''"><Emoji e="💰" /> {{ gold }}</span>
         <span
           v-if="goldFx"
           :key="`d${goldFx.key}`"
@@ -309,7 +310,7 @@ const hintOf = (id: string | undefined) => {
           align="left"
         >
           <span class="text-lg flex-none relic relative">
-            {{ relicDefs[id]!.icon }}
+            <Emoji :e="relicDefs[id]!.icon" />
             <span v-if="relicCounter(id, relicState ?? {}) !== undefined" class="relic-count">{{
               relicCounter(id, relicState ?? {})
             }}</span>

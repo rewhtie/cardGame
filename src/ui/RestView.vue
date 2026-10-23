@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import AnvilIcon from './AnvilIcon.vue'
 import FireIcon from './FireIcon.vue'
 
@@ -26,7 +27,7 @@ defineEmits<{ rest: []; forge: []; special: []; leave: [] }>()
       </button>
 
       <button v-if="special" class="option" :disabled="!!specialBlocked" @click="$emit('special')">
-        <span class="orb"><span class="text-5xl">{{ special.icon }}</span></span>
+        <span class="orb"><span class="text-5xl"><Emoji :e="special.icon" /></span></span>
         <span class="banner">{{ special.name }}</span>
         <span class="desc">{{ special.desc }}</span>
         <span v-if="specialBlocked" class="note">{{ specialBlocked }}</span>

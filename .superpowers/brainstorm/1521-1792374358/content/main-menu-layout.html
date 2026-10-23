@@ -1,0 +1,81 @@
+<h2>主菜单版式：哪种更合适？</h2>
+<p class="subtitle">五个按钮相同：继续游戏（有存档才出现）、开始游戏、图鉴、游戏设置、退出游戏。下面左右各是"没有存档"和"有存档"的样子。</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>居中竖排</h3>
+      <p>标题在上，按钮居中竖排。有存档时"继续游戏"置顶并高亮，下面附一行存档摘要。</p>
+      <div class="split">
+        <div class="mockup">
+          <div class="mockup-header">没有存档</div>
+          <div class="mockup-body" style="text-align:center">
+            <h3>CARDFIRE</h3>
+            <div class="mock-button" style="display:block;margin:6px auto;width:60%">开始游戏</div>
+            <div class="mock-button" style="display:block;margin:6px auto;width:60%">图鉴</div>
+            <div class="mock-button" style="display:block;margin:6px auto;width:60%">游戏设置</div>
+            <div class="mock-button" style="display:block;margin:6px auto;width:60%">退出游戏</div>
+          </div>
+        </div>
+        <div class="mockup">
+          <div class="mockup-header">有存档</div>
+          <div class="mockup-body" style="text-align:center">
+            <h3>CARDFIRE</h3>
+            <div class="mock-button" style="display:block;margin:6px auto;width:60%;font-weight:bold">继续游戏</div>
+            <div class="subtitle" style="font-size:12px">第 7 层 · 生命 52/80 · 金币 134 · 种子 K7M2QX9A</div>
+            <div class="mock-button" style="display:block;margin:6px auto;width:60%">开始游戏</div>
+            <div class="mock-button" style="display:block;margin:6px auto;width:60%">图鉴</div>
+            <div class="mock-button" style="display:block;margin:6px auto;width:60%">游戏设置</div>
+            <div class="mock-button" style="display:block;margin:6px auto;width:60%">退出游戏</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>左侧竖排 + 右侧存档卡片</h3>
+      <p>按钮靠左，右侧大块区域留给标题插画。有存档时右下角出现一张存档卡片，显示进度摘要。</p>
+      <div class="split">
+        <div class="mockup">
+          <div class="mockup-header">没有存档</div>
+          <div class="mockup-body" style="display:flex;gap:12px">
+            <div style="flex:1">
+              <h3>CARDFIRE</h3>
+              <div class="mock-button" style="display:block;margin:6px 0">开始游戏</div>
+              <div class="mock-button" style="display:block;margin:6px 0">图鉴</div>
+              <div class="mock-button" style="display:block;margin:6px 0">游戏设置</div>
+              <div class="mock-button" style="display:block;margin:6px 0">退出游戏</div>
+            </div>
+            <div class="placeholder" style="flex:1">标题插画</div>
+          </div>
+        </div>
+        <div class="mockup">
+          <div class="mockup-header">有存档</div>
+          <div class="mockup-body" style="display:flex;gap:12px">
+            <div style="flex:1">
+              <h3>CARDFIRE</h3>
+              <div class="mock-button" style="display:block;margin:6px 0;font-weight:bold">继续游戏</div>
+              <div class="mock-button" style="display:block;margin:6px 0">开始游戏</div>
+              <div class="mock-button" style="display:block;margin:6px 0">图鉴</div>
+              <div class="mock-button" style="display:block;margin:6px 0">游戏设置</div>
+              <div class="mock-button" style="display:block;margin:6px 0">退出游戏</div>
+            </div>
+            <div style="flex:1">
+              <div class="placeholder">标题插画</div>
+              <div class="mock-nav" style="margin-top:8px;font-size:12px">存档：第 7 层 · 生命 52/80<br>金币 134 · 遗物 5 · 种子 K7M2QX9A</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>点"开始游戏"时，如果已有存档</h3>
+  <p class="subtitle">新开一局会覆盖旧存档，所以我猜需要一个确认框：「已有进行中的游戏，开始新游戏会覆盖它。确定吗？」你觉得要加吗？这点可以在终端里回我。</p>
+</div>

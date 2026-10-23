@@ -127,6 +127,7 @@ export function cardToCode(spec: CardSpec): string {
   if (spec.unplayable) add('.unplayable()')
   if (spec.endTurnLoseHp > 0) add(`.endTurnLoseHp(${spec.endTurnLoseHp})`)
   if (spec.exhaust && spec.target !== 'power') add('.exhaust()')
+  if (spec.ethereal) add('.ethereal()')
   if (spec.retain) add('.retain()')
   if (spec.retainGrow) add(`.retainGrow(${spec.retainGrow})`)
   if (spec.innate) add('.innate()')

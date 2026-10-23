@@ -2,7 +2,7 @@
 
 # 音效槽位
 
-共 43 个槽位。槽位清单来自 `src/data/sfxSlots.ts`，配置来自 `src/data/sfxMap.ts`。
+共 45 个槽位。槽位清单来自 `src/data/sfxSlots.ts`，配置来自 `src/data/sfxMap.ts`。
 
 ## 战斗·出牌
 
@@ -99,5 +99,7 @@
 | run.shop.poor | 商店买不起 | （未配置） |
 | run.forge.upgrade | 锻造 / 升级敲击 | forge-1.ogg、forge-2.ogg |
 | run.enchant | 附魔镶嵌 | enchant-1.mp3 |
+| run.evolve | 卡牌成长（蓄力裂开 + 爆发） | （未配置） |
+| run.train | 卡牌训练（成长未满，裂痕加深） | （未配置） |
 | run.relic.gained | 获得遗物 | （未配置） |
 | run.hpLost | 战斗外失血 | （未配置） |

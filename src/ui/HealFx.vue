@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 /** 全屏回血特效：边缘泛绿光，中间浮起回复量；不挡点击 */
 defineProps<{ amount: number; maxHp?: boolean }>()
 </script>
 
 <template>
   <div class="heal-screen">
-    <div class="heal-text">{{ maxHp ? `最大生命 +${amount}` : `+${amount}` }} ❤</div>
+    <div class="heal-text">{{ maxHp ? `最大生命 +${amount}` : `+${amount}` }} <Emoji e="❤" /></div>
   </div>
 </template>
 

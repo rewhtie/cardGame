@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import type { ShopItem } from '@/engine/shop'
 
 defineProps<{ item: ShopItem; gold: number }>()
@@ -6,7 +7,7 @@ defineProps<{ item: ShopItem; gold: number }>()
 
 <template>
   <span class="price" :class="{ poor: !item.sold && gold < item.price }">
-    <span class="now">{{ item.sold ? '已售出' : `💰 ${item.price}` }}</span>
+    <span class="now"><template v-if="item.sold">已售出</template><template v-else><Emoji e="💰" /> {{ item.price }}</template></span>
     <!-- 折扣行放在现价下方并始终占位，让现价紧贴商品：打折与否都不改变整体高度 -->
     <span class="meta">
       <template v-if="!item.sold && item.discount">

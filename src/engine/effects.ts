@@ -387,6 +387,21 @@ export function shiftStatus(
   events.push({ type: 'statusApplied', target: side, status: id, stacks: delta, ...at })
 }
 
+/** 失去最多 n 层状态（不会扣成负数；扣光则移除） */
+export function loseStatusStacks(
+  s: BattleState,
+  side: Side,
+  enemyIndex: number,
+  id: string,
+  n: number,
+  events: GameEvent[],
+) {
+  const owner = side === 'player' ? s.player : s.enemies[enemyIndex]
+  const have = owner?.statuses[id] ?? 0
+  if (have <= 0 || n <= 0) return
+  shiftStatus(s, side, enemyIndex, id, -Math.min(have, n), events)
+}
+
 export function heal(
   s: BattleState,
   side: Side,
@@ -1067,16 +1082,22 @@ export function resolveEffect(
         true,
       )
       break
-    case 'applyStatus':
-      if (effect.to === 'self' && effect.temp) addTempStatus(s, 'player', 0, effect.status, effect.stacks, events)
-      else if (effect.to === 'self') addStatus(s, 'player', 0, effect.status, effect.stacks, events)
-      else if (effect.to === 'target')
-        addStatus(s, 'enemy', enemyIndex, effect.status, effect.stacks, events)
+    case 'applyStatus': {
+      // 层数为负 = 失去这么多层（最多扣到 0，没有则什么也不发生）
+      const change = (side: Side, i: number) =>
+        effect.stacks < 0
+          ? loseStatusStacks(s, side, i, effect.status, -effect.stacks, events)
+          : addStatus(s, side, i, effect.status, effect.stacks, events)
+      if (effect.to === 'self' && effect.temp && effect.stacks > 0)
+        addTempStatus(s, 'player', 0, effect.status, effect.stacks, events)
+      else if (effect.to === 'self') change('player', 0)
+      else if (effect.to === 'target') change('enemy', enemyIndex)
       else
         s.enemies.forEach((e, i) => {
-          if (isAlive(e)) addStatus(s, 'enemy', i, effect.status, effect.stacks, events)
+          if (isAlive(e)) change('enemy', i)
         })
       break
+    }
     case 'woundStatus': {
       const stacks = countWounds(s) * effect.per
       if (effect.to === 'self') addStatus(s, 'player', 0, effect.status, stacks, events)

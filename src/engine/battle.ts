@@ -251,6 +251,8 @@ function playCard(state: BattleState, handIndex: number, target?: number, pick?:
   // 被剑意 / 剑流免费时不花能量；免费的 X 牌 X = 0，只剩附魔加成
   const x = card.cost === 'X' ? (paid.free ? 0 : s.player.energy) + (card.xBonus ?? 0) : 0
   if (!paid.free) s.player.energy = card.cost === 'X' ? 0 : s.player.energy - card.cost
+  // 先消耗 1 层再结算效果：效果里再给层数，就能一张接一张连下去
+  for (const id of paid.viaStatuses) shiftStatus(s, 'player', 0, id, -1, events)
   if (paid.viaIntent) shiftStatus(s, 'player', 0, 'swordIntent', -1, events)
   // 剑流免费：平时一次清空（只有 1 层）；有剑谱时每张只消耗 1 层，叠高的层数能连续用
   if (paid.viaFlow) {
@@ -361,7 +363,10 @@ function resolvePending(state: BattleState, picks: number[]): DispatchResult {
     s.hand = s.hand.filter((_, i) => !gone.has(i))
   } else if (p.kind === 'copy') {
     if (picks.length !== 1 || picks[0]! >= s.hand.length) return invalid(state, '需要选择一张手牌')
-    const id = spawnCardInstance(s, s.hand[picks[0]!]!, 'c')
+    const src = s.hand[picks[0]!]!
+    const id = spawnCardInstance(s, src, 'c')
+    // 复制「发现」得来的牌：副本同样只在本回合免费
+    if (s.discovered?.includes(src)) s.discovered = [...s.discovered, id]
     s.hand.push(id)
     events.push({ type: 'cardDrawn', cardId: id })
   } else if (p.kind === 'retrieve') {
@@ -485,8 +490,12 @@ function endTurn(state: BattleState): DispatchResult {
     events.push({ type: 'cardTriggered', cardId: id })
     loseHp(s, 'player', 0, lose, events)
   }
-  const kept = s.hand.filter((id) => s.cards[id]?.retain)
-  const dropped = s.hand.filter((id) => !s.cards[id]?.retain)
+  // 虚无：回合结束还在手里就消耗（优先于保留）
+  const faded = s.hand.filter((id) => s.cards[id]?.ethereal)
+  s.exhaustPile.push(...faded.map(restoreId))
+  const rest = s.hand.filter((id) => !s.cards[id]?.ethereal)
+  const kept = rest.filter((id) => s.cards[id]?.retain)
+  const dropped = rest.filter((id) => !s.cards[id]?.retain)
   events.push({ type: 'handDiscarded', count: dropped.length })
   s.discardPile.push(...dropped.map(restoreId))
   s.hand = kept.map((id) => growRetained(s, id))

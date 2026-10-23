@@ -102,8 +102,9 @@ export function evolveDeck(
   cards: Readonly<Record<string, CardDef>>,
   deck: readonly string[],
   counts: Readonly<Record<string, number>>,
-): { deck: string[]; evolved: { from: string; to: string }[] } {
+): { deck: string[]; evolved: { from: string; to: string }[]; trained: { from: string; to: string }[] } {
   const evolved: { from: string; to: string }[] = []
+  const trained: { from: string; to: string }[] = []
   const next = deck.map((id, i) => {
     const evolve = cards[rawId(id)]?.evolve
     if (!evolve) return id
@@ -113,9 +114,11 @@ export function evolveDeck(
       evolved.push({ from: id, to })
       return to
     }
-    return withProgress(id, total)
+    const kept = withProgress(id, total)
+    if (kept !== id) trained.push({ from: id, to: kept })
+    return kept
   })
-  return { deck: next, evolved }
+  return { deck: next, evolved, trained }
 }
 
 const hasX = (card: CardDef) => card.effects.some((e) => 'perX' in e && e.perX)

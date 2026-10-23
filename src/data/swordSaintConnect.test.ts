@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { cards } from './cards'
 
 const IDS = ['luck', 'cutWater', 'chain', 'swordDance', 'painForShock', 'bladeMasterPower', 'flash']
-const rarity = { luck: 'white', cutWater: 'white', chain: 'blue', swordDance: 'blue', painForShock: 'blue', bladeMasterPower: 'gold', flash: 'gold' }
-const cost = { luck: 0, cutWater: 1, chain: 1, swordDance: 1, painForShock: 0, bladeMasterPower: 3, flash: 1 }
+const rarity = { luck: 'gold', cutWater: 'white', chain: 'blue', swordDance: 'blue', painForShock: 'blue', bladeMasterPower: 'gold', flash: 'gold' }
+const cost = { luck: 0, cutWater: 1, chain: 1, swordDance: 1, painForShock: 0, bladeMasterPower: 1, flash: 1 }
 
 describe('剑圣引擎与衔接牌', () => {
   it('7 张牌注册，稀有度与费用正确', () => {

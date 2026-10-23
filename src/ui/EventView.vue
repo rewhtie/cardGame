@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 import { computed, ref } from 'vue'
 import { optionDisabled, type EventDef } from '@/engine/event'
 import type { RunState } from '@/engine/run'
@@ -43,7 +44,7 @@ function showTip(ev: MouseEvent, card: CardDef) {
   <div class="scene">
     <div class="flex items-center gap-12 relative max-w-[1000px]">
       <div class="flex flex-col items-center gap-4 w-72 text-center">
-        <span class="orb">{{ def.icon }}</span>
+        <span class="orb"><Emoji :e="def.icon" /></span>
         <span class="banner">{{ def.title }}</span>
         <p class="desc">
           <template v-for="(p, j) in parts(def.text)" :key="j">

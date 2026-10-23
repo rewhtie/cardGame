@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Emoji from '@/ui/Emoji.vue'
 /** 悬浮立即显示的提示框（不走浏览器 title 的延迟）；默认在宿主下方居中，align=left 时左对齐 */
 withDefaults(
   defineProps<{
@@ -23,7 +24,7 @@ withDefaults(
     <slot />
     <span class="tip" :style="{ '--tip-color': color }">
       <span class="tip-title">
-        <span class="text-base">{{ icon }}</span>
+        <span class="text-base"><Emoji :e="icon" /></span>
         <span>{{ name }}</span>
         <span v-if="tag" class="tip-tag">{{ tag }}</span>
       </span>

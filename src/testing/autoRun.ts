@@ -101,6 +101,8 @@ export function describeEvent(state: BattleState, e: GameEvent): string | null {
       return `升级了 ${e.cards.length} 张牌`
     case 'cardsEvolved':
       return `成长了${e.cards.length} 张牌`
+    case 'cardsTrained':
+      return `${e.cards.length} 张牌的成长进度增加`
     case 'potionUsed':
       return `使用药水 ${potionDefs[e.potionId]?.name ?? e.potionId}`
     case 'invalidAction':
