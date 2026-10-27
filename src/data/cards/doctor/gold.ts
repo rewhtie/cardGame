@@ -109,4 +109,12 @@ export const doctorGold: Card[] = [
     .block(4)
     .reward()
     .upgrade((u) => u.heal(7).block(7)),
+  Card.gold('sensoryOverload', '感官过载')
+    .icon('🧠')
+    .cost(2)
+    .targetEnemy()
+    .asSkill()
+    .exhaust()
+    .effect({ type: 'sensoryOverload', per: 2 })
+    .upgrade((u) => u.retain()),
 ]

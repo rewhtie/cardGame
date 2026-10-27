@@ -110,6 +110,12 @@ export function effectText(e: Effect): string {
       return `恢复 ${e.amount} 点生命`
     case 'loseHp':
       return `失去 ${e.amount} 点生命`
+    case 'lifeOverload':
+      return '生命降至 1 点，获得 999 点格挡'
+    case 'mentalOverload':
+      return '整局最大生命值变为 1，当前生命降至 1 点'
+    case 'sensoryOverload':
+      return `给予目标本场战斗中由自己生成的状态牌张数 ×${e.per} 层裂伤和易伤（不含敌方塞牌）`
     case 'addCard': {
       const name = CARD_NAMES[e.cardId] ?? e.cardId
       const to = { discard: '弃牌堆', draw: '抽牌堆', hand: '手牌' }[e.to]
@@ -221,12 +227,15 @@ export class Card {
   private _text?: string
   private _power = false
   private _exhaust = false
+  private _oneShot = false
   private _retain = false
   private _ethereal = false
   private _retainGrow = 0
   private _skill = false
   private _unplayable = false
+  private _mustPlayFirst = false
   private _endTurnLoseHp = 0
+  private _endTurnReplicate = false
   private _reward = false
   private _starter = 0
   private _upgrade?: (u: Card) => Card
@@ -253,13 +262,16 @@ export class Card {
     else c.targetEnemy()
     if (spec.asSkill && (spec.target === 'enemy' || spec.target === 'allEnemies')) c.asSkill()
     if (spec.exhaust) c.exhaust()
+    if (spec.oneShot) c.oneShot()
     if (spec.ethereal) c.ethereal()
     if (spec.retain) c.retain()
     if (spec.retainGrow) c.retainGrow(spec.retainGrow)
     if (spec.innate) c.innate()
     if (spec.grow) c.grow(spec.grow)
     if (spec.unplayable) c.unplayable()
+    if (spec.mustPlayFirst) c.mustPlayFirst()
     if (spec.endTurnLoseHp > 0) c.endTurnLoseHp(spec.endTurnLoseHp)
+    if (spec.endTurnReplicate) c.endTurnReplicate()
     spec.effects.forEach((e) => c.effect(e))
     if (spec.text) c.text(spec.text)
     if (spec.reward) c.reward()
@@ -273,6 +285,8 @@ export class Card {
         if (up.cost !== undefined) u.cost(up.cost)
         if (up.exhaust === true) u.exhaust()
         else if (up.exhaust === false) u.noExhaust()
+        if (up.oneShot === true) u.oneShot()
+        else if (up.oneShot === false) u.noOneShot()
         if (up.retain === true) u.retain()
         else if (up.retain === false) u.noRetain()
         up.effects?.forEach((e) => u.effect(e))
@@ -295,13 +309,16 @@ export class Card {
       target: this._power ? 'power' : this._target,
       ...(this._skill && this._target !== 'self' && !this._power && { asSkill: true }),
       exhaust: this._exhaust,
+      ...(this._oneShot && { oneShot: true }),
       ...(this._ethereal && { ethereal: true }),
       ...(this._retain && { retain: true }),
       ...(this._retainGrow > 0 && { retainGrow: this._retainGrow }),
       ...(this._innate && { innate: true }),
       ...(this._grow > 0 && { grow: this._grow }),
       unplayable: this._unplayable,
+      ...(this._mustPlayFirst && { mustPlayFirst: true }),
       endTurnLoseHp: this._endTurnLoseHp,
+      ...(this._endTurnReplicate && { endTurnReplicate: true }),
       reward: this._reward,
       starter: this._starter,
       ...(this._text && { text: this._text }),
@@ -320,11 +337,13 @@ export class Card {
     u._target = this._target
     u._power = this._power
     u._exhaust = this._exhaust
+    u._oneShot = this._oneShot
     u._retain = this._retain
     const r = this._upgrade(u)
     return {
       ...(r._cost !== this._cost && { cost: r._cost }),
       ...(r._exhaust !== this._exhaust && { exhaust: r._exhaust }),
+      ...(r._oneShot !== this._oneShot && { oneShot: r._oneShot }),
       ...(r._retain !== this._retain && { retain: r._retain }),
       ...(r._effects.length > 0 && { effects: r._effects }),
       ...(r._text && { text: r._text }),
@@ -398,6 +417,15 @@ export class Card {
     this._ethereal = true
     return this
   }
+  /** 增殖：回合结束时手中每张向弃牌堆生成一张自身 */
+  endTurnReplicate() {
+    this._endTurnReplicate = true
+    return this
+  }
+  mustPlayFirst() {
+    this._mustPlayFirst = true
+    return this
+  }
   /** 保留：回合结束时留在手牌 */
   retain() {
     this._retain = true
@@ -463,6 +491,16 @@ export class Card {
   /** 打出后进消耗牌堆 */
   exhaust() {
     this._exhaust = true
+    return this
+  }
+
+  oneShot() {
+    this._oneShot = true
+    return this
+  }
+
+  noOneShot() {
+    this._oneShot = false
     return this
   }
 
@@ -681,6 +719,7 @@ export class Card {
     u._target = this._target
     u._power = this._power
     u._exhaust = this._exhaust
+    u._oneShot = this._oneShot
     u._ethereal = this._ethereal
     u._retain = this._retain
     u._retainGrow = this._retainGrow
@@ -689,12 +728,13 @@ export class Card {
     u._skill = this._skill
     const result = this._upgrade(u)
     result._effects = result._effects.length > 0 ? result._effects : this._effects
-    const { cost, target, kind, exhaust, retain, retainGrow, effects, text } = result.snapshot()
+    const { cost, target, kind, exhaust, oneShot, retain, retainGrow, effects, text } = result.snapshot()
     return {
       cost,
       target,
       kind,
       ...(exhaust ? { exhaust } : { exhaust: false }),
+      oneShot: !!oneShot,
       ...(retain && { retain }),
       ...(retainGrow && { retainGrow }),
       effects,
@@ -721,20 +761,24 @@ export class Card {
       target: this._target,
       kind,
       ...(exhaust && { exhaust: true }),
+      ...(this._oneShot && { oneShot: true }),
       ...(this._ethereal && { ethereal: true }),
       ...(this._retain && { retain: true }),
       ...(this._retainGrow > 0 && { retainGrow: this._retainGrow }),
       ...(this._innate && { innate: true }),
       ...(this._grow > 0 && { grow: this._grow }),
       ...(this._unplayable && { unplayable: true }),
+      ...(this._mustPlayFirst && { mustPlayFirst: true }),
       ...(this._endTurnLoseHp > 0 && { endTurnLoseHp: this._endTurnLoseHp }),
+      ...(this._endTurnReplicate && { endTurnReplicate: true }),
       ...(this._evolve && { evolve: this._evolve }),
       ...(this._freeParasite && { freeIfParasiteTotal: this._freeParasite }),
       ...(this._freeIntent && { freeIfSwordIntent: true }),
       effects: this._effects,
       text:
-        this._text ??
-        `${this._innate ? '固有\n' : ''}${this._ethereal ? '虚无\n' : ''}${this._retain ? '保留\n' : ''}${this._freeIntent ? '有剑意时免费\n' : ''}${effectsText}${exhaust ? '\n消耗' : ''}`,
+        (this._text ??
+        `${this._innate ? '固有\n' : ''}${this._ethereal ? '虚无\n' : ''}${this._retain ? '保留\n' : ''}${this._freeIntent ? '有剑意时免费\n' : ''}${effectsText}${exhaust ? '\n消耗' : ''}`) +
+        (this._oneShot && !this._text?.includes('一次性') ? '\n一次性' : ''),
     }
   }
 }

@@ -5,6 +5,11 @@ export const curseCards: Card[] = [
   Card.status('wound', '伤口').icon('🩹').cost(0).unplayable().text('无法打出'),
   Card.status('stun', '晕眩').icon('💫').cost(0).unplayable().ethereal().text('无法打出。虚无（回合结束时若在手牌中，消耗）'),
   Card.status('slimed', '粘液').icon('🟢').cost(1).exhaust().text('消耗'),
+  Card.curse('possession', '附灵')
+    .icon('👻')
+    .cost(0)
+    .unplayable()
+    .text('无法打出。此牌在手中时，每打出一张牌，对自己造成 1 点伤害'),
   Card.curse('burn', '灼伤')
     .icon('🔥')
     .cost(0)

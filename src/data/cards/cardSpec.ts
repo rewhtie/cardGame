@@ -1,12 +1,13 @@
 import type { Effect } from '@/engine/types'
 
-export type EditableRarity = 'white' | 'blue' | 'gold'
+export type EditableRarity = 'white' | 'blue' | 'gold' | 'status'
 
 /** 升级版相对原卡的改动：只记录有变化的项 */
 export interface UpgradeSpec {
   cost?: number | 'X'
   /** 升级后是否消耗（仅在与原卡不同时记录） */
   exhaust?: boolean
+  oneShot?: boolean
   /** 升级后是否保留（仅在与原卡不同时记录） */
   retain?: boolean
   /** 整体替换原效果；缺省沿用原效果 */
@@ -25,6 +26,7 @@ export interface CardSpec {
   /** 需要选敌人但不算攻击牌的技能牌（仅 target 为 enemy / allEnemies 时有意义） */
   asSkill?: boolean
   exhaust: boolean
+  oneShot?: boolean
   /** 虚无：回合结束时若还在手牌中则消耗 */
   ethereal?: boolean
   /** 保留：回合结束时留在手牌 */
@@ -36,7 +38,9 @@ export interface CardSpec {
   /** 增量：每打出一次，卡面数值 +n */
   grow?: number
   unplayable: boolean
+  mustPlayFirst?: boolean
   endTurnLoseHp: number
+  endTurnReplicate?: boolean
   reward: boolean
   starter: number
   /** 手写卡面文字；缺省由效果自动生成 */

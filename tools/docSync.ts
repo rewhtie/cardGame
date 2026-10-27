@@ -1,5 +1,6 @@
 /// <reference types="node" />
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { writeEditorFile as writeFileSync } from './editorWrites'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Plugin, ViteDevServer } from 'vite'
@@ -19,11 +20,16 @@ export type DocKind = 'cards' | 'enemies' | 'sfx' | 'statuses'
 
 const DIR = fileURLToPath(new URL('../docs/generated/', import.meta.url))
 const ENEMIES_JSON = fileURLToPath(new URL('../src/data/enemies.json', import.meta.url))
-const FILES: Record<DocKind, string> = { cards: 'cards.md', enemies: 'enemies.md', sfx: 'sfx.md', statuses: 'statuses.md' }
+const FILES: Record<DocKind, string> = {
+  cards: 'cards.md',
+  enemies: 'enemies.md',
+  sfx: 'sfx.md',
+  statuses: 'statuses.md',
+}
 
 /** 数据模块要拿最新的：先清掉模块缓存，再让 Vite 按当前磁盘内容重新加载 */
 async function load<T>(server: ViteDevServer, path: string): Promise<T> {
-  server.moduleGraph.invalidateAll()
+  server.environments.ssr!.moduleGraph.invalidateAll()
   return (await server.ssrLoadModule(path)) as T
 }
 
@@ -32,8 +38,12 @@ async function renderCards(server: ViteDevServer): Promise<string> {
     cards: Record<string, DocCard & { upgraded?: unknown }>
     classAllIds: Record<string, string[]>
     colorlessAllIds: string[]
+    exclusiveAllIds: string[]
   }>(server, '/src/data/cards/index.ts')
-  const { characters } = await load<{ characters: { id: string; name: string }[] }>(server, '/src/data/characters.ts')
+  const { characters } = await load<{ characters: { id: string; name: string }[] }>(
+    server,
+    '/src/data/characters.ts',
+  )
   const { resolveCards, upgradedId } = await load<{
     resolveCards: (c: Record<string, unknown>, ids: string[]) => Record<string, DocCard>
     upgradedId: (id: string) => string
@@ -45,19 +55,34 @@ async function renderCards(server: ViteDevServer): Promise<string> {
     ids.map((id) => {
       const c = idx.cards[id]!
       const u = up[upgradedId(id)]
-      return [id, { id, name: c.name, cost: c.cost, kind: c.kind, rarity: c.rarity, text: c.text, upgradedText: u && u.text !== c.text ? u.text : '' }]
+      return [
+        id,
+        {
+          id,
+          name: c.name,
+          cost: c.cost,
+          kind: c.kind,
+          rarity: c.rarity,
+          text: c.text,
+          upgradedText: u && u.text !== c.text ? u.text : '',
+        },
+      ]
     }),
   )
   const nameOf = (dir: string) => characters.find((c) => c.id === dir)?.name ?? dir
   const groups: CardGroup[] = [
     ...Object.entries(idx.classAllIds).map(([dir, list]) => ({ title: nameOf(dir), ids: list })),
     { title: '无色', ids: idx.colorlessAllIds },
+    { title: '专属牌', ids: idx.exclusiveAllIds },
   ]
   return renderCardsDoc(docCards, groups)
 }
 
 async function renderSfx(server: ViteDevServer): Promise<string> {
-  const { sfxMap } = await load<{ sfxMap: Record<string, { files?: string[] }> }>(server, '/src/data/sfxMap.ts')
+  const { sfxMap } = await load<{ sfxMap: Record<string, { files?: string[] }> }>(
+    server,
+    '/src/data/sfxMap.ts',
+  )
   const { SFX_SLOTS } = await load<{ SFX_SLOTS: DocSlot[] }>(server, '/src/data/sfxSlots.ts')
   return renderSfxDoc(sfxMap, SFX_SLOTS)
 }
@@ -70,7 +95,8 @@ async function renderStatuses(server: ViteDevServer): Promise<string> {
 const renderers: Record<DocKind, (server: ViteDevServer) => Promise<string>> = {
   statuses: renderStatuses,
   cards: renderCards,
-  enemies: async () => renderEnemiesDoc(JSON.parse(readFileSync(ENEMIES_JSON, 'utf8')) as EnemyData),
+  enemies: async () =>
+    renderEnemiesDoc(JSON.parse(readFileSync(ENEMIES_JSON, 'utf8')) as EnemyData),
   sfx: renderSfx,
 }
 
@@ -98,7 +124,10 @@ export function docSyncPlugin(): Plugin {
     name: 'doc-sync',
     apply: 'serve',
     configureServer(server) {
-      server.httpServer?.once('listening', () => void syncDocs(server, 'cards', 'enemies', 'sfx', 'statuses'))
+      server.httpServer?.once(
+        'listening',
+        () => void syncDocs(server, 'cards', 'enemies', 'sfx', 'statuses'),
+      )
     },
   }
 }

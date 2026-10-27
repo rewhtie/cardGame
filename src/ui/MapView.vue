@@ -12,7 +12,12 @@ const props = defineProps<{
   /** 只读：仅用于查看，不响应选点（如从状态栏打开的地图预览） */
   readonly?: boolean
 }>()
-const emit = defineEmits<{ choose: [id: string, god: boolean]; cheatNext: [enemies: EnemyDef[]] }>()
+const emit = defineEmits<{
+  choose: [id: string, god: boolean]
+  cheatGold: []
+  cheatNext: [enemies: EnemyDef[]]
+  cheatEvent: [id?: string]
+}>()
 
 const { isDev, godMode } = useGodMode()
 
@@ -31,6 +36,14 @@ const pickedEnemies = computed(() =>
   pickedIds.value.map((id) => enemyCatalog.find((e) => e.def.id === id)?.def).filter((d): d is EnemyDef => !!d),
 )
 const queuedText = computed(() => props.run.cheatNextEnemies?.map((e) => e.name).join('、'))
+const eventPickOpen = ref(false)
+const queuedEventText = computed(() =>
+  props.run.content.events?.find((e) => e.id === props.run.cheatNextEventId)?.title,
+)
+function applyEventPick(id?: string) {
+  emit('cheatEvent', id)
+  eventPickOpen.value = false
+}
 function applyEnemyPick() {
   emit('cheatNext', pickedEnemies.value)
   pickedIds.value = []
@@ -216,6 +229,9 @@ function onClick(id: string, canChoose: boolean) {
     @pointerdown="onPointerDown"
     @wheel.prevent="onWheel"
   >
+    <div class="absolute left-6 top-6 z-10 theme-text font-bold pointer-events-none">
+      第 {{ run.stage ?? 1 }} 阶段<span v-if="(run.stage ?? 1) > 1" class="ml-3 text-sm">敌人强化</span>
+    </div>
     <svg
       :viewBox="`0 0 ${VIEW_W} ${mapHeight}`"
       :width="VIEW_W"
@@ -328,6 +344,12 @@ function onClick(id: string, canChoose: boolean) {
         上帝模式：{{ godMode ? '开' : '关' }}
       </button>
       <button
+        class="mt-1.5 block px-3 py-1.5 rounded text-sm border bg-slate-800/90 text-amber-300 border-slate-600 hover:bg-slate-700"
+        @click="emit('cheatGold')"
+      >
+        999金币
+      </button>
+      <button
         class="mt-1.5 block px-3 py-1.5 rounded text-sm border"
         :class="
           queuedText
@@ -348,7 +370,7 @@ function onClick(id: string, canChoose: boolean) {
             <button
               v-for="d in g.list"
               :key="d.id"
-              class="px-2 py-0.5 rounded border border-slate-600 bg-slate-800 hover:bg-slate-700"
+              class="px-2 py-0.5 rounded border border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700"
               @click="pickedIds.push(d.id)"
             >
               {{ d.name }}
@@ -366,10 +388,40 @@ function onClick(id: string, canChoose: boolean) {
           >
             设为下场敌人
           </button>
-          <button class="px-2 py-1 rounded border border-slate-600" @click="pickedIds = []">清空选择</button>
-          <button class="px-2 py-1 rounded border border-slate-600" @click="clearEnemyPick">取消指定</button>
+          <button class="px-2 py-1 rounded border border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700" @click="pickedIds = []">清空选择</button>
+          <button class="px-2 py-1 rounded border border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700" @click="clearEnemyPick">取消指定</button>
         </div>
         <p class="mt-1.5 text-xs text-slate-400">只影响下一场战斗，种子不变；打完恢复默认。</p>
+      </div>
+      <button
+        class="mt-1.5 block px-3 py-1.5 rounded text-sm border"
+        :class="
+          queuedEventText
+            ? 'bg-violet-600 text-white border-violet-300'
+            : 'bg-slate-800/90 text-slate-300 border-slate-600'
+        "
+        @click="eventPickOpen = !eventPickOpen"
+      >
+        下次事件：{{ queuedEventText ?? '默认' }}
+      </button>
+      <div
+        v-if="eventPickOpen"
+        class="mt-1.5 w-72 max-h-96 overflow-y-auto rounded border border-slate-600 bg-slate-900/95 p-2 text-sm text-slate-100"
+      >
+        <div class="flex flex-wrap gap-1">
+          <button
+            v-for="event in run.content.events ?? []"
+            :key="event.id"
+            class="px-2 py-0.5 rounded border border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700"
+            @click="applyEventPick(event.id)"
+          >
+            {{ event.title }}
+          </button>
+        </div>
+        <button class="mt-2 px-2 py-1 rounded border border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700" @click="applyEventPick()">
+          取消指定
+        </button>
+        <p class="mt-1.5 text-xs text-slate-400">点击事件即可指定；只影响下一个问号房，进入后恢复随机。</p>
       </div>
     </div>
   </div>

@@ -2,6 +2,7 @@
 import { defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { playMenuMusic, playRunMusic, stopMenuMusic, stopRunMusic } from '@/composables/useMusic'
 import { useRun } from '@/composables/useRun'
+import { useDevHotState } from '@/composables/useDevHotState'
 import { useSettings } from '@/composables/useSettings'
 import CharacterSelectView from '@/ui/CharacterSelectView.vue'
 import RunView from '@/ui/RunView.vue'
@@ -37,6 +38,10 @@ const showEditor = ref(false)
 const showSfxEditor = ref(false)
 const showSelect = ref(false)
 const showDevTest = ref(false)
+
+useDevHotState(import.meta.hot, 'dev-panels', {
+  showStatusEditor, showEnemyEditor, showEditor, showSfxEditor, showDevTest, showSettings, showSelect,
+})
 const { init } = useSettings()
 const { run, savedGame, start, continueGame, send, retry, quit } = useRun()
 

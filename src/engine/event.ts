@@ -2,6 +2,7 @@ import { isForgeable, upgradedId } from './enchant'
 import type { RunResult, RunState } from './run'
 import { createRng, deriveSeed, sample, type Rng } from './seed'
 import type { GameEvent } from './types'
+import { stageSeed } from './stage'
 
 export type BattleKind = 'monster' | 'elite'
 export interface BattleBonus {
@@ -13,12 +14,15 @@ export interface BattleBonus {
 export type Outcome =
   | { type: 'gold'; amount: number }
   | { type: 'hp'; amount: number }
+  | { type: 'healFull' }
+  | { type: 'removePotion'; id: string }
   | { type: 'maxHp'; amount: number }
-  | { type: 'relic' }
+  | { type: 'relic'; id?: string }
   | { type: 'potion'; count: number }
   | { type: 'addCard'; id: string }
   | { type: 'removeCard' }
   | { type: 'upgradeCard' }
+  | { type: 'enchantCard'; enchant: string }
   | { type: 'upgradeRandom'; count: number }
   | { type: 'battle'; kind: BattleKind; bonus?: BattleBonus }
   | { type: 'chance'; p: number; win: Outcome[]; lose: Outcome[] }
@@ -37,6 +41,7 @@ export interface EventDef {
   icon: string
   text: string
   weight?: number
+  enchantment?: boolean
   /** 事件是否可出现 */
   requires?(run: RunState): boolean
   options: EventOption[]
@@ -48,7 +53,8 @@ export interface EventState {
   result: string[]
   /** 选牌暂停后尚未结算的结果 */
   pending: Outcome[]
-  pick: 'remove' | 'upgrade' | null
+  pick: 'remove' | 'upgrade' | 'enchant' | null
+  enchant?: string
   /** 已选的选项；null 表示还没选 */
   optionIndex: number | null
 }
@@ -63,20 +69,30 @@ export const NO_OPTION_TEXT = '你转身离开了。'
 /** 遗物池拿空时，"获得遗物"折算成的金币 */
 export const RELIC_FALLBACK_GOLD = 50
 
-/** 抽取本节点的事件：同一局不重复，全部见过后重新开始 */
-export function pickEvent(run: RunState, nodeId: string): EventDef {
-  const all = run.content.events ?? []
-  const available = all.filter((e) => e.requires?.(run) !== false)
-  const fresh = available.filter((e) => !run.seenEvents.includes(e.id))
-  const pool = fresh.length > 0 ? fresh : available.length > 0 ? available : all
-  const rng = createRng(deriveSeed(run.seed, `event:${nodeId}`))
+export const ENCHANT_EVENT_INITIAL_SHARE = 0.05
+
+function weightedEvent(pool: EventDef[], rng: Rng): EventDef | undefined {
   const total = pool.reduce((sum, e) => sum + (e.weight ?? 1), 0)
   let roll = rng.float() * total
   for (const e of pool) {
     roll -= e.weight ?? 1
     if (roll < 0) return e
   }
-  return pool[pool.length - 1] as EventDef
+  return pool[pool.length - 1]
+}
+
+/** 所有事件共用不放回池；附魔权重按完整事件池的初始占比换算，不随已见事件重新归一化。 */
+export function pickEvent(run: RunState, nodeId: string): EventDef | undefined {
+  const all = run.content.events ?? []
+  const ordinaryWeight = all.filter((e) => !e.enchantment).reduce((sum, e) => sum + (e.weight ?? 1), 0)
+  const enchantWeight = all.filter((e) => e.enchantment).reduce((sum, e) => sum + (e.weight ?? 1), 0)
+  const enchantScale = ordinaryWeight > 0 && enchantWeight > 0
+    ? ordinaryWeight * ENCHANT_EVENT_INITIAL_SHARE / ((1 - ENCHANT_EVENT_INITIAL_SHARE) * enchantWeight)
+    : 1
+  const pool = all
+    .filter((e) => !run.seenEvents.includes(e.id) && e.requires?.(run) !== false)
+    .map((e) => ({ ...e, weight: (e.weight ?? 1) * (e.enchantment ? enchantScale : 1) }))
+  return weightedEvent(pool, createRng(deriveSeed(stageSeed(run.seed, run.stage), `event:${nodeId}`)))
 }
 
 /** 选项不可选的原因；可选返回 null */
@@ -121,6 +137,19 @@ export function resolveOutcomes(
         )
         break
       }
+      case 'healFull': {
+        const amount = state.player.maxHp - state.player.hp
+        if (amount > 0) events.push({ type: 'healed', target: 'player', amount })
+        state = say({ ...state, player: { ...state.player, hp: state.player.maxHp } }, `恢复 ${amount} 点生命`)
+        break
+      }
+      case 'removePotion': {
+        const index = state.potions.indexOf(o.id)
+        if (index >= 0) {
+          state = say({ ...state, potions: state.potions.filter((_, i) => i !== index) }, '消耗 1 瓶药水')
+        }
+        break
+      }
       case 'maxHp': {
         const maxHp = Math.max(1, state.player.maxHp + o.amount)
         const hp = Math.max(1, Math.min(maxHp, state.player.hp + o.amount))
@@ -134,7 +163,11 @@ export function resolveOutcomes(
       }
       case 'relic': {
         const unowned = (state.content.relicIds ?? []).filter((id) => !state.relics.includes(id))
-        const [id] = sample(unowned, 1, rng)
+        const id = o.id ?? sample(unowned, 1, rng)[0]
+        if (o.id && state.relics.includes(o.id)) {
+          state = say(state, '已经拥有这件遗物')
+          break
+        }
         if (id === undefined) {
           state = say({ ...state, gold: state.gold + RELIC_FALLBACK_GOLD }, `获得 ${RELIC_FALLBACK_GOLD} 金币`)
           break
@@ -174,6 +207,16 @@ export function resolveOutcomes(
         state = say({ ...state, content: { ...state.content, deck } }, `升级了 ${picked.size} 张牌`)
         break
       }
+      case 'enchantCard':
+        if (!state.event) return { state, events }
+        return {
+          state: {
+            ...state,
+            screen: 'eventPick',
+            event: { ...state.event, pending: rest, pick: 'enchant', enchant: o.enchant },
+          },
+          events,
+        }
       case 'removeCard':
       case 'upgradeCard':
         if (!state.event) return { state, events }

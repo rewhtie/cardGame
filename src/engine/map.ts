@@ -1,4 +1,5 @@
 import { createRng, deriveSeed, type Rng } from './seed'
+import { stageSeed } from './stage'
 
 export type NodeType =
   'ancient' | 'monster' | 'elite' | 'rest' | 'shop' | 'event' | 'treasure' | 'boss'
@@ -116,8 +117,8 @@ function ensureShop(floors: MapNode[][], rng: Rng) {
   ;(pool[rng.int(pool.length)] as MapNode).type = 'shop'
 }
 
-export function generateMap(seed: string): GameMap {
-  const rng = createRng(deriveSeed(seed, 'map'))
+export function generateMap(seed: string, stage = 1): GameMap {
+  const rng = createRng(deriveSeed(stageSeed(seed, stage), 'map'))
   const links = buildGraph(rng)
 
   const floors: MapNode[][] = links.map((floorLinks, floor) =>

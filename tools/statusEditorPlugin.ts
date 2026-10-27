@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { writeFileSync } from 'node:fs'
+import { writeEditorFile as writeFileSync } from './editorWrites'
 import { fileURLToPath } from 'node:url'
 import type { Plugin } from 'vite'
 import { syncDocs } from './docSync'

@@ -1,4 +1,4 @@
-import { addStatus, applyBlock, applyDamage, countWounds, drawCards, heal, isAlive, WOUND } from './effects'
+import { addCardsToDiscard, addStatus, applyBlock, applyDamage, countWounds, drawCards, heal, isAlive, WOUND } from './effects'
 import { isForgeable, isUpgraded, rawId, resolveCards, upgradedId, withEnchant } from './enchant'
 import { canEnchant } from './enchants'
 import { sample, type Rng } from './seed'
@@ -20,6 +20,7 @@ export interface BattleHooks {
   onCardPlayed(s: BattleState, events: GameEvent[], card: CardDef): void
   /** 效果让玩家主动弃牌之后（换手 / 预知等；回合结束的整手弃牌不算） */
   onDiscard(s: BattleState, events: GameEvent[], cards: string[]): void
+  onCardExhausted(s: BattleState, events: GameEvent[], cardId: string): void
 }
 
 /** 钩子在 (s, events) 之外的额外参数 */
@@ -171,6 +172,13 @@ function pickRelic(spec: PickSpec): RelicRule {
  * 同一遗物持有多个时，战斗钩子只触发一次。
  */
 export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
+  spiritJade: {
+    onCardExhausted: (s, events) => {
+      s.enemies.forEach((e, i) => {
+        if (isAlive(e)) applyDamage(s, 'enemy', 1, events, i)
+      })
+    },
+  },
   burningBlood: { onBattleWon: (s, ev) => heal(s, 'player', 0, 6, ev) },
   meatOnBone: {
     onBattleWon: (s, ev) => {
@@ -304,9 +312,7 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
   },
   // 包扎：每次恢复生命，把一张伤口置入弃牌堆
   bandaging: {
-    onHealed: (s) => {
-      s.discardPile.push('wound')
-    },
+    onHealed: (s, ev) => addCardsToDiscard(s, WOUND, 1, ev, 'player'),
   },
   // 勇士头巾（战士）：战斗开始获得 8 点活力
   valiantHood: { onBattleStart: (s, ev) => addStatus(s, 'player', 0, 'vigor', 8, ev) },
@@ -338,7 +344,7 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
   scalpel: {
     onTurnStart: (s, ev) => {
       if (s.turn !== 1) return
-      s.discardPile.push(WOUND)
+      addCardsToDiscard(s, WOUND, 1, ev, 'player')
       drawCards(s, 2, ev)
     },
   },
@@ -359,9 +365,7 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
   // 渡鸦面具：每回合额外获得 1 点能量；每个回合开始时将 2 张伤口置入弃牌堆
   ravenMask: {
     maxEnergy: 1,
-    onTurnStart: (s) => {
-      s.discardPile.push(WOUND, WOUND)
-    },
+    onTurnStart: (s, ev) => addCardsToDiscard(s, WOUND, 2, ev, 'player'),
   },
   // 裹尸布：伤口留在弃牌堆（洗牌时不进抽牌堆）
   shroud: { keepWounds: true },
@@ -371,7 +375,7 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
   vaccine: {
     onBattleStart: (s, ev) => {
       addStatus(s, 'player', 0, 'regen', 2, ev)
-      s.discardPile.push(WOUND)
+      addCardsToDiscard(s, WOUND, 1, ev, 'player')
     },
   },
   // 培养皿：每打出一张能力牌，给予所有敌人 8 层中毒
@@ -462,7 +466,7 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
   // 计数与结算在 effects.ts 的 applyDamage / applyBlock 里（需要拿到实际伤害与格挡数值）
   legendVest: { showCounter: true },
   trainingGuide: pickRelic({
-    hint: '选择一张牌附魔「增量」：每场战斗中每打出一次，卡面数值 +1',
+    hint: '选择一张牌附魔「增量」：每打出一次，卡面数值 +5，仅本场战斗生效',
     count: 1,
     eligible: (c, cards) => canEnchantId(cards, c, 'grow'),
     apply: (c) => withEnchant(c, 'grow'),

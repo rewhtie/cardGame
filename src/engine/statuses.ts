@@ -57,6 +57,9 @@ export interface StatusDef {
   afterPlayerCard?: (stacks: number) => { strength: number; dexterity: number }
   /** 每个敌方回合开始（敌人行动之前），所有者的该状态层数增加这么多 */
   turnStartGrow?: number
+  /** 与存活队友的生命差达到阈值时，优先执行生命共享 */
+  priorityLifeShare?: number
+  cardPlayLimit?: { kind: 'attack' | 'skill'; max: number }
 }
 
 /** 声明顺序即结算顺序，不要随意调换 */
@@ -87,6 +90,22 @@ export const STATUSES: StatusDef[] = [
     text: '下一张剑击费用变为零，回合结束清空',
     kind: 'buff',
     decay: 'turnEnd',
+  },
+  {
+    id: 'extreme',
+    name: '极限',
+    icon: '♾️',
+    text: '所有牌费用变为零',
+    kind: 'buff',
+    decay: 'none',
+  },
+  {
+    id: 'blaze',
+    name: '俱焚',
+    icon: '🔥',
+    text: '每打出一张牌，将其消耗并抽 1 张牌（一次性牌永久移除）',
+    kind: 'buff',
+    decay: 'none',
   },
   // 连击类：下一张某类牌免费。打出符合的牌时先消耗 1 层再结算效果，所以效果里再给层数就能一直连下去
   { id: 'freeAttack', display: 'count', name: '攻击免费', icon: '⚡', text: '接下来 N 张攻击牌费用变为零，回合结束清空', kind: 'buff', decay: 'turnEnd' },
@@ -332,6 +351,16 @@ export const STATUSES: StatusDef[] = [
     onHit: (n) => ({ cardId: 'stun', count: n }),
   },
   {
+    id: 'lifeShare',
+    display: 'count',
+    name: '生命共享',
+    icon: '⚖️',
+    text: '与存活队友生命差达到 40 时，优先均分当前生命，双方获得等同转移生命量的格挡。生命转移不视为治疗或伤害',
+    kind: 'buff',
+    decay: 'none',
+    priorityLifeShare: 40,
+  },
+  {
     id: 'carapace',
     display: 'count',
     name: '舍身',
@@ -345,7 +374,7 @@ export const STATUSES: StatusDef[] = [
     display: 'count',
     name: '完美防御',
     icon: '🛡️',
-    text: '敌人的攻击未对你造成生命值损伤时，该敌人晕眩 N 回合',
+    text: '最多 1 层。敌人的攻击未对你造成生命值损伤时，该敌人晕眩 1 回合',
     kind: 'buff',
     decay: 'playerTurnStart',
   },
@@ -385,6 +414,28 @@ export const STATUSES: StatusDef[] = [
     decay: 'none',
   },
   {
+    id: 'skillSeal',
+    name: '封技',
+    icon: '封',
+    display: 'count',
+    text: '本玩家回合最多打出 1 张技能牌；能力牌与攻击牌不受影响。重复施加不叠加限制，自动出牌与重放也计入次数',
+    kind: 'debuff',
+    decay: 'turnEnd',
+    decayAt: 'playerEnd',
+    cardPlayLimit: { kind: 'skill', max: 1 },
+  },
+  {
+    id: 'attackLock',
+    name: '锁攻',
+    icon: '🔒',
+    display: 'count',
+    text: '本玩家回合最多打出 1 张攻击牌；能力牌与技能牌不受影响。重复施加不叠加限制，自动出牌与重放也计入次数',
+    kind: 'debuff',
+    decay: 'turnEnd',
+    decayAt: 'playerEnd',
+    cardPlayLimit: { kind: 'attack', max: 1 },
+  },
+  {
     id: 'frail',
     name: '脆弱',
     icon: '🫧',
@@ -392,6 +443,14 @@ export const STATUSES: StatusDef[] = [
     kind: 'debuff',
     decay: 'tick',
     modifyBlock: () => ({ mul: 0.75 }),
+  },
+  {
+    id: 'eggshell',
+    name: '蛋壳',
+    icon: '🥚',
+    text: '每个玩家回合开始获得 1 层以牙还牙；生命降至上限的 50% 时破壳，失去以牙还牙，获得 1 层汲取并重置意图',
+    kind: 'buff',
+    decay: 'none',
   },
   {
     id: 'drain',
@@ -514,6 +573,15 @@ export const STATUSES: StatusDef[] = [
     text: '力量被透支了 N 点，将在下个回合结束时恢复',
     kind: 'debuff',
     decay: 'condition',
+  },
+  {
+    id: 'steady',
+    name: '稳健',
+    icon: '🧱',
+    text: '自身回合开始时保留格挡，然后失去 1 层',
+    kind: 'buff',
+    decay: 'tick',
+    decayAt: 'ownerStart',
   },
 ]
 
@@ -650,11 +718,20 @@ export function calcAttack(
   defender: Statuses,
   extra: Mod[] = [],
 ): number {
-  const dmg = fold(base, [
-    ...collect(attacker, 'modifyDamageDealt'),
+  const dealtMods = collect(attacker, 'modifyDamageDealt')
+  let dmg = fold(base, [
+    ...dealtMods,
     ...collect(defender, 'modifyDamageTaken'),
     ...extra,
   ])
+  if ((defender.vulnerable ?? 0) > 0) {
+    const withoutVulnerable = fold(base, [
+      ...dealtMods,
+      ...collect({ ...defender, vulnerable: 0 }, 'modifyDamageTaken'),
+      ...extra,
+    ])
+    if (withoutVulnerable > 0) dmg = Math.max(dmg, withoutVulnerable + 1)
+  }
   // 无实体：防御者每次受到的伤害降为 1（0 伤害保持 0）。放在这里，意图预览 / 卡面数字 / 实际结算口径一致
   return dmg > 0 && (defender.incorporeal ?? 0) > 0 ? 1 : dmg
 }

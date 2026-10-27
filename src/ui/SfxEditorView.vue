@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Emoji from '@/ui/Emoji.vue'
+import { useDevHotState } from '@/composables/useDevHotState'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { sfxMap } from '@/data/sfxMap'
 import { SFX_SLOTS } from '@/data/sfxSlots'
@@ -60,6 +61,15 @@ const slotDef = computed(() => SFX_SLOTS.find((s) => s.key === selected.value)!)
 const config = computed<SlotConfig>(() => draft.value[selected.value] ?? {})
 /** 本次会话保存过的导入文件：sfxLibrary 是启动时算好的常量，没整页刷新时靠它让新文件留在列表里 */
 const savedImports = ref<string[]>([])
+
+if (useDevHotState(import.meta.hot, 'sfx-editor', {
+  draft, saved, pending, selected, onlyMissing, search, savedImports, message,
+})) {
+  for (const [name, p] of Object.entries(pending.value)) {
+    p.url = `data:audio/${name.endsWith('.mp3') ? 'mpeg' : name.endsWith('.wav') ? 'wav' : 'ogg'};base64,${p.dataBase64}`
+    registerSfxPreview(name, p.url)
+  }
+}
 const library = computed(() =>
   [...new Set([...sfxLibrary, ...savedImports.value, ...Object.keys(pending.value)])].sort(),
 )
@@ -89,10 +99,11 @@ function onNumber(field: 'volume' | 'maxSeconds', e: Event) {
 }
 const toggleSilent = () => patch({ silent: !config.value.silent })
 /** 有内置合成音的槽位 */
-const SYNTH_SLOTS: Record<string, 'split' | 'evolve' | 'train'> = {
+const SYNTH_SLOTS: Record<string, 'split' | 'evolve' | 'train' | 'burn'> = {
   'battle.enemy.split': 'split',
   'run.evolve': 'evolve',
   'run.train': 'train',
+  'run.cardRemoved': 'burn',
 }
 const restoreSynth = () => patch({ files: undefined, synth: SYNTH_SLOTS[selected.value], silent: undefined })
 

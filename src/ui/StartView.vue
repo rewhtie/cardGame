@@ -2,16 +2,18 @@
 import Emoji from '@/ui/Emoji.vue'
 import { computed, onBeforeUnmount, ref } from 'vue'
 import type { RunSave } from '@/engine/save'
+import { runProgress } from '@/engine/progress'
 
 const props = defineProps<{ save: RunSave | null }>()
 const emit = defineEmits<{ start: []; continue: []; settings: [] }>()
 
-/** 存档摘要：已走过的节点数、生命、金币 */
+/** 存档摘要包含重新进入的节点，避免战斗存档显示上一层。 */
 const summary = computed(() => {
   const r = props.save?.run
   if (!r) return ''
-  const floor = r.visited.length
-  return `${floor === 0 ? '尚未出发' : `第 ${floor} 层`} · ❤ ${r.player.hp}/${r.player.maxHp} · 💰 ${r.gold}`
+  const p = runProgress({ ...r, current: props.save?.enter?.id ?? r.current })
+  const stage = p.stage === 1 ? '第一阶段' : '第二阶段'
+  return `${stage} · 第 ${p.floor} 层 · ❤ ${r.player.hp}/${r.player.maxHp} · 💰 ${r.gold}`
 })
 
 // 已有存档时，新游戏需要再点一次确认，避免误覆盖

@@ -1,5 +1,5 @@
 import { reactive, ref, shallowRef } from 'vue'
-import type { CardDef, GameEvent } from '@/engine/types'
+import type { CardDef, GameEvent, Intent } from '@/engine/types'
 import { playSfx } from './useSfx'
 import { sfxSlotsForEvent } from './sfxResolve'
 
@@ -60,6 +60,9 @@ export const lag = reactive({
   playerBlock: 0,
   enemyHp: {} as Record<number, number>,
   enemyBlock: {} as Record<number, number>,
+  enemyStunned: {} as Record<number, number>,
+  explosionPreview: {} as Record<number, { damage: number; dueTurn: number }>,
+  intentPreview: {} as Record<number, Intent>,
   intent: {} as Record<number, number>,
 })
 
@@ -79,6 +82,13 @@ function settle(e: GameEvent, sign: 1 | -1) {
         add(lag.enemyBlock, i, e.blocked)
       }
       break
+    case 'enemyRevived':
+      add(lag.enemyHp, i, -e.amount)
+      break
+    case 'enemyExploded':
+      if (sign === 1) lag.explosionPreview[i] = { damage: e.damage, dueTurn: 0 }
+      else delete lag.explosionPreview[i]
+      break
     case 'healed':
       if (e.target === 'player') lag.playerHp -= sign * e.amount
       else add(lag.enemyHp, i, -e.amount)
@@ -86,6 +96,12 @@ function settle(e: GameEvent, sign: 1 | -1) {
     case 'blockGained':
       if (e.target === 'player') lag.playerBlock -= sign * e.amount
       else add(lag.enemyBlock, i, -e.amount)
+      break
+    case 'statusApplied':
+      if (e.target === 'enemy' && e.status === 'stunned') add(lag.enemyStunned, i, -e.stacks)
+      break
+    case 'statusRemoved':
+      if (e.target === 'enemy' && e.status === 'stunned') add(lag.enemyStunned, i, 1)
       break
   }
 }
@@ -157,6 +173,7 @@ async function drain() {
   }
   running = false
   lag.intent = {} // 敌人阶段全部演完，意图才翻到新的一招
+  lag.intentPreview = {}
   idleWaiters.forEach((r) => r())
   idleWaiters = []
 }
@@ -166,7 +183,10 @@ export function enqueueFx(events: GameEvent[]): FxTicket {
   const batch: Entry['batch'] = { completed: 0, waiters: [] }
   events.forEach((event, i) => {
     settle(event, 1)
-    if (event.type === 'enemyActed') lag.intent[event.enemyIndex] = (lag.intent[event.enemyIndex] ?? 0) + 1
+    if (event.type === 'enemyActed') {
+      lag.intent[event.enemyIndex] = (lag.intent[event.enemyIndex] ?? 0) + 1
+      lag.intentPreview[event.enemyIndex] = event.intent
+    }
     queue.push({ event, prev: events[i - 1], batch })
   })
   const reached = (count: number) =>
@@ -195,6 +215,9 @@ export function resetFx() {
   lag.playerBlock = 0
   lag.enemyHp = {}
   lag.enemyBlock = {}
+  lag.enemyStunned = {}
+  lag.explosionPreview = {}
+  lag.intentPreview = {}
   lag.intent = {}
   idleWaiters.forEach((r) => r())
   idleWaiters = []

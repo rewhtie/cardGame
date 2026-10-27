@@ -1,8 +1,17 @@
-import { ref, shallowRef } from 'vue'
+import { ref, shallowRef, type Ref, type ShallowRef } from 'vue'
 import { enqueueFx, pushFx, resetFx } from './useFx'
 import { cards, colorlessRewardIds } from '@/data/cards'
 import { CHARACTER_RELIC_IDS, characterById } from '@/data/characters'
-import { drainer, encounterList, ghost, monsterPool, slime, slimeBoss, slimeGroup } from '@/data/enemies'
+import {
+  drainer,
+  elitePool,
+  encounterList,
+  ghost,
+  monsterPool,
+  slime,
+  slimeBoss,
+  slimeGroup,
+} from '@/data/enemies'
 import { events as eventDefs } from '@/data/events'
 import { potions, relics } from '@/data/items'
 import {
@@ -16,12 +25,22 @@ import {
 import { fromSave, loadSave, persistRun, type NodeEntry } from '@/engine/save'
 import { generateSeed, normalizeSeed } from '@/engine/seed'
 
-// 模块级单例：整个应用共享一局游戏；null 表示在主菜单
-const run = shallowRef<RunState | null>(null)
-/** 下一局使用的种子（设置里填写）；留空则随机生成 */
-const seedInput = ref('')
-/** 唯一的存档位：主菜单据此显示"继续游戏" */
-const savedGame = shallowRef(loadSave(localStorage))
+interface RunRuntime {
+  run: ShallowRef<RunState | null>
+  seedInput: Ref<string>
+  savedGame: ShallowRef<ReturnType<typeof loadSave>>
+  pendingTurn: { pre: RunState; state: RunState } | null
+}
+
+// 热更新仍共享原来的 ref，避免模块重新执行把进行中的局重置为主菜单。
+const runtime: RunRuntime = import.meta.hot?.data.runRuntime ?? {
+  run: shallowRef<RunState | null>(null),
+  seedInput: ref(''),
+  savedGame: shallowRef(loadSave(localStorage)),
+  pendingTurn: null,
+}
+if (import.meta.hot) import.meta.hot.data.runRuntime = runtime
+const { run, seedInput, savedGame } = runtime
 
 /** 引擎之外的静态内容（卡牌、敌人、事件池等），开局和读档共用 */
 function content(characterId?: string): Omit<RunConfig, 'seed'> {
@@ -39,6 +58,7 @@ function content(characterId?: string): Omit<RunConfig, 'seed'> {
     boss: slimeBoss,
     bosses: [slimeBoss, ghost],
     elite: drainer,
+    elites: elitePool,
     rewardCards: character.rewardCards,
     colorlessCards: colorlessRewardIds,
     potionIds: Object.keys(potions),
@@ -50,6 +70,43 @@ function content(characterId?: string): Omit<RunConfig, 'seed'> {
       ...(character.exclusiveRelics ?? []),
     ],
   }
+}
+
+if (import.meta.hot) {
+  const key = 'dev-hot-state:run'
+  try {
+    const raw = sessionStorage.getItem(key)
+    sessionStorage.removeItem(key)
+    if (raw) {
+      const snapshot = JSON.parse(raw) as { run: Omit<RunState, 'content'>; deck: string[]; seedInput: string }
+      run.value = {
+        ...snapshot.run,
+        content: { ...content(snapshot.run.character), deck: snapshot.deck },
+      }
+      seedInput.value = snapshot.seedInput
+    }
+  } catch {
+    // 开发快照不可用时仍可通过正常存档继续游戏。
+  }
+  const saveHotRun = () => {
+    try {
+      // 敌人演出中的异步回调不会跨刷新保留，恢复已经算好的下一回合。
+      const pending = runtime.pendingTurn
+      const current = pending && pending.pre === run.value ? pending.state : run.value
+      if (!current) {
+        sessionStorage.removeItem(key)
+        return
+      }
+      const { content, ...state } = current
+      sessionStorage.setItem(key, JSON.stringify({ run: state, deck: content.deck, seedInput: seedInput.value }))
+    } catch {
+      // 开发快照不影响正式存档。
+    }
+  }
+  import.meta.hot.on('vite:beforeFullReload', saveHotRun)
+  import.meta.hot.dispose(() => {
+    import.meta.hot?.off('vite:beforeFullReload', saveHotRun)
+  })
 }
 
 /**
@@ -126,8 +183,10 @@ export function useRun() {
       const split = events.findIndex((e) => e.type === 'turnStarted')
       const enemyPhase = split < 0 ? events : events.slice(0, split)
       pushFx(events, false)
+      runtime.pendingTurn = { pre, state }
       run.value = pre
       enqueueFx(enemyPhase).done.then(() => {
+        if (runtime.pendingTurn?.pre === pre) runtime.pendingTurn = null
         if (run.value !== pre) return // 期间读档 / 重开 / 退出
         run.value = state
         if (split >= 0) enqueueFx(events.slice(split))

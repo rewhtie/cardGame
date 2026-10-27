@@ -49,6 +49,12 @@ function effectCall(e: Effect): string {
       return `.heal(${e.amount})`
     case 'loseHp':
       return `.loseHp(${e.amount})`
+    case 'lifeOverload':
+      return `.effect({ type: 'lifeOverload' })`
+    case 'mentalOverload':
+      return `.effect({ type: 'mentalOverload' })`
+    case 'sensoryOverload':
+      return `.effect({ type: 'sensoryOverload', per: ${e.per} })`
     case 'addCard':
       return `.addCard(${q(e.cardId)}, ${e.count}${e.to === 'discard' ? '' : `, ${q(e.to)}`})`
     case 'penalty':
@@ -125,8 +131,11 @@ export function cardToCode(spec: CardSpec): string {
   add(spec.target === 'power' ? '.power()' : spec.target === 'self' ? '.targetSelf()' : spec.target === 'allEnemies' ? '.targetAllEnemies()' : '.targetEnemy()')
   if (spec.asSkill && (spec.target === 'enemy' || spec.target === 'allEnemies')) add('.asSkill()')
   if (spec.unplayable) add('.unplayable()')
+  if (spec.mustPlayFirst) add('.mustPlayFirst()')
   if (spec.endTurnLoseHp > 0) add(`.endTurnLoseHp(${spec.endTurnLoseHp})`)
+  if (spec.endTurnReplicate) add('.endTurnReplicate()')
   if (spec.exhaust && spec.target !== 'power') add('.exhaust()')
+  if (spec.oneShot) add('.oneShot()')
   if (spec.ethereal) add('.ethereal()')
   if (spec.retain) add('.retain()')
   if (spec.retainGrow) add(`.retainGrow(${spec.retainGrow})`)
@@ -145,6 +154,8 @@ export function cardToCode(spec: CardSpec): string {
     if (up.cost !== undefined) calls.push(`.cost(${cost(up.cost)})`)
     if (up.exhaust === true) calls.push('.exhaust()')
     else if (up.exhaust === false) calls.push('.noExhaust()')
+    if (up.oneShot === true) calls.push('.oneShot()')
+    else if (up.oneShot === false) calls.push('.noOneShot()')
     if (up.retain === true) calls.push('.retain()')
     else if (up.retain === false) calls.push('.noRetain()')
     up.effects?.forEach((e) => calls.push(effectCall(e)))

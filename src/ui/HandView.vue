@@ -4,6 +4,7 @@ import CardView from './CardView.vue'
 import { progressOf } from '@/engine/enchant'
 import { previewDamage } from '@/engine/preview'
 import { displayCost } from '@/engine/swordSaint'
+import { cardPlayBlock } from '@/engine/cardRules'
 import type { BattleState, CardDef } from '@/engine/types'
 
 const props = defineProps<{
@@ -51,7 +52,12 @@ watch(
           { opacity: 1, transform: 'translateY(8px) scale(1.06)', offset: 0.7 },
           { opacity: 1, transform: 'translateY(0) scale(1)' },
         ],
-        { duration: 420, delay: k * 80, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill: 'backwards' },
+        {
+          duration: 420,
+          delay: k * 80,
+          easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+          fill: 'backwards',
+        },
       )
     })
   },
@@ -70,8 +76,17 @@ const items = computed(() =>
         cost,
         progress: props.state.evolveCounts?.[id] ?? progressOf(id),
         // 只有被拖拽的牌知道瞄准的是哪个敌人；其余牌按无目标预览
-        damages: previewDamage(props.state, card, props.draggingIndex === index ? props.targetIndex : undefined, props.energy),
-        playable: !card.unplayable && (cost === 'X' || cost <= props.energy),
+        damages: previewDamage(
+          props.state,
+          card,
+          props.draggingIndex === index ? props.targetIndex : undefined,
+          props.energy,
+        ),
+        playable:
+          !card.unplayable &&
+          !cardPlayBlock(props.state, card) &&
+          (cost === 'X' || cost <= props.energy),
+        blockedReason: cardPlayBlock(props.state, card),
       },
     ]
   }),
@@ -85,6 +100,7 @@ const items = computed(() =>
       v-for="item in items"
       :key="`${item.index}-${item.card.id}`"
       :data-hand-slot="item.index"
+      :title="item.blockedReason"
       class="relative z-0 basis-36 shrink min-w-0 last:shrink-0 hover:z-10"
     >
       <CardView

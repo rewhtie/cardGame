@@ -1,5 +1,6 @@
 import { createBattle, dispatch as dispatchBattle } from './battle'
-import { evolveDeck, isForgeable, progressOf, rawId, upgradedId } from './enchant'
+import { canEnchantCard, evolveDeck, isForgeable, progressOf, rawId, upgradedId, withEnchant } from './enchant'
+import { ENCHANTS } from './enchants'
 import {
   NO_OPTION_TEXT,
   optionDisabled,
@@ -13,8 +14,15 @@ import { pickEncounter } from './encounter'
 import { findNode, generateMap, type GameMap } from './map'
 import { fieldHeal } from './potions'
 import { generateShop, type ShopState } from './shop'
-import { RELIC_RULES, cardOnAdd, relicNeedsPick, relicPotionSlots, resolveRelicPick } from './relics'
+import {
+  RELIC_RULES,
+  cardOnAdd,
+  relicNeedsPick,
+  relicPotionSlots,
+  resolveRelicPick,
+} from './relics'
 import { createRng, deriveSeed, sample } from './seed'
+import { stageEnemy, stageSeed } from './stage'
 import type { Action, BattleState, CardDef, EncounterDef, EnemyDef, GameEvent } from './types'
 
 export type RunScreen =
@@ -52,6 +60,8 @@ export interface RunContent {
   bosses?: EnemyDef[]
   /** 精英节点出的怪 */
   elite?: EnemyDef
+  /** 精英候选池，每个节点按种子抽取；缺省时用 elite */
+  elites?: EnemyDef[]
   /** 普通战斗节点的怪物池：每个节点按种子固定出一只；缺省时用 enemies */
   monsters?: EnemyDef[]
   /** 固定遭遇（组合怪）：楼层命中时按概率优先于威胁值预算 */
@@ -68,6 +78,8 @@ export interface RunContent {
 
 export interface RunState {
   seed: string
+  /** 旧存档缺省为第一阶段。 */
+  stage?: number
   map: GameMap
   /** 当前所在节点 id；null 表示尚未出发 */
   current: string | null
@@ -100,6 +112,7 @@ export interface RunState {
   battle: BattleState | null
   /** 开发作弊：下一场战斗改用这组敌人，开战即清除；不改动任何种子 */
   cheatNextEnemies?: EnemyDef[]
+  cheatNextEventId?: string
   content: RunContent
 }
 
@@ -140,8 +153,10 @@ export type RunAction =
   | { type: 'eventPickCard'; deckIndex: number }
   /** 开发模式上帝模式：直接获得卡牌 / 药水 / 遗物（不检查屏幕） */
   | { type: 'cheatGrant'; kind: 'card' | 'potion' | 'relic'; id: string }
+  | { type: 'cheatGold' }
   /** 开发模式：指定下一场战斗的敌人（只生效一次）；空数组 / 不传 = 取消 */
   | { type: 'cheatNextBattle'; enemies?: EnemyDef[] }
+  | { type: 'cheatNextEvent'; id?: string }
 
 export interface RunResult {
   state: RunState
@@ -176,6 +191,7 @@ export function createRun(config: RunConfig): RunState {
   const maxHp = config.playerMaxHp ?? DEFAULT_MAX_HP
   return {
     seed: config.seed,
+    stage: 1,
     ...(config.character && { character: config.character }),
     map: generateMap(config.seed),
     current: null,
@@ -198,6 +214,7 @@ export function createRun(config: RunConfig): RunState {
       boss: config.boss,
       bosses: config.bosses,
       elite: config.elite,
+      elites: config.elites,
       monsters: config.monsters,
       encounters: config.encounters,
       rewardCards: config.rewardCards,
@@ -243,17 +260,17 @@ function chooseNode(run: RunState, id: string, god = false): RunResult {
     case 'shop':
       return { state: { ...next, screen: 'shop', shop: generateShop(next) }, events: [] }
     case 'event': {
-      if (!run.content.events?.length) return { state: { ...next, screen: 'placeholder' }, events: [] }
-      const def = pickEvent(next, id)
-      // 全部事件都见过后重新开始计数
-      const allSeen = run.content.events.every((e) => run.seenEvents.includes(e.id))
-      const seen = allSeen ? [] : run.seenEvents
+      if (!run.content.events?.length)
+        return { state: { ...next, screen: 'placeholder' }, events: [] }
+      const def = run.content.events.find((e) => e.id === run.cheatNextEventId) ?? pickEvent(next, id)
+      const { cheatNextEventId: _used, ...rest } = next
+      if (!def) return { state: { ...rest, screen: 'placeholder' }, events: [] }
       return {
         state: {
-          ...next,
+          ...rest,
           screen: 'event',
           event: { id: def.id, result: [], pending: [], pick: null, optionIndex: null },
-          seenEvents: [...new Set([...seen, def.id])],
+          seenEvents: [...new Set([...run.seenEvents, def.id])],
         },
         events: [],
       }
@@ -268,23 +285,55 @@ function battleEnemies(run: RunState, nodeId: string): EnemyDef[] {
   if (run.cheatNextEnemies?.length) return run.cheatNextEnemies
   const type = findNode(run.map, nodeId)?.type
   if (!run.eventBattle && type === 'boss') {
-    const bosses = run.content.bosses?.length ? run.content.bosses : run.content.boss ? [run.content.boss] : []
-    if (bosses.length) return [bosses[Math.floor(createRng(deriveSeed(run.seed, 'boss')).float() * bosses.length)]!]
+    const bosses = run.content.bosses?.length
+      ? run.content.bosses
+      : run.content.boss
+        ? [run.content.boss]
+        : []
+    const floor = findNode(run.map, nodeId)?.floor ?? 1
+    const groups = (run.content.encounters ?? []).filter((e) => e.role === 'boss' && floor >= e.minFloor && floor <= e.maxFloor && (e.stage === undefined || e.stage === (run.stage ?? 1)))
+    const groupedIds = new Set(groups.flatMap((e) => e.enemies.map((enemy) => enemy.id)))
+    const candidates = [...bosses.filter((e) => !groupedIds.has(e.id)).map((e) => [e]), ...groups.map((e) => e.enemies)]
+    if (candidates.length)
+      return candidates[Math.floor(createRng(deriveSeed(stageSeed(run.seed, run.stage), 'boss')).float() * candidates.length)]!
   }
-  if (run.content.elite && !run.eventBattle && type === 'elite') return [run.content.elite]
-  const pool = run.content.monsters
+  if (!run.eventBattle && type === 'elite') {
+    const elites = run.content.elites?.length
+      ? run.content.elites
+      : run.content.elite
+        ? [run.content.elite]
+        : []
+    const floor = findNode(run.map, nodeId)?.floor ?? 1
+    const groups = (run.content.encounters ?? []).filter((e) => e.role === 'elite' && floor >= e.minFloor && floor <= e.maxFloor && (e.stage === undefined || e.stage === (run.stage ?? 1)))
+    const groupedIds = new Set(groups.flatMap((e) => e.enemies.map((enemy) => enemy.id)))
+    const candidates = [...elites.filter((e) => !groupedIds.has(e.id) &&
+      (e.nativeStage === undefined || e.nativeStage === (run.stage ?? 1))).map((e) => [e]), ...groups.map((e) => e.enemies)]
+    if (candidates.length)
+      return candidates[Math.floor(createRng(deriveSeed(stageSeed(run.seed, run.stage), `elite:${nodeId}`)).float() * candidates.length)]!
+  }
+  const normalGroups = (run.content.encounters ?? []).filter((e) =>
+    (!e.role || e.role === 'monster') && (e.stage === undefined || e.stage === (run.stage ?? 1)))
+  const groupOnlyIds = new Set((run.content.encounters ?? []).filter((e) => e.stage !== undefined)
+    .flatMap((e) => e.enemies.map((enemy) => enemy.id)))
+  const pool = run.content.monsters?.filter((e) => !groupOnlyIds.has(e.id) &&
+    (e.nativeStage === undefined || e.nativeStage === (run.stage ?? 1)))
   if (pool?.length && !run.eventBattle && type === 'monster') {
     const floor = findNode(run.map, nodeId)?.floor ?? 1
-    return pickEncounter(pool, floor, run.content.encounters ?? [], createRng(deriveSeed(run.seed, `enemy:${nodeId}`)))
+    return pickEncounter(
+      pool,
+      floor,
+      normalGroups,
+      createRng(deriveSeed(stageSeed(run.seed, run.stage), `enemy:${nodeId}`)),
+    )
   }
   return run.content.enemies ?? [run.content.enemy]
 }
 
 function startBattle(run: RunState, nodeId: string): RunResult {
   const { state: battle, events } = createBattle({
-    seed: deriveSeed(run.seed, `battle:${nodeId}`),
+    seed: deriveSeed(stageSeed(run.seed, run.stage), `battle:${nodeId}`),
     deck: run.content.deck,
-    enemies: battleEnemies(run, nodeId),
+    enemies: battleEnemies(run, nodeId).map((enemy) => stageEnemy(enemy, run.stage)),
     playerGold: run.gold,
     cards: run.content.cards,
     playerMaxHp: run.player.maxHp,
@@ -320,7 +369,7 @@ function acquireRelic(run: RunState, id: string): RunResult {
 
 /** 获得遗物并结算"获得时"效果；遗物可重复获得（掉落池会排除已拥有的） */
 export function grantRelic(run: RunState, id: string): RunResult {
-  const rng = createRng(deriveSeed(run.seed, `relic:${id}`))
+  const rng = createRng(deriveSeed(stageSeed(run.seed, run.stage), `relic:${id}`))
   const base: RunState = { ...run, relics: [...run.relics, id] }
   const { run: next, cards, heal } = RELIC_RULES[id]?.onAcquire?.(base, rng) ?? { run: base }
   return {
@@ -346,7 +395,7 @@ function pickCards(run: RunState, deckIndexes: number[]): RunResult {
   // 事件里获得的遗物：继续结算被暂停的剩余结果
   const ev = picked.state.event
   if (pending.back !== 'event' || !ev || ev.pending.length === 0) return picked
-  const rng = createRng(deriveSeed(run.seed, `event:${run.current}:relic:${ev.result.length}`))
+  const rng = createRng(deriveSeed(stageSeed(run.seed, run.stage), `event:${run.current}:relic:${ev.result.length}`))
   const resumed: RunState = { ...picked.state, event: { ...ev, pending: [] } }
   const r = afterEventOutcomes(resolveOutcomes(resumed, ev.pending, rng, acquireRelic))
   return { ...r, events: [...picked.events, ...r.events] }
@@ -363,8 +412,19 @@ function battleAction(run: RunState, action: Action): RunResult {
     potions = [...potions, ...battle.newPotions.slice(0, room)]
     settled = { ...battle, newPotions: [] }
   }
+  const removed = new Set(battle.removedDeckIndices)
+  const content = battle.originalDeck && removed.size > 0
+    ? { ...run.content, deck: battle.originalDeck.filter((_, i) => !removed.has(i)) }
+    : run.content
+  // 永久最大生命变更（精神过载）：即时同步到整局，只同步这一次，之后的上限增长不受限
+  let player = run.player
+  if (battle.permanentMaxHp !== undefined) {
+    const { permanentMaxHp: maxHp, ...rest } = settled
+    settled = rest
+    player = { ...player, maxHp, hp: Math.min(player.hp, maxHp, battle.player.hp) }
+  }
   return {
-    state: { ...run, battle: settled, potions },
+    state: { ...run, content, battle: settled, potions, player },
     events,
     ...(pre && { pre: { ...run, battle: pre } }),
   }
@@ -380,7 +440,11 @@ function usePotion(run: RunState, index: number, target?: number): RunResult {
       return invalid(run, '该药水只能在战斗中使用')
     const hp = Math.min(run.player.maxHp, run.player.hp + heal)
     return {
-      state: { ...run, player: { ...run.player, hp }, potions: run.potions.filter((_, i) => i !== index) },
+      state: {
+        ...run,
+        player: { ...run.player, hp },
+        potions: run.potions.filter((_, i) => i !== index),
+      },
       events: [{ type: 'healed', target: 'player', amount: hp - run.player.hp }],
     }
   }
@@ -416,7 +480,10 @@ function takePotion(run: RunState, index: number): RunResult {
 function skipPotion(run: RunState, index?: number): RunResult {
   if (index === undefined) return { state: { ...run, potionOffer: [] }, events: [] }
   if (run.potionOffer?.[index] === undefined) return invalid(run, '药水不存在')
-  return { state: { ...run, potionOffer: run.potionOffer.filter((_, i) => i !== index) }, events: [] }
+  return {
+    state: { ...run, potionOffer: run.potionOffer.filter((_, i) => i !== index) },
+    events: [],
+  }
 }
 
 function continueRun(run: RunState): RunResult {
@@ -433,25 +500,45 @@ function continueRun(run: RunState): RunResult {
   // 战斗内偷来的最大生命值随战斗结束还原：当前生命不超过整局的最大生命
   const player = { ...run.player, hp: Math.min(run.player.maxHp, battle.player.hp) }
   // 胜利（含敌人逃脱）后结算进化；战败不结算
-  const evo = evolveDeck(run.content.cards, run.content.deck, battle.evolveCounts ?? {})
+  const evo = evolveDeck(
+    run.content.cards,
+    battle.originalDeck ?? run.content.deck,
+    battle.evolveCounts ?? {},
+    battle.removedDeckIndices,
+  )
   const content = { ...run.content, deck: evo.deck }
-  const evolvedEvents: GameEvent[] = evo.evolved.length ? [{ type: 'cardsEvolved', cards: evo.evolved }] : []
+  const evolvedEvents: GameEvent[] = evo.evolved.length
+    ? [{ type: 'cardsEvolved', cards: evo.evolved }]
+    : []
   if (battle.escaped) {
     // 敌人逃脱：没有奖励，被偷的金币拿不回来
     return {
-      state: { ...run, content, screen: 'map', battle: null, player, gold: battle.gold, relicState: battle.relicState, rewards: [], eventBattle: null },
+      state: {
+        ...run,
+        content,
+        screen: 'map',
+        battle: null,
+        player,
+        gold: battle.gold,
+        relicState: battle.relicState,
+        rewards: [],
+        eventBattle: null,
+      },
       events: evolvedEvents,
     }
   }
   const node = run.current ? findNode(run.map, run.current) : undefined
-  const rewards = generateRewards({ ...run, content }, run.eventBattle?.kind ?? node?.type ?? 'monster')
+  const rewards = generateRewards(
+    { ...run, content },
+    run.eventBattle?.kind ?? node?.type ?? 'monster',
+  )
   if (run.eventBattle?.bonus?.gold) {
     rewards.unshift({ type: 'gold', amount: run.eventBattle.bonus.gold })
   }
   if (run.eventBattle?.bonus?.relic) {
     const unowned = (run.content.relicIds ?? []).filter((id) => !run.relics.includes(id))
     const taken = new Set(rewards.flatMap((r) => (r.type === 'relic' ? [r.id] : [])))
-    const rng = createRng(deriveSeed(run.seed, `eventRelic:${run.current}`))
+    const rng = createRng(deriveSeed(stageSeed(run.seed, run.stage), `eventRelic:${run.current}`))
     const [id] = sample(
       unowned.filter((r) => !taken.has(r)),
       1,
@@ -459,11 +546,23 @@ function continueRun(run: RunState): RunResult {
     )
     if (id) rewards.push({ type: 'relic', id })
   }
-  return { state: { ...run, content, screen: 'reward', battle: null, player, gold: battle.gold, relicState: battle.relicState, rewards }, events: evolvedEvents }
+  return {
+    state: {
+      ...run,
+      content,
+      screen: 'reward',
+      battle: null,
+      player,
+      gold: battle.gold,
+      relicState: battle.relicState,
+      rewards,
+    },
+    events: evolvedEvents,
+  }
 }
 
 function generateRewards(run: RunState, type: string): Reward[] {
-  const rng = createRng(deriveSeed(run.seed, `reward:${run.current}`))
+  const rng = createRng(deriveSeed(stageSeed(run.seed, run.stage), `reward:${run.current}`))
   const kind = type === 'elite' || type === 'boss' ? type : 'monster'
   const rewards: Reward[] = [{ type: 'gold', amount: GOLD[kind] }]
 
@@ -495,7 +594,10 @@ function claimReward(run: RunState, index: number, pick?: number): RunResult {
     case 'gold':
       return { state: { ...next, gold: run.gold + reward.amount }, events: [] }
     case 'potion':
-      return { state: { ...next, potionOffer: [...(run.potionOffer ?? []), reward.id] }, events: [] }
+      return {
+        state: { ...next, potionOffer: [...(run.potionOffer ?? []), reward.id] },
+        events: [],
+      }
     case 'relic':
       return acquireRelic(next, reward.id)
     case 'cards': {
@@ -510,7 +612,29 @@ function claimReward(run: RunState, index: number, pick?: number): RunResult {
 
 function finishRewards(run: RunState): RunResult {
   if (run.screen !== 'reward') return invalid(run, '当前不在奖励界面')
-  const screen: RunScreen = run.current === 'boss' ? 'victory' : 'map'
+  const bossCleared = findNode(run.map, run.current ?? '')?.type === 'boss' && !run.eventBattle
+  if (bossCleared && (run.stage ?? 1) === 1) {
+    const stage = 2
+    return {
+      state: {
+        ...run,
+        stage,
+        map: generateMap(run.seed, stage),
+        current: null,
+        visited: [],
+        screen: 'map',
+        rewards: [],
+        ancientChoices: [],
+        battle: null,
+        shop: null,
+        eventBattle: null,
+        event: null,
+        pendingRelic: null,
+      },
+      events: [],
+    }
+  }
+  const screen: RunScreen = bossCleared ? 'victory' : 'map'
   return { state: { ...run, screen, rewards: [], eventBattle: null, event: null }, events: [] }
 }
 
@@ -537,7 +661,11 @@ export const ROOT_RATIO = 0.2
 
 export const CAMPFIRE_SPECIALS: Readonly<Record<string, CampfireSpecial>> = {
   swordSaint: { name: '训练', icon: '🥋', desc: `所有可成长的牌，成长进度 +${TRAIN_PLAYS}` },
-  plagueDoctor: { name: '药剂台', icon: '⚗️', desc: `发现 ${BREW_COUNT} 瓶药水，自行选择拿走或放弃` },
+  plagueDoctor: {
+    name: '药剂台',
+    icon: '⚗️',
+    desc: `发现 ${BREW_COUNT} 瓶药水，自行选择拿走或放弃`,
+  },
   ancientTree: { name: '扎根', icon: '🌱', desc: `最大生命 +当前生命的 ${ROOT_RATIO * 100}%` },
 }
 
@@ -549,7 +677,9 @@ export const campfireSpecial = (run: RunState): CampfireSpecial | null =>
 export function campfireSpecialBlocked(run: RunState): string | null {
   switch (run.character) {
     case 'swordSaint':
-      return run.content.deck.some((c) => !!run.content.cards[rawId(c)]?.evolve) ? null : '没有可成长的牌'
+      return run.content.deck.some((c) => !!run.content.cards[rawId(c)]?.evolve)
+        ? null
+        : '没有可成长的牌'
     case 'plagueDoctor':
       return (run.content.potionIds ?? []).length ? null : '没有可制作的药水'
     case 'ancientTree':
@@ -572,7 +702,8 @@ function campfireSpecialUse(run: RunState): RunResult {
     case 'swordSaint': {
       const counts: Record<string, number> = {}
       run.content.deck.forEach((id, i) => {
-        if (run.content.cards[rawId(id)]?.evolve) counts[`${id}#${i}`] = progressOf(id) + TRAIN_PLAYS
+        if (run.content.cards[rawId(id)]?.evolve)
+          counts[`${id}#${i}`] = progressOf(id) + TRAIN_PLAYS
       })
       const evo = evolveDeck(run.content.cards, run.content.deck, counts)
       return done({ ...run, content: { ...run.content, deck: evo.deck } }, [
@@ -581,7 +712,7 @@ function campfireSpecialUse(run: RunState): RunResult {
       ])
     }
     case 'plagueDoctor': {
-      const rng = createRng(deriveSeed(run.seed, `campfire:${run.current}`))
+      const rng = createRng(deriveSeed(stageSeed(run.seed, run.stage), `campfire:${run.current}`))
       const pool = run.content.potionIds ?? []
       const made = sample(pool, Math.min(BREW_COUNT, pool.length), rng)
       // 与事件药水一致：进入待选列表，由玩家逐瓶决定拿走或放弃
@@ -590,7 +721,9 @@ function campfireSpecialUse(run: RunState): RunResult {
     default: {
       // 只涨上限，不回血
       const gain = Math.max(1, Math.round(run.player.hp * ROOT_RATIO + 1e-9))
-      return done({ ...run, player: { ...run.player, maxHp: run.player.maxHp + gain } }, [{ type: 'maxHpGained', amount: gain }])
+      return done({ ...run, player: { ...run.player, maxHp: run.player.maxHp + gain } }, [
+        { type: 'maxHpGained', amount: gain },
+      ])
     }
   }
 }
@@ -635,8 +768,11 @@ function chooseEventOption(run: RunState, index: number): RunResult {
     ...(opt.cost?.gold ? [`失去 ${opt.cost.gold} 金币`] : []),
     ...(opt.cost?.hp ? [`失去 ${opt.cost.hp} 点生命`] : []),
   ]
-  const withCost = { ...paid, event: { ...paid.event!, result: [...costLines, ...paid.event!.result] } }
-  const rng = createRng(deriveSeed(run.seed, `event:${run.current}:${index}`))
+  const withCost = {
+    ...paid,
+    event: { ...paid.event!, result: [...costLines, ...paid.event!.result] },
+  }
+  const rng = createRng(deriveSeed(stageSeed(run.seed, run.stage), `event:${run.current}:${index}`))
   const resolved = resolveOutcomes(withCost, opt.outcomes, rng, acquireRelic)
   const costHp = opt.cost?.hp ?? 0
   return afterEventOutcomes(
@@ -648,7 +784,13 @@ function chooseEventOption(run: RunState, index: number): RunResult {
 
 /** 事件结果结算后：若触发了战斗则开战，否则停在事件界面 */
 function afterEventOutcomes(r: RunResult): RunResult {
-  if (r.state.screen === 'eventPick' || r.state.screen === 'pick' || !r.state.eventBattle || r.state.screen === 'battle') return r
+  if (
+    r.state.screen === 'eventPick' ||
+    r.state.screen === 'pick' ||
+    !r.state.eventBattle ||
+    r.state.screen === 'battle'
+  )
+    return r
   const battle = startBattle(r.state, r.state.current as string)
   return { state: battle.state, events: [...r.events, ...battle.events] }
 }
@@ -664,7 +806,14 @@ function eventPickCard(run: RunState, deckIndex: number): RunResult {
   let line: string
   if (ev.pick === 'remove') {
     deck = run.content.deck.filter((_, i) => i !== deckIndex)
+    events.push({ type: 'cardRemoved', cardId })
     line = `删除了 ${run.content.cards[rawId(cardId)]?.name ?? cardId}`
+  } else if (ev.pick === 'enchant') {
+    if (!ev.enchant || !canEnchantCard(run.content.cards, cardId, ev.enchant))
+      return invalid(run, '该牌不可附魔')
+    deck = run.content.deck.map((c, i) => i === deckIndex ? withEnchant(c, ev.enchant!) : c)
+    events.push({ type: 'cardsEnchanted', cards: [{ from: cardId, to: deck[deckIndex] as string }] })
+    line = `为 ${run.content.cards[rawId(cardId)]?.name ?? cardId} 附魔「${ENCHANTS[ev.enchant]?.name ?? ev.enchant}」`
   } else {
     if (!isForgeable(run.content.cards, cardId)) return invalid(run, '该牌不可升级')
     deck = run.content.deck.map((c, i) => (i === deckIndex ? upgradedId(c) : c))
@@ -676,9 +825,9 @@ function eventPickCard(run: RunState, deckIndex: number): RunResult {
     ...run,
     screen: 'event',
     content: { ...run.content, deck },
-    event: { ...ev, pick: null, pending: [], result: [...ev.result, line] },
+    event: { ...ev, pick: null, enchant: undefined, pending: [], result: [...ev.result, line] },
   }
-  const rng = createRng(deriveSeed(run.seed, `event:${run.current}:pick:${ev.result.length}`))
+  const rng = createRng(deriveSeed(stageSeed(run.seed, run.stage), `event:${run.current}:pick:${ev.result.length}`))
   const r = afterEventOutcomes(resolveOutcomes(resumed, pending, rng, acquireRelic))
   return { ...r, events: [...events, ...r.events] }
 }
@@ -707,11 +856,20 @@ function buyShop(run: RunState, kind: 'card' | 'relic' | 'potion', index: number
     return invalid(run, '药水栏已满')
 
   const sold = list.map((it, i) => (i === index ? { ...item, sold: true } : it))
-  const nextShop: ShopState = { ...shop, [kind === 'card' ? 'cards' : kind === 'relic' ? 'relics' : 'potions']: sold }
+  const nextShop: ShopState = {
+    ...shop,
+    [kind === 'card' ? 'cards' : kind === 'relic' ? 'relics' : 'potions']: sold,
+  }
   const paid: RunState = { ...run, gold: run.gold - item.price, shop: nextShop }
   switch (kind) {
     case 'card':
-      return { state: { ...paid, content: { ...paid.content, deck: [...paid.content.deck, cardOnAdd(paid, item.id)] } }, events: [] }
+      return {
+        state: {
+          ...paid,
+          content: { ...paid.content, deck: [...paid.content.deck, cardOnAdd(paid, item.id)] },
+        },
+        events: [],
+      }
     case 'potion':
       return { state: { ...paid, potions: [...paid.potions, item.id] }, events: [] }
     case 'relic':
@@ -732,7 +890,7 @@ function shopRemove(run: RunState, deckIndex: number): RunResult {
       shop: { ...shop, removed: true },
       content: { ...run.content, deck: run.content.deck.filter((_, i) => i !== deckIndex) },
     },
-    events: [],
+    events: [{ type: 'cardRemoved', cardId: run.content.deck[deckIndex]! }],
   }
 }
 
@@ -742,7 +900,10 @@ function cheatGrant(run: RunState, kind: 'card' | 'potion' | 'relic', id: string
   switch (kind) {
     case 'card':
       return {
-        state: { ...run, content: { ...run.content, deck: [...run.content.deck, cardOnAdd(run, id)] } },
+        state: {
+          ...run,
+          content: { ...run.content, deck: [...run.content.deck, cardOnAdd(run, id)] },
+        },
         events: [],
       }
     case 'potion':
@@ -761,6 +922,16 @@ function cheatNextBattle(run: RunState, enemies?: EnemyDef[]): RunResult {
 
 export function dispatchRun(run: RunState, action: RunAction): RunResult {
   switch (action.type) {
+    case 'cheatGold':
+      if (run.screen !== 'map') return invalid(run, '仅地图中可获得金币')
+      return { state: { ...run, gold: run.gold + 999 }, events: [] }
+    case 'cheatNextEvent': {
+      if (run.screen !== 'map') return invalid(run, '仅地图中可指定事件')
+      if (action.id && !run.content.events?.some((e) => e.id === action.id))
+        return invalid(run, '事件不存在')
+      const { cheatNextEventId: _old, ...rest } = run
+      return { state: action.id ? { ...rest, cheatNextEventId: action.id } : rest, events: [] }
+    }
     case 'cheatNextBattle':
       return cheatNextBattle(run, action.enemies)
     case 'cheatGrant':

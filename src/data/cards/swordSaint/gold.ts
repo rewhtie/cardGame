@@ -70,4 +70,13 @@ export const swordSaintGold: Card[] = [
     .draw(1)
     .reward()
     .upgrade((u) => u.draw(2)),
+  Card.gold('mentalOverload', '精神过载')
+    .icon('🧠')
+    .cost(3)
+    .power()
+    .oneShot()
+    .effect({ type: 'mentalOverload' })
+    .applyStatus('extreme', 1)
+    .applyStatus('blaze', 1)
+    .upgrade((u) => u),
 ]

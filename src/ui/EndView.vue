@@ -1,5 +1,11 @@
 <script setup lang="ts">
-defineProps<{ victory: boolean; seed: string }>()
+import RunProgress from './RunProgress.vue'
+
+defineProps<{
+  victory: boolean
+  seed: string
+  progress: { stage: number; floor: number }
+}>()
 defineEmits<{ menu: []; retry: [] }>()
 </script>
 
@@ -10,6 +16,7 @@ defineEmits<{ menu: []; retry: [] }>()
     <div class="text-6xl font-bold" :class="victory ? 'text-amber-400' : 'text-red-400'">
       {{ victory ? '通关！' : '游戏结束' }}
     </div>
+    <RunProgress :progress="progress" />
     <div class="text-slate-400">
       种子 <span class="font-mono tracking-widest select-text">{{ seed }}</span>
     </div>

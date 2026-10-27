@@ -276,6 +276,8 @@ const hintOf = (id: string | undefined) => {
         </span>
       </span>
 
+      <slot name="progress" />
+
       <!-- 右侧：种子，其后是插槽（地图上的牌组按钮）；右侧留出设置按钮的位置 -->
       <div class="ml-auto mr-12 flex items-center gap-4">
         <button

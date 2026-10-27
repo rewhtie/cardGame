@@ -15,6 +15,9 @@ const EFFECT_TYPES: { value: Effect['type']; label: string }[] = [
   { value: 'applyStatus', label: '✨ 状态 / buff（固定、按伤口、按寄生、倍增、代价…）' },
   { value: 'heal', label: '💚 回复生命' },
   { value: 'loseHp', label: '💔 失去生命' },
+  { value: 'lifeOverload', label: '❤️‍🔥 生命降至1并获得999格挡' },
+  { value: 'mentalOverload', label: '🧠 整局最大生命变1（极限、俱焚另加状态效果）' },
+  { value: 'sensoryOverload', label: '🧠 按自己生成的状态牌施加裂伤和易伤' },
   { value: 'addCard', label: '🩹 置入牌（伤口 / 状态牌 / 诅咒…）' },
   { value: 'fetch', label: '🧲 捞取非伤口牌' },
   { value: 'consumeParasite', label: '🌱 消耗目标寄生层数' },
@@ -80,6 +83,8 @@ function newEffect(type: Effect['type']): Effect {
       return { type, amount: 1 }
     case 'draw':
       return { type, count: 1 }
+    case 'sensoryOverload':
+      return { type, per: 2 }
     case 'woundStatus':
       return { type, status: 'gash', per: 1, to: 'allEnemies' }
     case 'exhaustStatusCard':
@@ -106,6 +111,8 @@ function newEffect(type: Effect['type']): Effect {
     case 'purgeSelfBuff':
     case 'reshuffle':
     case 'blockByIntent':
+    case 'lifeOverload':
+    case 'mentalOverload':
     case 'gainPotion':
     case 'playTop':
       return { type }
@@ -470,6 +477,10 @@ const move = (i: number, d: -1 | 1) => {
           <CardEffectsEditor v-model="eff.perCard" />
         </div>
       </template>
+      <label v-else-if="eff.type === 'sensoryOverload'" class="fx-field">
+        <span>每张自己生成的状态牌，裂伤和易伤各增加</span>
+        <input v-model.number="eff.per" type="number" min="0" class="fx-ctl fx-num" />
+      </label>
       <label v-else-if="eff.type === 'redraw'" class="fx-field">
         <span>额外多抽</span>
         <input v-model.number="eff.extra" type="number" min="0" class="fx-ctl fx-num" />
@@ -479,7 +490,7 @@ const move = (i: number, d: -1 | 1) => {
         <input v-model.number="eff.gold" type="number" min="0" class="fx-ctl fx-num" />
       </label>
 
-      <span v-else-if="eff.type === 'reshuffle' || eff.type === 'blockByIntent' || eff.type === 'gainPotion' || eff.type === 'playTop' || eff.type === 'convertCorpse' || eff.type === 'exhaustStatusCard' || eff.type === 'parasiteBurst' || eff.type === 'spreadParasite' || eff.type === 'purgeSelfBuff' || eff.type === 'meltBlock' || eff.type === 'blockFromDamage'" class="fx-empty">无参数</span>
+      <span v-else-if="eff.type === 'reshuffle' || eff.type === 'blockByIntent' || eff.type === 'lifeOverload' || eff.type === 'mentalOverload' || eff.type === 'gainPotion' || eff.type === 'playTop' || eff.type === 'convertCorpse' || eff.type === 'exhaustStatusCard' || eff.type === 'parasiteBurst' || eff.type === 'spreadParasite' || eff.type === 'purgeSelfBuff' || eff.type === 'meltBlock' || eff.type === 'blockFromDamage'" class="fx-empty">无参数</span>
 
       <template v-else-if="eff.type === 'devourParasite'">
         <label class="fx-field">

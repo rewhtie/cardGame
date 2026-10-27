@@ -1,4 +1,4 @@
-import { applyEnchant } from './enchants'
+import { applyEnchant, canEnchant } from './enchants'
 import type { CardDef, Effect } from './types'
 
 /**
@@ -41,6 +41,12 @@ export const withProgress = (id: string, n: number) => {
   const inst = id.slice(stripInstance(id).length)
   const base = stripProgress(id)
   return (n > 0 ? `${base}${PROGRESS_SUFFIX}${n}` : base) + inst
+}
+
+export function canEnchantCard(cards: Readonly<Record<string, CardDef>>, id: string, enchant: string): boolean {
+  if (enchantOf(id)) return false
+  const def = resolveCards(cards, [id])[id]
+  return !!def && canEnchant(def, enchant)
 }
 
 /** 附魔：加 @名；已有附魔则原样返回（一牌一附魔） */
@@ -91,7 +97,8 @@ export const toInstanceIds = (
   cards?: Readonly<Record<string, CardDef>>,
 ) =>
   deck.map((id, i) =>
-    enchantOf(id) || cards?.[rawId(id)]?.evolve ? `${id}#${i}` : id,
+    enchantOf(id) || cards?.[rawId(id)]?.evolve || cards?.[rawId(id)]?.oneShot ||
+    (isUpgraded(id) && cards?.[rawId(id)]?.upgraded?.oneShot) ? `${id}#${i}` : id,
   )
 
 /**
@@ -102,10 +109,13 @@ export function evolveDeck(
   cards: Readonly<Record<string, CardDef>>,
   deck: readonly string[],
   counts: Readonly<Record<string, number>>,
+  removedIndices: readonly number[] = [],
 ): { deck: string[]; evolved: { from: string; to: string }[]; trained: { from: string; to: string }[] } {
+  const removed = new Set(removedIndices)
   const evolved: { from: string; to: string }[] = []
   const trained: { from: string; to: string }[] = []
   const next = deck.map((id, i) => {
+    if (removed.has(i)) return id
     const evolve = cards[rawId(id)]?.evolve
     if (!evolve) return id
     const total = counts[`${id}#${i}`] ?? progressOf(id)
@@ -118,24 +128,25 @@ export function evolveDeck(
     if (kept !== id) trained.push({ from: id, to: kept })
     return kept
   })
-  return { deck: next, evolved, trained }
+  return { deck: next.filter((_, i) => !removed.has(i)), evolved, trained }
 }
 
 const hasX = (card: CardDef) => card.effects.some((e) => 'perX' in e && e.perX)
 
-function bumpEffect(e: Effect): Effect {
+function bumpEffect(e: Effect, growth: number): Effect {
+  const add = (n: number) => Math.min(999, n + growth)
   switch (e.type) {
     case 'damage':
       return {
         ...e,
-        amount: e.amount + 1,
-        ...(e.perStack && { perStack: { ...e.perStack, per: e.perStack.per + 1 } }),
-        ...(e.lowHp && { lowHp: { amount: e.lowHp.amount + 1 } }),
-        ...(e.maxHpPct && { maxHpPct: e.maxHpPct + 1 }),
-        ...(e.ifTargetBlock && { ifTargetBlock: { bonus: e.ifTargetBlock.bonus + 1 } }),
-        ...(e.perAttackPlayed && { perAttackPlayed: { per: e.perAttackPlayed.per + 1 } }),
+        amount: add(e.amount),
+        ...(e.perStack && { perStack: { ...e.perStack, per: add(e.perStack.per) } }),
+        ...(e.lowHp && { lowHp: { amount: add(e.lowHp.amount) } }),
+        ...(e.maxHpPct && { maxHpPct: add(e.maxHpPct) }),
+        ...(e.ifTargetBlock && { ifTargetBlock: { bonus: add(e.ifTargetBlock.bonus) } }),
+        ...(e.perAttackPlayed && { perAttackPlayed: { per: add(e.perAttackPlayed.per) } }),
         ...(e.perTargetStatus && {
-          perTargetStatus: { ...e.perTargetStatus, per: e.perTargetStatus.per + 1 },
+          perTargetStatus: { ...e.perTargetStatus, per: add(e.perTargetStatus.per) },
         }),
       }
     case 'block':
@@ -143,16 +154,17 @@ function bumpEffect(e: Effect): Effect {
     case 'heal':
     case 'stealMaxHp':
     case 'sapStrength':
-      return { ...e, amount: e.amount + 1 }
+      return { ...e, amount: add(e.amount) }
     case 'draw':
     case 'fetch':
     case 'drawIfAttacks':
     case 'drawIfParasite':
-      return { ...e, count: e.count + 1 }
+      return { ...e, count: add(e.count) }
     case 'applyStatus':
-      return { ...e, stacks: e.stacks + 1 }
+      return { ...e, stacks: add(e.stacks) }
     case 'woundStatus':
-      return { ...e, per: e.per + 1 }
+    case 'sensoryOverload':
+      return { ...e, per: add(e.per) }
     case 'loseHp':
     case 'addWound':
     case 'addCard':
@@ -166,6 +178,8 @@ function bumpEffect(e: Effect): Effect {
     case 'reshuffle':
     case 'exhaustCards':
     case 'blockByIntent':
+    case 'lifeOverload':
+    case 'mentalOverload':
     case 'goldIfKill':
     case 'gainPotion':
     case 'playTop':
@@ -182,16 +196,13 @@ function bumpEffect(e: Effect): Effect {
   }
 }
 
-/**
- * 附魔牌每打出一次，卡面数值 +1；涉及 X 的牌则是 X 的加成 +1。
- * 数值和文字同步变化。
- */
 export function growCard(card: CardDef): CardDef {
-  if (hasX(card)) return { ...card, xBonus: (card.xBonus ?? 0) + 1 }
+  const growth = card.grow ?? 1
+  if (hasX(card)) return { ...card, xBonus: Math.min(999, (card.xBonus ?? 0) + growth) }
   return {
     ...card,
-    effects: card.effects.map(bumpEffect),
-    text: card.text.replace(/\d+/g, (n) => String(Number(n) + 1)),
+    effects: card.effects.map((e) => bumpEffect(e, growth)),
+    text: card.text.replace(/\d+/g, (n) => String(Math.min(999, Number(n) + growth))),
   }
 }
 
@@ -226,6 +237,7 @@ function upgradeEffect(e: Effect): Effect {
     case 'applyStatus':
       return { ...e, stacks: e.stacks + n }
     case 'woundStatus':
+    case 'sensoryOverload':
       return { ...e, per: e.per + n }
     case 'loseHp':
     case 'addWound':
@@ -240,6 +252,8 @@ function upgradeEffect(e: Effect): Effect {
     case 'reshuffle':
     case 'exhaustCards':
     case 'blockByIntent':
+    case 'lifeOverload':
+    case 'mentalOverload':
     case 'goldIfKill':
     case 'gainPotion':
     case 'playTop':
@@ -261,7 +275,7 @@ const effectNumber = (e: Effect) =>
     ? e.count
     : e.type === 'applyStatus'
       ? e.stacks
-      : e.type === 'woundStatus'
+      : e.type === 'woundStatus' || e.type === 'sensoryOverload'
         ? e.per
         : e.type === 'addWound'
         ? e.count
@@ -269,7 +283,7 @@ const effectNumber = (e: Effect) =>
           ? e.per
           : e.type === 'multiplyStatus'
             ? e.factor
-            : e.type === 'convertCorpse' || e.type === 'exhaustStatusCard' || e.type === 'choose' || e.type === 'redraw' || e.type === 'reshuffle' || e.type === 'exhaustCards' || e.type === 'blockByIntent' || e.type === 'goldIfKill' || e.type === 'gainPotion' || e.type === 'playTop' || e.type === 'parasiteBurst' || e.type === 'spreadParasite' || e.type === 'meltBlock' || e.type === 'blockFromDamage' || e.type === 'overdraft' || e.type === 'addCard' || e.type === 'penalty' || e.type === 'parasiteStatus' || e.type === 'purgeSelfBuff'
+            : e.type === 'convertCorpse' || e.type === 'exhaustStatusCard' || e.type === 'choose' || e.type === 'redraw' || e.type === 'reshuffle' || e.type === 'exhaustCards' || e.type === 'blockByIntent' || e.type === 'lifeOverload' || e.type === 'mentalOverload' || e.type === 'goldIfKill' || e.type === 'gainPotion' || e.type === 'playTop' || e.type === 'parasiteBurst' || e.type === 'spreadParasite' || e.type === 'meltBlock' || e.type === 'blockFromDamage' || e.type === 'overdraft' || e.type === 'addCard' || e.type === 'penalty' || e.type === 'parasiteStatus' || e.type === 'purgeSelfBuff'
               ? 0
               : e.type === 'devourParasite'
                 ? e.per

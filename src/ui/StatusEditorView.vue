@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Emoji from '@/ui/Emoji.vue'
+import { useDevHotState } from '@/composables/useDevHotState'
 import { computed, ref } from 'vue'
 import {
   BUFFS,
@@ -70,6 +71,8 @@ const current = computed(() => list.find((d) => d.id === selectedId.value))
 const usage = computed(() => (current.value ? usageOf(current.value.id) : []))
 const engineUsage = computed(() => (current.value ? engineUsageOf(current.value.id) : []))
 const previewStacks = ref(3)
+
+useDevHotState(import.meta.hot, 'status-view', { selectedId, search, previewStacks })
 const DISPLAY_LABEL: Record<string, string> = {
   number: 'number：层数即数值，直接显示数字',
   count: 'count：能力型，叠加后显示小号 ×N',
@@ -105,6 +108,7 @@ const hookDetails = computed(() => {
   if (d.onPlayerCard) out.push(`玩家出牌后给自己 ${d.onPlayerCard(n).stacks} 层 ${d.onPlayerCard(n).status}`)
   if (d.afterPlayerCard) out.push(`玩家出牌后本回合力量 -${d.afterPlayerCard(n).strength}、敏捷 -${d.afterPlayerCard(n).dexterity}`)
   if (d.turnStartGrow !== undefined) out.push(`每个敌方回合开始自身层数 +${d.turnStartGrow}`)
+  if (d.cardPlayLimit) out.push(`每玩家回合最多打出 ${d.cardPlayLimit.max} 张${d.cardPlayLimit.kind === 'attack' ? '攻击' : '技能'}牌；重复施加不加重限制，自动出牌与重放也受限`)
   return out.length ? out : ['引擎内置（行为写在战斗逻辑里，这里无法核对）']
 })
 </script>

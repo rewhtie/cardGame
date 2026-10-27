@@ -2,7 +2,7 @@
 import Emoji from '@/ui/Emoji.vue'
 import { attackBonusAt } from '@/engine/intents'
 import { enemyAttack } from '@/engine/blades'
-import { statusById } from '@/engine/statuses'
+import { calcAttack, statusById } from '@/engine/statuses'
 import type { CardDef, EnemyState, Intent } from '@/engine/types'
 import { computed, ref, watch } from 'vue'
 import HoverTip from './HoverTip.vue'
@@ -26,6 +26,11 @@ const props = defineProps<{
 const TIP_ICON: Record<Intent['type'], string> = {
   attack: '⚔',
   defend: '🛡',
+  heal: '💚',
+  shareLife: '⚖️',
+  sacrificeExplosion: '💣',
+  explode: '💥',
+  revive: '💜',
   debuff: '🔻',
   buff: '🔺',
   addCards: '🟢',
@@ -47,12 +52,16 @@ watch(
 const cardName = (id: string) => props.cards?.[id]?.name ?? id
 const dmg = computed(() =>
   props.intent?.type === 'attack'
-    ? enemyAttack(props.intent.damage + attackBonusAt(props.enemy.def, props.enemy.turns ?? 0), props.enemy, { block: props.playerBlock ?? 0, statuses: props.playerStatuses }).damage
+    ? enemyAttack(
+        props.intent.damage + attackBonusAt(props.enemy.def, props.enemy.turns ?? 0),
+        props.enemy,
+        { block: props.playerBlock ?? 0, statuses: props.playerStatuses },
+      ).damage
     : 0,
 )
 
 /** 意图悬浮说明：一句话讲清下一步要干什么 */
-const intentTip = computed(() => {
+const mainIntentTip = computed(() => {
   const i = props.intent
   if (!i) return null
   switch (i.type) {
@@ -60,16 +69,30 @@ const intentTip = computed(() => {
       return {
         name: '攻击',
         text:
-          (i.hits && i.hits > 1 ? `造成 ${dmg.value} 点伤害，连击 ${i.hits} 次` : `造成 ${dmg.value} 点伤害`) +
-          (i.addCards ? `，并往你的弃牌堆塞入 ${i.addCards.count} 张【${cardName(i.addCards.cardId)}】` : ''),
+          (i.hits && i.hits > 1
+            ? `造成 ${dmg.value} 点伤害，连击 ${i.hits} 次`
+            : `造成 ${dmg.value} 点伤害`) +
+          (i.addCards
+            ? `，并往你的弃牌堆塞入 ${i.addCards.count} 张【${cardName(i.addCards.cardId)}】`
+            : '') + (i.selfStun ? `，攻击后必定自身晕眩 ${i.selfStun} 回合` : ''),
         color: '#f87171',
       }
     case 'defend':
-      return { name: '防御', text: `获得 ${i.block} 点格挡`, color: '#7dd3fc' }
+      return { name: '防御', text: `${i.target === 'allAllies' ? '自身与存活队友各' : ''}获得 ${i.block} 点格挡`, color: '#7dd3fc' }
+    case 'heal':
+      return { name: '恢复', text: `${i.target === 'allAllies' ? '自身与存活队友各' : '自身'}恢复 ${i.amount} 点生命`, color: '#86efac' }
+    case 'sacrificeExplosion':
+      return { name: '支付生命', text: `支付全部 ${props.enemy.hp} 生命，进入不可选择的待爆炸状态；下一回合优先爆炸，基础伤害等于支付量，不受自身力量影响`, color: '#fbbf24' }
+    case 'explode':
+      return { name: '延迟爆炸', text: `造成 ${calcAttack(i.damage, undefined, props.playerStatuses)} 点伤害，然后真正死亡；无视眩晕，待爆炸期间不能受到任何作用`, color: '#fbbf24' }
+    case 'revive':
+      return { name: '复活同族', text: `复活最早死亡的非复活者同族，恢复 ${Math.round((props.enemy.def.revival?.hpRatio ?? 0.5) * 100)}% 生命；剩余 ${Math.max(0, (props.enemy.def.revival?.limit ?? 0) - (props.enemy.revivesUsed ?? 0))} 次。待爆炸单位不算尸体，复活不会推进普通意图`, color: '#c084fc' }
+    case 'shareLife':
+      return { name: '生命共享', text: '与生命差最大的存活队友均分当前生命，双方各获得等同于转移生命量的格挡；不视为治疗或伤害，无存活队友时不生效', color: '#7dd3fc' }
     case 'addCards':
       return {
         name: '塞牌',
-        text: `往你的弃牌堆塞入 ${i.count} 张【${cardName(i.cardId)}】，会占用抽牌`,
+        text: `往你的${i.to === 'draw' ? '抽牌堆随机位置' : '弃牌堆'}塞入 ${i.count} 张【${cardName(i.cardId)}】，会占用抽牌`,
         color: '#c4b5fd',
       }
     case 'idle':
@@ -91,26 +114,79 @@ const intentTip = computed(() => {
     }
   }
 })
+const intentTip = computed(() => {
+  const main = mainIntentTip.value
+  if (!main) return null
+  const extra = (props.intent?.also ?? []).map((a) => {
+    switch (a.type) {
+      case 'addCards':
+        return `往你的${a.to === 'draw' ? '抽牌堆随机位置' : '弃牌堆'}塞入 ${a.count} 张【${cardName(a.cardId)}】`
+      case 'debuff':
+        return `给你添加 ${a.stacks} 层【${statusById[a.status]?.name ?? a.status}】`
+      case 'buff':
+        return `自身添加 ${a.stacks} 层【${statusById[a.status]?.name ?? a.status}】`
+      case 'defend':
+        return `${a.target === 'allAllies' ? '自身与存活队友各' : ''}获得 ${a.block} 点格挡`
+      case 'heal':
+        return `${a.target === 'allAllies' ? '自身与存活队友各' : '自身'}恢复 ${a.amount} 点生命`
+      case 'shareLife':
+        return '与存活队友共享生命并获得转移量的格挡'
+      case 'sacrificeExplosion':
+        return '支付全部生命，下一回合爆炸'
+      case 'explode':
+        return `爆炸 ${calcAttack(a.damage, undefined, props.playerStatuses)} 点伤害`
+      case 'revive':
+        return '复活符合条件的同族尸体'
+      case 'attack':
+        return `攻击 ${enemyAttack(a.damage + attackBonusAt(props.enemy.def, props.enemy.turns ?? 0), props.enemy, { block: props.playerBlock ?? 0, statuses: props.playerStatuses }).damage} × ${a.hits ?? 1}`
+      case 'summon':
+        return `召唤${a.enemy.name}`
+      case 'steal':
+        return `偷取 ${a.amount} 金币`
+      case 'flee':
+        return '逃跑'
+      case 'idle':
+        return '蓄力'
+    }
+  })
+  return { ...main, text: [main.text, ...extra].join('；') }
+})
 </script>
 
 <template>
   <div
     class="flex flex-col items-center gap-2 p-2 transition-all duration-500"
-    :class="enemy.hp <= 0 ? 'opacity-30 grayscale pointer-events-none delay-[700ms]' : ''"
+    :class="enemy.hp <= 0 && !enemy.pendingExplosion ? 'opacity-30 grayscale pointer-events-none delay-[700ms]' : ''"
   >
     <div v-if="splitting && enemy.hp > 0" class="text-lg font-bold text-purple-300">
-      <HoverTip icon="❓" name="？？？" text="意图被打断：本回合将分裂成两只" color="#c4b5fd"><Emoji e="❓" /> ？？？</HoverTip>
+      <HoverTip icon="❓" name="？？？" text="意图被打断：本回合将分裂成两只" color="#c4b5fd"
+        ><Emoji e="❓" /> ？？？</HoverTip
+      >
     </div>
     <div v-else-if="stunned && enemy.hp > 0" class="text-lg font-bold text-yellow-300">
-      <HoverTip icon="💫" name="晕眩" text="意图被打断：本回合无法行动，晕眩结束后恢复原来的意图" color="#fde047"><Emoji e="💫" /> 晕眩</HoverTip>
+      <HoverTip
+        icon="💫"
+        name="晕眩"
+        :text="enemy.def.stunPhase && !enemy.stunPhaseChanged ? '本回合无法行动，跳过后进入新的意图循环' : '意图被打断：本回合无法行动，晕眩结束后恢复原来的意图'"
+        color="#fde047"
+        ><Emoji e="💫" /> 晕眩</HoverTip
+      >
     </div>
     <div
-      v-else-if="intent && enemy.hp > 0"
+      v-else-if="intent && (enemy.hp > 0 || enemy.pendingExplosion)"
       class="text-lg font-bold"
       :class="{
         'text-red-400': intent.type === 'attack',
         'text-sky-300': intent.type === 'defend',
-        'text-purple-300': ['debuff', 'buff', 'summon', 'steal', 'flee', 'addCards', 'idle'].includes(intent.type),
+        'text-purple-300': [
+          'debuff',
+          'buff',
+          'summon',
+          'steal',
+          'flee',
+          'addCards',
+          'idle',
+        ].includes(intent.type),
       }"
     >
       <HoverTip
@@ -121,27 +197,44 @@ const intentTip = computed(() => {
         :color="intentTip.color"
       >
         <template v-if="intent.type === 'attack'">
-          <Emoji e="⚔" /> {{ dmg }}<template v-if="(intent.hits ?? 1) > 1">×{{ intent.hits }}</template>
-          <span v-if="intent.addCards" class="ml-1"><Emoji e="🟢" />{{ intent.addCards.count }}</span>
+          <Emoji e="⚔" /> {{ dmg
+          }}<template v-if="(intent.hits ?? 1) > 1">×{{ intent.hits }}</template>
+          <span v-if="intent.addCards" class="ml-1"
+            ><Emoji e="🟢" />{{ intent.addCards.count }}</span
+          >
         </template>
         <template v-else-if="intent.type === 'defend'"><Emoji e="🛡" /> {{ intent.block }}</template>
-        <template v-else-if="intent.type === 'addCards'">{{ cardName(intent.cardId) }} ×{{ intent.count }}</template>
+        <template v-else-if="intent.type === 'addCards'"
+          >{{ cardName(intent.cardId) }} ×{{ intent.count }}</template
+        >
+        <template v-else-if="intent.type === 'heal'"><Emoji e="💚" /> {{ intent.amount }}</template>
+        <template v-else-if="intent.type === 'shareLife'"><Emoji e="⚖️" /> 生命共享</template>
+        <template v-else-if="intent.type === 'sacrificeExplosion'"><Emoji e="💣" /> 支付 {{ enemy.hp }}</template>
+        <template v-else-if="intent.type === 'explode'"><Emoji e="💥" /> {{ calcAttack(intent.damage, undefined, playerStatuses) }}</template>
+        <template v-else-if="intent.type === 'revive'"><Emoji e="💜" /> 复活</template>
         <template v-else-if="intent.type === 'idle'"><Emoji e="💤" /> 蓄力</template>
         <template v-else-if="intent.type === 'summon'"><Emoji e="📣" /> 召唤</template>
-        <template v-else-if="intent.type === 'steal'"><Emoji e="🪙" /> 偷 {{ intent.amount }}</template>
+        <template v-else-if="intent.type === 'steal'"
+          ><Emoji e="🪙" /> 偷 {{ intent.amount }}</template
+        >
         <template v-else-if="intent.type === 'flee'"><Emoji e="💨" /> 逃跑</template>
         <template v-else>
-          <Emoji :e="intent.type === 'debuff' ? '🔻' : '🔺'" /> <Emoji :e="statusById[intent.status]?.icon" />
+          <Emoji :e="intent.type === 'debuff' ? '🔻' : '🔺'" />
+          <Emoji :e="statusById[intent.status]?.icon" />
           {{ intent.stacks }}
         </template>
-        <span v-for="(a, k) in intent.also ?? []" :key="k" class="ml-1 text-base">+<Emoji :e="TIP_ICON[a.type]" /></span>
+        <span v-for="(a, k) in intent.also ?? []" :key="k" class="ml-1 text-base"
+          >+<Emoji :e="TIP_ICON[a.type]"
+        /></span>
       </HoverTip>
     </div>
     <div
       data-fx="sprite"
       class="w-40 h-40 rounded-full bg-transparent flex items-center justify-center text-5xl transition-all duration-150"
       :class="
-        enemy.hp <= 0
+        enemy.pendingExplosion
+          ? 'ring-4 ring-amber-400 animate-pulse'
+          : enemy.hp <= 0
           ? dying
             ? 'sprite-dying'
             : 'sprite-corpse'
@@ -152,9 +245,13 @@ const intentTip = computed(() => {
               : ''
       "
     >
-      <Emoji :e="enemy.def.icon ?? '🟢'" />
+      <span :style="enemy.def.iconColor ? { color: enemy.def.iconColor, textShadow: '0 0 2px #e2e8f0, 0 0 16px currentColor', fontFamily: 'serif', fontWeight: '900', fontSize: '1.6em' } : undefined"><Emoji :e="enemy.def.icon ?? '🟢'" /></span>
     </div>
     <div class="font-bold">{{ enemy.def.name }}</div>
+    <div v-if="enemy.pendingExplosion" class="text-xs text-amber-300">待爆炸 · 不可选择</div>
+    <HoverTip v-else-if="enemy.def.deathHealFamily" icon="💚" name="同族恢复" text="死亡时将其他存活同族恢复至满血；不复活尸体，不影响待爆炸单位" color="#86efac"><span class="text-xs text-green-300">死亡恢复存活同族</span></HoverTip>
+    <HoverTip v-else-if="enemy.def.delayedExplosion" icon="💣" name="延迟爆炸" text="支付多少生命，下一回合就以该值为基础伤害爆炸；直接被击杀时爆炸基础伤害为 0。待爆炸不算尸体，不能受到任何作用" color="#fbbf24"><span class="text-xs text-amber-300">延迟爆炸</span></HoverTip>
+    <span v-else-if="enemy.def.revival" class="text-xs text-purple-300">复活剩余 {{ Math.max(0, enemy.def.revival.limit - (enemy.revivesUsed ?? 0)) }} 次</span>
     <div class="relative w-48 h-4">
       <div class="w-full h-full bg-slate-700 rounded overflow-hidden">
         <div
@@ -169,8 +266,8 @@ const intentTip = computed(() => {
         class="absolute left-full -ml-3 -mt-1 top-1/2 -translate-y-1/2 w-10 h-10 drop-shadow-[0_0_6px_rgba(56,189,248,0.8)]"
       >
         <span class="absolute inset-0 flex items-center justify-center text-4xl leading-none"
-          ><Emoji e="🛡" /></span
-        >
+          ><Emoji e="🛡"
+        /></span>
         <span
           class="absolute inset-0 flex items-center justify-center text-xs leading-none font-black text-white [text-shadow:0_0_4px_#0c4a6e,0_0_4px_#0c4a6e]"
           style="top: 9px"
@@ -180,7 +277,9 @@ const intentTip = computed(() => {
     </div>
     <div class="text-sm">
       <Emoji e="❤" /> {{ enemy.hp }}/{{ enemy.maxHpOverride ?? enemy.def.maxHp }}
-      <span v-if="enemy.stolenGold" class="ml-2 text-amber-300"><Emoji e="🪙" /> {{ enemy.stolenGold }}</span>
+      <span v-if="enemy.stolenGold" class="ml-2 text-amber-300"
+        ><Emoji e="🪙" /> {{ enemy.stolenGold }}</span
+      >
     </div>
     <StatusIcons :statuses="enemy.statuses" />
   </div>

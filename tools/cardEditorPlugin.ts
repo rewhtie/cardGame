@@ -1,5 +1,6 @@
 /// <reference types="node" />
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { writeEditorFile as writeOwn } from './editorWrites'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Plugin } from 'vite'
@@ -7,8 +8,10 @@ import type { CardSpec } from '../src/data/cards/cardSpec'
 import { cardToCode } from './cardCodegen'
 import { syncDocs } from './docSync'
 
-const DIRS = ['warrior', 'doctor', 'swordSaint', 'ancientTree', 'colorless']
-const RARITIES = ['white', 'blue', 'gold']
+const DIRS = ['warrior', 'doctor', 'swordSaint', 'ancientTree', 'colorless', 'exclusive']
+const RARITIES = ['white', 'blue', 'gold', 'status']
+const validLocation = (dir: string, rarity: string) =>
+  DIRS.includes(dir) && RARITIES.includes(rarity) && (dir === 'exclusive' ? rarity === 'status' : rarity !== 'status')
 const CARDS_DIR = fileURLToPath(new URL('../src/data/cards', import.meta.url))
 
 interface DeleteBody {
@@ -27,14 +30,6 @@ interface SaveBody {
   fromRarity: string
   spec: CardSpec
 }
-
-/** 编辑器自己刚写入的文件：这些变更不触发整页刷新，否则每次保存都会回到主菜单 */
-const ownWrites = new Map<string, number>()
-function writeOwn(file: string, text: string) {
-  ownWrites.set(resolve(file), Date.now())
-  writeFileSync(file, text)
-}
-const isOwnWrite = (file: string) => Date.now() - (ownWrites.get(resolve(file)) ?? 0) < 3000
 
 const fileOf = (dir: string, rarity: string) => resolve(CARDS_DIR, dir, `${rarity}.ts`)
 
@@ -57,7 +52,7 @@ function readLines(file: string) {
 function validate(body: SaveBody) {
   const { dir, fromRarity, spec } = body
   if (!DIRS.includes(dir) || !DIRS.includes(body.fromDir ?? dir)) throw new Error('未知职业目录')
-  if (!RARITIES.includes(fromRarity) || !RARITIES.includes(spec.rarity)) throw new Error('未知稀有度')
+  if (!validLocation(body.fromDir ?? dir, fromRarity) || !validLocation(dir, spec.rarity)) throw new Error('专属目录只支持状态牌，职业目录只支持白 / 蓝 / 金牌')
   if (!/^\w+$/.test(spec.id)) throw new Error('非法的卡牌 id')
   if (!spec.name.trim()) throw new Error('名称不能为空')
   if (spec.cost !== 'X' && !Number.isInteger(spec.cost)) throw new Error('费用必须是整数或 X')
@@ -112,7 +107,7 @@ function referencedIn(id: string, ownFile: string, block: [number, number]): str
 
 function remove(body: DeleteBody) {
   const { dir, rarity, id } = body
-  if (!DIRS.includes(dir) || !RARITIES.includes(rarity)) throw new Error('未知职业目录或稀有度')
+  if (!validLocation(dir, rarity)) throw new Error('未知职业目录或稀有度')
   if (!/^\w+$/.test(id)) throw new Error('非法的卡牌 id')
   const file = fileOf(dir, rarity)
   const src = readLines(file)
@@ -129,11 +124,6 @@ export function cardEditorPlugin(): Plugin {
   return {
     name: 'card-editor',
     apply: 'serve',
-    // 保存写回源码后，卡牌数据模块没有可接住热更新的边界，Vite 会整页刷新；
-    // 编辑器自己的写入直接吞掉，编辑器里的状态已是最新，要在游戏里看效果时手动刷新页面
-    handleHotUpdate({ file }) {
-      if (isOwnWrite(file)) return []
-    },
     configureServer(server) {
       server.middlewares.use('/__dev/cards', (req, res) => {
         if (req.method !== 'POST') {

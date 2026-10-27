@@ -213,4 +213,12 @@ export const warriorGold: Card[] = [
     .draw(3)
     .reward()
     .upgrade((u) => u.draw(4)),
+  Card.gold('lifeOverload', '生命过载')
+    .icon('❤️‍🔥')
+    .cost(2)
+    .targetSelf()
+    .asSkill()
+    .oneShot()
+    .effect({ type: 'lifeOverload' })
+    .upgrade((u) => u.retain()),
 ]

@@ -4,9 +4,17 @@ import { fxBatch, fxTimes, lag } from '@/composables/useFx'
 import { playSfx } from '@/composables/useSfx'
 import type { CardDef } from '@/engine/types'
 import CardAddFx from './CardAddFx.vue'
-import { isForgeable, resolveCards } from '@/engine/enchant'
+import CardRemoveFx from './CardRemoveFx.vue'
+import { canEnchantCard, isForgeable, resolveCards } from '@/engine/enchant'
+import { ENCHANTS } from '@/engine/enchants'
 import { findNode, type NodeType } from '@/engine/map'
-import { campfireSpecial, campfireSpecialBlocked, maxPotions, type RunAction, type RunState } from '@/engine/run'
+import {
+  campfireSpecial,
+  campfireSpecialBlocked,
+  maxPotions,
+  type RunAction,
+  type RunState,
+} from '@/engine/run'
 import { cards } from '@/data/cards'
 import { relics } from '@/data/items'
 import { relicPickSpec } from '@/engine/relics'
@@ -19,7 +27,6 @@ import ForgeView from './ForgeView.vue'
 import MapView from './MapView.vue'
 import HealFx from './HealFx.vue'
 import HurtFx from './HurtFx.vue'
-import SpearFx from './SpearFx.vue'
 import PileButton from './PileButton.vue'
 import PileModal from './PileModal.vue'
 import PotionOfferModal from './PotionOfferModal.vue'
@@ -29,9 +36,13 @@ import RestView from './RestView.vue'
 import RewardView from './RewardView.vue'
 import ShopView from './ShopView.vue'
 import RunHud from './RunHud.vue'
+import RunProgress from './RunProgress.vue'
+import { runProgress } from '@/engine/progress'
 
 const props = defineProps<{ run: RunState }>()
 const emit = defineEmits<{ send: [action: RunAction]; menu: []; retry: [] }>()
+
+const progress = computed(() => runProgress(props.run))
 
 const REST_HEAL_RATIO = 0.3
 const PLACEHOLDERS: Partial<Record<NodeType, { icon: string; label: string }>> = {
@@ -66,11 +77,27 @@ const pickSpec = computed(() =>
 const showDeck = ref(false)
 /** 非地图界面从状态栏打开的地图预览 */
 const showMap = ref(false)
-const eventDef = computed(() =>
-  props.run.content.events?.find((e) => e.id === props.run.event?.id),
-)
+const eventDef = computed(() => props.run.content.events?.find((e) => e.id === props.run.event?.id))
 const deckCards = computed(() => resolveCards(cards, props.run.content.deck))
 const showHud = computed(() => props.run.screen !== 'victory' && props.run.screen !== 'defeat')
+
+const removeFx = ref<{ key: number; card: CardDef; delay: number; index: number; total: number }[]>([])
+let removeKey = 0
+watch(fxBatch, (b) => {
+  const times = fxTimes(b.events)
+  const removed = b.events.flatMap((e, i) => {
+    if (e.type !== 'cardRemoved') return []
+    const card = resolveCards(props.run.content.cards, [e.cardId])[e.cardId]
+    return card ? [{ card, delay: times[i] ?? 0 }] : []
+  })
+  removeFx.value.push(...removed.map((item, index) => ({
+    ...item,
+    key: ++removeKey,
+    delay: item.delay + index * 120,
+    index,
+    total: removed.length,
+  })))
+})
 
 // 任何来源的玩家回血（战斗、药水、遗物、火堆）统一播放全屏回血特效
 const heal = ref({ key: 0, amount: 0, maxHp: false })
@@ -100,16 +127,6 @@ watch(fxBatch, (b) => {
   hurtTimer = setTimeout(() => (hurt.value.amount = 0), 900)
 })
 
-// 能力牌演出：传说中的长枪打出时，长枪从左下角螺旋射出，旋转后消失
-const spearFx = ref<{ key: number; delay: number } | null>(null)
-let spearKey = 0
-watch(fxBatch, (b) => {
-  const times = fxTimes(b.events)
-  const i = b.events.findIndex((e) => e.type === 'cardPlayed' && e.cardId === 'legendSpear')
-  if (i < 0) return
-  spearFx.value = { key: ++spearKey, delay: times[i] ?? 0 }
-})
-
 // 塞入状态牌 / 诅咒牌（敌人攻击、事件结果等）：卡牌弹出再飞向牌堆，让玩家感知到
 const ADD_STAGGER_MS = 90
 const ADD_FX_MS = 1400
@@ -123,8 +140,8 @@ const addFx = ref<{
 let addTimer: ReturnType<typeof setTimeout> | undefined
 watch(fxBatch, (b) => {
   const times = fxTimes(b.events)
-  const inBattle = props.run.screen === 'battle'
-  const pool = props.run.battle?.cards ?? props.run.content.cards
+  if (props.run.screen === 'battle') return
+  const pool = props.run.content.cards
   const items: { card: CardDef; delay: number; to: 'deck' | 'discard'; index: number }[] = []
   b.events.forEach((e, i) => {
     if (e.type !== 'cardAdded') return
@@ -132,7 +149,12 @@ watch(fxBatch, (b) => {
     if (!card) return
     for (let k = 0; k < e.count; k++) {
       const index = items.length
-      items.push({ card, delay: (times[i] ?? 0) + index * ADD_STAGGER_MS, to: inBattle ? 'discard' : 'deck', index })
+      items.push({
+        card,
+        delay: (times[i] ?? 0) + index * ADD_STAGGER_MS,
+        to: 'deck',
+        index,
+      })
     }
   })
   if (!items.length) return
@@ -140,7 +162,10 @@ watch(fxBatch, (b) => {
   // 诅咒 / 状态牌弹出的那一刻响一声；战斗内外都走这里，避免重复
   items.forEach((x) => {
     const bad = x.card.rarity === 'curse' || x.card.rarity === 'status'
-    setTimeout(() => void playSfx(bad ? 'battle.cardAdded.bad' : 'battle.cardAdded.normal'), x.delay)
+    setTimeout(
+      () => void playSfx(bad ? 'battle.cardAdded.bad' : 'battle.cardAdded.normal'),
+      x.delay,
+    )
   })
   clearTimeout(addTimer)
   addTimer = setTimeout(
@@ -156,7 +181,9 @@ watch(fxBatch, (b) => {
       v-if="run.screen === 'map'"
       :run="run"
       @choose="(id, god) => emit('send', { type: 'chooseNode', id, god })"
+      @cheat-gold="emit('send', { type: 'cheatGold' })"
       @cheat-next="(enemies) => emit('send', { type: 'cheatNextBattle', enemies })"
+      @cheat-event="(id) => emit('send', { type: 'cheatNextEvent', id })"
     />
     <AncientView
       v-else-if="run.screen === 'ancient'"
@@ -175,13 +202,15 @@ watch(fxBatch, (b) => {
     />
     <CardPickView
       v-else-if="run.screen === 'eventPick' && run.event?.pick"
-      :title="run.event.pick === 'remove' ? '删除一张牌' : '升级一张牌'"
-      :hint="run.event.pick === 'remove' ? '选择一张牌从牌组中永久删除' : '选择一张牌升级'"
+      :title="run.event.pick === 'enchant' ? `附魔「${ENCHANTS[run.event.enchant ?? '']?.name ?? ''}」` : run.event.pick === 'remove' ? '删除一张牌' : '升级一张牌'"
+      :hint="run.event.pick === 'enchant' ? '选择一张符合条件的牌附魔' : run.event.pick === 'remove' ? '选择一张牌从牌组中永久删除' : '选择一张牌升级'"
       :deck="run.content.deck"
       :cards="cards"
       :count="1"
-      :eligible="(id: string) => run.event?.pick === 'remove' || isForgeable(run.content.cards, id)"
-      @confirm="(deckIndexes) => emit('send', { type: 'eventPickCard', deckIndex: deckIndexes[0] ?? -1 })"
+      :eligible="(id: string) => run.event?.pick === 'enchant' ? canEnchantCard(run.content.cards, id, run.event.enchant ?? '') : run.event?.pick === 'remove' || isForgeable(run.content.cards, id)"
+      @confirm="
+        (deckIndexes) => emit('send', { type: 'eventPickCard', deckIndex: deckIndexes[0] ?? -1 })
+      "
     />
     <EventView
       v-else-if="run.screen === 'event' && eventDef"
@@ -241,6 +270,7 @@ watch(fxBatch, (b) => {
       v-else
       :victory="run.screen === 'victory'"
       :seed="run.seed"
+      :progress="progress"
       @retry="emit('retry')"
       @menu="emit('menu')"
     />
@@ -261,6 +291,7 @@ watch(fxBatch, (b) => {
       @discard="(index) => emit('send', { type: 'discardPotion', index })"
       @aim="(i) => (aimEnemy = i)"
     >
+      <template #progress><RunProgress :progress="progress" /></template>
       <!-- 牌组始终可查看；不在地图上时额外提供地图预览 -->
       <PileButton
         kind="draw"
@@ -290,10 +321,21 @@ watch(fxBatch, (b) => {
       @take="(index) => emit('send', { type: 'takePotion', index })"
       @skip="(index) => emit('send', { type: 'skipPotion', index })"
     />
+    <Transition name="burn-backdrop">
+      <div v-if="removeFx.length" class="burn-backdrop" aria-hidden="true" />
+    </Transition>
+    <CardRemoveFx
+      v-for="it in removeFx"
+      :key="it.key"
+      :card="it.card"
+      :delay="it.delay"
+      :index="it.index"
+      :total="it.total"
+      @done="removeFx = removeFx.filter((item) => item.key !== it.key)"
+    />
     <RelicReveal :cards="cards" />
     <HealFx v-if="heal.amount > 0" :key="heal.key" :amount="heal.amount" :max-hp="heal.maxHp" />
     <HurtFx v-if="hurt.amount > 0" :key="hurt.key" :amount="hurt.amount" />
-    <SpearFx v-if="spearFx" :key="spearFx.key" :delay="spearFx.delay" @done="spearFx = null" />
     <template v-if="addFx.items.length">
       <CardAddFx
         v-for="(it, i) in addFx.items"
@@ -332,7 +374,13 @@ watch(fxBatch, (b) => {
           aria-label="关闭"
           @click="showMap = false"
         >
-          <svg viewBox="0 0 16 16" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2">
+          <svg
+            viewBox="0 0 16 16"
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+          >
             <path d="M3 3l10 10M13 3L3 13" stroke-linecap="round" />
           </svg>
         </button>
@@ -340,3 +388,22 @@ watch(fxBatch, (b) => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.burn-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 74;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: grayscale(1);
+}
+.burn-backdrop-enter-active,
+.burn-backdrop-leave-active { transition: opacity 150ms ease; }
+.burn-backdrop-enter-from,
+.burn-backdrop-leave-to { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .burn-backdrop-enter-active,
+  .burn-backdrop-leave-active { transition: none; }
+}
+</style>

@@ -156,7 +156,8 @@ watch(
     // 只有改动了牌或回复生命的遗物才有表现，其余静默生效
     const found: Reveal[] = []
     for (const e of b.events) {
-      if (e.type === 'cardsUpgraded') found.push({ key: nextKey++, cards: e.cards })
+      if (e.type === 'cardsEnchanted') found.push({ key: nextKey++, cards: e.cards, enchant: true })
+      else if (e.type === 'cardsUpgraded') found.push({ key: nextKey++, cards: e.cards })
       else if (e.type === 'cardsTrained') found.push({ key: nextKey++, cards: e.cards, train: true })
       else if (e.type === 'cardsEvolved') found.push({ key: nextKey++, cards: e.cards, evolve: true })
       else if (e.type === 'relicGained' && (e.cards?.length || e.heal)) {

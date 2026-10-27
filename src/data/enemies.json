@@ -1,6 +1,51 @@
 {
   "enemies": [
     {
+      "id": "he-green",
+      "name": "绿色合",
+      "icon": "合",
+      "iconColor": "#4ade80",
+      "role": "monster",
+      "threat": 2,
+      "nativeStage": 2,
+      "maxHp": 40,
+      "family": "he",
+      "deathHealFamily": true,
+      "intents": [
+        { "type": "attack", "damage": 10 },
+        { "type": "buff", "status": "strength", "stacks": 2 }
+      ]
+    },
+    {
+      "id": "he-black",
+      "name": "黑色合",
+      "icon": "合",
+      "iconColor": "#111827",
+      "role": "monster",
+      "threat": 2,
+      "nativeStage": 2,
+      "maxHp": 40,
+      "family": "he",
+      "delayedExplosion": true,
+      "intents": [{ "type": "sacrificeExplosion" }]
+    },
+    {
+      "id": "he-purple",
+      "name": "紫色合",
+      "icon": "合",
+      "iconColor": "#c084fc",
+      "role": "monster",
+      "threat": 2,
+      "nativeStage": 2,
+      "maxHp": 40,
+      "family": "he",
+      "revival": { "limit": 3, "hpRatio": 0.5 },
+      "intents": [
+        { "type": "debuff", "status": "burn", "stacks": 5 },
+        { "type": "debuff", "status": "vulnerable", "stacks": 2 }
+      ]
+    },
+    {
       "id": "statue",
       "name": "雕像",
       "icon": "🗿",
@@ -10,7 +55,7 @@
       "startStatuses": {
         "crack": 1
       },
-      "loopFrom": 3,
+      "loopFrom": 2,
       "intents": [
         {
           "type": "idle"
@@ -19,12 +64,23 @@
           "type": "idle"
         },
         {
-          "type": "idle"
+          "type": "attack",
+          "damage": 23
         },
         {
           "type": "attack",
-          "damage": 23,
-          "grow": 2
+          "damage": 25
+        },
+        {
+          "type": "attack",
+          "damage": 27,
+          "also": [
+            {
+              "type": "debuff",
+              "status": "frail",
+              "stacks": 2
+            }
+          ]
         }
       ]
     },
@@ -178,6 +234,173 @@
           "block": 8
         }
       ]
+    },
+    {
+      "id": "treant",
+      "name": "树精",
+      "icon": "🌳",
+      "role": "monster",
+      "threat": 3.5,
+      "maxHp": 90,
+      "loopFrom": 3,
+      "intents": [
+        {
+          "type": "addCards",
+          "cardId": "curseReplicate",
+          "count": 1,
+          "to": "draw",
+          "also": [
+            {
+              "type": "addCards",
+              "cardId": "curseReplicate",
+              "count": 1,
+              "to": "discard"
+            }
+          ]
+        },
+        {
+          "type": "attack",
+          "damage": 20
+        },
+        {
+          "type": "buff",
+          "status": "regen",
+          "stacks": 6
+        },
+        {
+          "type": "addCards",
+          "cardId": "curseReplicate",
+          "count": 1,
+          "to": "draw",
+          "also": [
+            {
+              "type": "addCards",
+              "cardId": "curseReplicate",
+              "count": 1,
+              "to": "discard"
+            }
+          ]
+        },
+        {
+          "type": "attack",
+          "damage": 20
+        }
+      ]
+    },
+    {
+      "id": "eggshell",
+      "name": "蛋壳",
+      "icon": "🥚",
+      "role": "elite",
+      "maxHp": 250,
+      "startStatuses": {
+        "eggshell": 1
+      },
+      "playerTurnStatuses": {
+        "tit4tat": 1
+      },
+      "loopFrom": 5,
+      "intents": [
+        {
+          "type": "attack",
+          "damage": 1,
+          "hits": 1
+        },
+        {
+          "type": "attack",
+          "damage": 1,
+          "hits": 2
+        },
+        {
+          "type": "attack",
+          "damage": 1,
+          "hits": 4
+        },
+        {
+          "type": "attack",
+          "damage": 1,
+          "hits": 8
+        },
+        {
+          "type": "attack",
+          "damage": 1,
+          "hits": 16
+        },
+        {
+          "type": "attack",
+          "damage": 1,
+          "hits": 32
+        },
+        {
+          "type": "attack",
+          "damage": 1,
+          "hits": 64
+        }
+      ],
+      "hpPhase": {
+        "threshold": 0.5,
+        "name": "破壳而出",
+        "icon": "🐣",
+        "removeStatuses": [
+          "eggshell",
+          "tit4tat"
+        ],
+        "startStatuses": {
+          "drain": 1
+        },
+        "loopFrom": 5,
+        "intents": [
+          {
+            "type": "attack",
+            "damage": 1,
+            "hits": 1
+          },
+          {
+            "type": "attack",
+            "damage": 1,
+            "hits": 2
+          },
+          {
+            "type": "attack",
+            "damage": 1,
+            "hits": 4
+          },
+          {
+            "type": "attack",
+            "damage": 1,
+            "hits": 8
+          },
+          {
+            "type": "attack",
+            "damage": 1,
+            "hits": 16
+          },
+          {
+            "type": "attack",
+            "damage": 1,
+            "hits": 32
+          },
+          {
+            "type": "attack",
+            "damage": 1,
+            "hits": 64
+          }
+        ],
+        "evenTurnActions": [
+          {
+            "type": "addCards",
+            "cardId": "eggLiquid",
+            "count": 1,
+            "to": "draw"
+          },
+          {
+            "type": "addCards",
+            "cardId": "eggLiquid",
+            "count": 1,
+            "to": "discard"
+          }
+        ]
+      }
     },
     {
       "id": "drainer",
@@ -418,13 +641,16 @@
       "splitOnDeath": [
         "ghost-wisp",
         "ghost-wisp",
+        "ghost-wisp",
+        "ghost-wisp",
+        "ghost-wisp",
         "ghost-wisp"
       ],
       "loopFrom": 2,
       "intents": [
         {
           "type": "attack",
-          "damage": 10,
+          "damage": 5,
           "hits": 3
         },
         {
@@ -453,16 +679,83 @@
         },
         {
           "type": "attack",
-          "damage": 10,
+          "damage": 5,
           "hits": 3
         },
         {
           "type": "attack",
-          "damage": 15,
+          "damage": 10,
           "hits": 3
         }
       ]
+    },
+    {
+      "id": "bull-head",
+      "name": "牛头",
+      "icon": "🐂",
+      "role": "boss",
+      "maxHp": 100,
+      "startStatuses": { "carapace": 1 },
+      "intents": [{ "type": "attack", "damage": 15 }],
+      "stunPhase": {
+        "removeStatuses": ["carapace"],
+        "startStatuses": { "carapace": 1 },
+        "intents": [
+          { "type": "attack", "damage": 12, "also": [{ "type": "defend", "block": 15, "target": "allAllies" }] },
+          { "type": "idle" },
+          { "type": "attack", "damage": 30, "selfStun": 1 }
+        ]
+      }
+    },
+    {
+      "id": "horse-face",
+      "name": "马面",
+      "icon": "🐴",
+      "role": "boss",
+      "maxHp": 100,
+      "actionPriority": 1,
+      "startStatuses": { "lifeShare": 1 },
+      "intents": [
+        { "type": "debuff", "status": "frail", "stacks": 2, "also": [{ "type": "debuff", "status": "vulnerable", "stacks": 2 }] },
+        { "type": "heal", "amount": 10, "target": "allAllies" },
+        { "type": "shareLife" }
+      ]
+    },
+    {
+      "id": "seal",
+      "name": "封",
+      "icon": "封",
+      "iconColor": "#fb7185",
+      "role": "elite",
+      "nativeStage": 2,
+      "maxHp": 80,
+      "intents": [
+        { "type": "attack", "damage": 4, "hits": 3 },
+        { "type": "debuff", "status": "frail", "stacks": 2, "also": [{ "type": "debuff", "status": "skillSeal", "stacks": 1 }] },
+        { "type": "attack", "damage": 2, "hits": 3, "also": [{ "type": "debuff", "status": "vulnerable", "stacks": 2 }] },
+        { "type": "attack", "damage": 8 },
+        { "type": "attack", "damage": 8, "also": [{ "type": "debuff", "status": "skillSeal", "stacks": 1 }] }
+      ]
+    },
+    {
+      "id": "lock",
+      "name": "锁",
+      "icon": "锁",
+      "iconColor": "#60a5fa",
+      "role": "elite",
+      "nativeStage": 2,
+      "maxHp": 80,
+      "intents": [
+        { "type": "debuff", "status": "weak", "stacks": 2, "also": [{ "type": "debuff", "status": "attackLock", "stacks": 1 }] },
+        { "type": "attack", "damage": 3, "hits": 6 },
+        { "type": "attack", "damage": 3, "hits": 4, "also": [{ "type": "debuff", "status": "weak", "stacks": 2 }] },
+        { "type": "defend", "block": 15 },
+        { "type": "attack", "damage": 12, "also": [{ "type": "debuff", "status": "attackLock", "stacks": 1 }] }
+      ]
     }
   ],
-  "encounters": []
+  "encounters": [
+    { "id": "bull-horse", "name": "牛头马面", "role": "boss", "enemies": ["bull-head", "horse-face"], "minFloor": 1, "maxFloor": 999 },
+    { "id": "he-trio", "name": "三色合", "role": "monster", "stage": 2, "enemies": ["he-green", "he-black", "he-purple"], "minFloor": 1, "maxFloor": 999 }
+  ]
 }

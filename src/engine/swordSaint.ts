@@ -15,6 +15,8 @@ export function playCost(
   card: CardDef,
 ): { free: boolean; viaIntent: boolean; viaFlow: boolean; viaStatuses: string[] } {
   const has = (id: string) => (s.player.statuses[id] ?? 0) > 0
+  // 极限：所有牌费用为零，不消耗任何免费来源
+  if (has('extreme')) return { free: true, viaIntent: false, viaFlow: false, viaStatuses: [] }
   const plain = card.rarity !== 'status' && card.rarity !== 'curse'
   const viaStatuses = plain && card.cost !== 0 ? freeStatusesFor(card).filter(has) : []
   const native =

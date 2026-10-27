@@ -3,6 +3,7 @@ import { Card, CardPool } from './card'
 import { loadCardOverrides } from './overrides'
 import type { CardSpec } from './cardSpec'
 import { curseCards } from './curses'
+import { exclusiveStatus } from './exclusive/status'
 import { colorlessBlue } from './colorless/blue'
 import { colorlessGold } from './colorless/gold'
 import { colorlessWhite } from './colorless/white'
@@ -30,7 +31,13 @@ const patch = (list: Card[]): Card[] =>
     if (!o) return c
     try {
       const base = c.spec()
-      const card = Card.fromSpec({ ...o, id: base.id, rarity: base.rarity, reward: base.reward, starter: base.starter })
+      const card = Card.fromSpec({
+        ...o,
+        id: base.id,
+        rarity: base.rarity,
+        reward: base.reward,
+        starter: base.starter,
+      })
       card.build()
       return card
     } catch {
@@ -52,6 +59,8 @@ const classCards = Object.fromEntries(
 /** 通用无色牌：所有职业共用，进每个职业的奖励池 / 图鉴 */
 const rawColorless = [...colorlessWhite, ...colorlessBlue, ...colorlessGold]
 const colorless = patch(rawColorless)
+const exclusive = patch(exclusiveStatus)
+export const exclusiveAllIds = exclusive.map((c) => c.id)
 const colorlessPool = new CardPool(colorless)
 
 const classPools = Object.fromEntries(
@@ -59,7 +68,12 @@ const classPools = Object.fromEntries(
 )
 
 /** 全部卡牌定义；跨职业重复的 id 会报错 */
-const pool = new CardPool([...Object.values(classCards).flat(), ...colorless, ...curseCards])
+const pool = new CardPool([
+  ...Object.values(classCards).flat(),
+  ...colorless,
+  ...exclusive,
+  ...curseCards,
+])
 
 export const cards: Record<string, CardDef> = pool.defs()
 
@@ -86,8 +100,10 @@ export const starterDeck: string[] = classPools.warrior!.starterDeck()
  */
 export const editableCards = (): { dir: string; spec: CardSpec; base: CardSpec }[] => {
   const baseOf = new Map<string, CardSpec>()
-  Object.values({ ...rawClassCards, colorless: rawColorless }).forEach((l) => l.forEach((c) => baseOf.set(c.id, c.spec())))
-  return Object.entries({ ...classCards, colorless }).flatMap(([dir, list]) =>
+  Object.values({ ...rawClassCards, colorless: rawColorless, exclusive: exclusiveStatus }).forEach(
+    (l) => l.forEach((c) => baseOf.set(c.id, c.spec())),
+  )
+  return Object.entries({ ...classCards, colorless, exclusive }).flatMap(([dir, list]) =>
     list.map((c) => ({ dir, spec: c.spec(), base: baseOf.get(c.id)! })),
   )
 }

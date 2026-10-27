@@ -1,3 +1,35 @@
+import type { EnemyState, Intent } from './types'
+import { STATUSES } from './statuses'
+
+export function lifeShareTarget(enemy: EnemyState, enemies: readonly EnemyState[]): EnemyState | undefined {
+  return enemies.filter((e) => e !== enemy && e.hp > 0 && !e.fled)
+    .sort((a, b) => Math.abs(b.hp - enemy.hp) - Math.abs(a.hp - enemy.hp))[0]
+}
+
+export function priorityLifeShare(enemy: EnemyState, enemies: readonly EnemyState[]): boolean {
+  const target = lifeShareTarget(enemy, enemies)
+  return !!target && STATUSES.some((s) => s.priorityLifeShare !== undefined &&
+    (enemy.statuses[s.id] ?? 0) > 0 && Math.abs(target.hp - enemy.hp) >= s.priorityLifeShare)
+}
+
+export function revivalTarget(enemy: EnemyState, enemies: readonly EnemyState[]): EnemyState | undefined {
+  const rule = enemy.def.revival
+  if (!rule || !enemy.def.family || (enemy.revivesUsed ?? 0) >= rule.limit) return undefined
+  return enemies.filter((e) => e !== enemy && e.hp <= 0 && !e.fled && !e.pendingExplosion &&
+    !e.vanishOnDeath && e.deathHandled && e.def.family === enemy.def.family && !e.def.revival)
+    .sort((a, b) => (a.deathOrder ?? 0) - (b.deathOrder ?? 0))[0]
+}
+
+export function currentIntent(enemy: EnemyState, enemies: readonly EnemyState[] = []): Intent | undefined {
+  if (enemy.pendingExplosion) return { type: 'explode', damage: enemy.pendingExplosion.damage }
+  if (enemy.hp > 0 && revivalTarget(enemy, enemies)) return { type: 'revive' }
+  if (priorityLifeShare(enemy, enemies)) return { type: 'shareLife' }
+  const intent = enemy.def.intents[enemy.intentIndex]
+  if (!intent) return undefined
+  const extra = (enemy.turns ?? 0) % 2 === 1 ? enemy.def.evenTurnActions : undefined
+  return extra?.length ? { ...intent, also: [...(intent.also ?? []), ...extra] } : intent
+}
+
 /** 只看意图的类型与递增量，EnemyDef 与编辑器的 EnemySpec 都满足 */
 interface Looping {
   intents: { type: string; grow?: number }[]

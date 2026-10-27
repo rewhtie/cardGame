@@ -6,7 +6,7 @@ export interface SlotConfig {
   volume?: number
   maxSeconds?: number
   silent?: boolean
-  synth?: 'split' | 'evolve' | 'train'
+  synth?: 'split' | 'evolve' | 'train' | 'burn'
 }
 export type SfxMap = Record<string, SlotConfig>
 export type SlotStatus = 'configured' | 'missing' | 'silent'

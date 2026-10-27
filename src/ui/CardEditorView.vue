@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Emoji from '@/ui/Emoji.vue'
+import { useDevHotState } from '@/composables/useDevHotState'
 import { computed, ref } from 'vue'
 import { Card, editableCards } from '@/data/cards'
 import { saveCardOverrides } from '@/data/cards/overrides'
@@ -20,13 +21,15 @@ const DIRS = [
   { value: 'swordSaint', label: '剑圣' },
   { value: 'ancientTree', label: '参天古树' },
   { value: 'colorless', label: '无色' },
+  { value: 'exclusive', label: '专属牌' },
 ]
 const RARITIES: { value: EditableRarity; label: string }[] = [
   { value: 'white', label: '白（普通）' },
   { value: 'blue', label: '蓝（稀有）' },
   { value: 'gold', label: '金（传说）' },
+  { value: 'status', label: '状态（专属牌）' },
 ]
-const RARITY_SHORT: Record<EditableRarity, string> = { white: '白', blue: '蓝', gold: '金' }
+const RARITY_SHORT: Record<EditableRarity, string> = { white: '白', blue: '蓝', gold: '金', status: '状态' }
 
 interface Entry {
   /** 当前选择的职业（改它再保存就会把卡牌移到该职业目录） */
@@ -55,6 +58,10 @@ const search = ref('')
 const selectedId = ref<string | null>(null)
 const message = ref<{ ok: boolean; text: string } | null>(null)
 const saving = ref(false)
+
+useDevHotState(import.meta.hot, 'card-editor', {
+  entries, dirFilter, rarityFilter, search, selectedId, message,
+})
 
 const list = computed(() =>
   entries.value.filter(
@@ -197,6 +204,18 @@ const upgradeRetain = computed({
     if (!up) return
     if (v === '') delete up.retain
     else up.retain = v === 'true'
+  },
+})
+const upgradeOneShot = computed({
+  get: () => {
+    const v = current.value?.spec.upgrade?.oneShot
+    return v === undefined ? '' : String(v)
+  },
+  set: (v: string) => {
+    const up = current.value?.spec.upgrade
+    if (!up) return
+    if (v === '') delete up.oneShot
+    else up.oneShot = v === 'true'
   },
 })
 const upgradeExhaust = computed({
@@ -386,13 +405,13 @@ function revert(e: Entry) {
             <label class="ed-field">
               <span>职业（选择职业专属卡）</span>
               <select v-model="current.dir" class="ed-ctl" :disabled="!DEV">
-                <option v-for="d in DIRS" :key="d.value" :value="d.value">{{ d.label }}</option>
+                <option v-for="d in DIRS" :key="d.value" :value="d.value" :disabled="(d.value === 'exclusive') !== (current.spec.rarity === 'status')">{{ d.label }}</option>
               </select>
             </label>
             <label class="ed-field">
               <span>稀有度</span>
               <select v-model="current.spec.rarity" class="ed-ctl" :disabled="!DEV">
-                <option v-for="r in RARITIES" :key="r.value" :value="r.value">{{ r.label }}</option>
+                <option v-for="r in RARITIES" :key="r.value" :value="r.value" :disabled="(r.value === 'status') !== (current.dir === 'exclusive')">{{ r.label }}</option>
               </select>
             </label>
             <label class="ed-field">
@@ -421,10 +440,13 @@ function revert(e: Entry) {
           <h3>特性</h3>
           <div class="ed-checks">
             <label><input v-model="current.spec.exhaust" type="checkbox" /> 消耗（打出后移出本场战斗）</label>
+            <label><input v-model="current.spec.oneShot" type="checkbox" /> 一次性（打出后从本局牌组永久移除这一张）</label>
             <label><input v-model="current.spec.ethereal" type="checkbox" /> 虚无（回合结束时还在手牌中则消耗）</label>
             <label><input v-model="current.spec.retain" type="checkbox" /> 保留（回合结束时留在手牌）</label>
             <label><input v-model="current.spec.reward" type="checkbox" :disabled="!DEV" /> 加入奖励卡池</label>
             <label><input v-model="current.spec.unplayable" type="checkbox" /> 无法打出</label>
+            <label><input v-model="current.spec.mustPlayFirst" type="checkbox" /> 绝望（必须优先打出，同类牌可任选）</label>
+            <label><input v-model="current.spec.endTurnReplicate" type="checkbox" /> 增殖（回合结束时手中每张向弃牌堆生成一张自身）</label>
             <label><input v-model="current.spec.innate" type="checkbox" /> 固有（第一回合必定抽上手）</label>
             <label class="inline">
               蓄势：每保留一回合伤害 +
@@ -497,12 +519,20 @@ function revert(e: Entry) {
                   <option value="false">改为不保留</option>
                 </select>
               </label>
+              <label class="ed-field">
+                <span>升级后是否一次性</span>
+                <select v-model="upgradeOneShot" class="ed-ctl">
+                  <option value="">不变</option>
+                  <option value="true">改为一次性</option>
+                  <option value="false">改为非一次性</option>
+                </select>
+              </label>
               <label class="ed-check-inline">
                 <input v-model="upgradeReplacesEffects" type="checkbox" /> 自定义升级后的效果
               </label>
             </div>
             <CardEffectsEditor v-if="current.spec.upgrade.effects" v-model="current.spec.upgrade.effects" />
-            <p v-else class="ed-note">未自定义时，升级版沿用原效果，只应用上面的费用 / 消耗 / 保留改动；不开启「升级版」则按系统规则自动提升数值。</p>
+            <p v-else class="ed-note">未自定义时，升级版沿用原效果，只应用上面的费用 / 消耗 / 保留 / 一次性改动；不开启「升级版」则按系统规则自动提升数值。</p>
             <label class="ed-field upText">
               <span>升级版卡面文字（留空则自动生成）</span>
               <input v-model="upgradeText" class="ed-ctl full" />

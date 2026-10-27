@@ -31,7 +31,7 @@ const title = computed(
 const hint = computed(() => {
   const p = pending.value
   if (!p) return ''
-  if (p.kind === 'exhaust') return `选择 ${p.count} 张手牌消耗`
+  if (p.kind === 'exhaust') return p.statusOnly ? '重放：选择一张状态牌消耗' : `选择 ${p.count} 张手牌消耗`
   if (p.kind === 'copy') return '选择一张手牌复制'
   if (p.kind === 'retrieve') return `从弃牌堆选择 ${p.count} 张牌放回手牌`
   if (p.kind === 'recover') return '本回合第一次弃牌：可以选一张刚弃掉的牌放回手牌，也可以不选'
@@ -42,7 +42,13 @@ const hint = computed(() => {
 const selected = ref<number[]>([])
 watch(pending, () => (selected.value = []))
 
+function eligible(id: string) {
+  const p = pending.value
+  return p?.kind !== 'exhaust' || !p.statusOnly || props.state.cards[id]?.rarity === 'status'
+}
+
 function toggle(i: number) {
+  if (!eligible(ids.value[i] ?? '')) return
   if (selected.value.includes(i)) selected.value = selected.value.filter((x) => x !== i)
   else if (need.value.max === 1) selected.value = [i]
   else if (selected.value.length < need.value.max) selected.value = [...selected.value, i]
@@ -58,7 +64,8 @@ const ready = computed(() => selected.value.length >= need.value.min && selected
           <CardView
             v-if="state.cards[id]"
             :card="state.cards[id]!"
-            :playable="true"
+            :playable="eligible(id)"
+            :class="{ 'opacity-40': !eligible(id) }"
             :selected="selected.includes(i)"
             @click="toggle(i)"
           />

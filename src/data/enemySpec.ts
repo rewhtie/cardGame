@@ -5,18 +5,41 @@ export const ROLES = ['monster', 'elite', 'boss', 'other'] as const
 export type EnemyRole = (typeof ROLES)[number]
 
 /** 与引擎的 Intent 相同，只是 summon 里的敌人改为按 id 引用，方便存成 JSON */
-export type ActionSpec = Exclude<IntentAction, { type: 'summon' }> | { type: 'summon'; enemy: string }
+export type ActionSpec =
+  Exclude<IntentAction, { type: 'summon' }> | { type: 'summon'; enemy: string }
 export type IntentSpec = ActionSpec & { also?: ActionSpec[] }
+
+export interface EnemyHpPhaseSpec {
+  threshold: number
+  name?: string
+  icon?: string
+  removeStatuses: string[]
+  startStatuses?: Record<string, number>
+  intents: IntentSpec[]
+  loopFrom?: number
+  evenTurnActions?: ActionSpec[]
+}
 
 export interface EnemySpec {
   id: string
   name: string
   icon?: string
+  iconColor?: string
   role: EnemyRole
   /** 威胁值：仅 monster 有意义，普通战斗按楼层预算组怪时用 */
   threat?: number
   maxHp: number
   startStatuses?: Record<string, number>
+  playerTurnStatuses?: Record<string, number>
+  evenTurnActions?: ActionSpec[]
+  hpPhase?: EnemyHpPhaseSpec
+  stunPhase?: { removeStatuses?: string[]; startStatuses?: Record<string, number>; intents: IntentSpec[]; loopFrom?: number; evenTurnActions?: ActionSpec[] }
+  actionPriority?: number
+  nativeStage?: number
+  family?: string
+  deathHealFamily?: boolean
+  delayedExplosion?: boolean
+  revival?: { limit: number; hpRatio: number }
   intents: IntentSpec[]
   /** 意图走到末尾后回到第几个（缺省 0，整体循环） */
   loopFrom?: number
@@ -28,11 +51,13 @@ export interface EnemySpec {
 
 /** 固定遭遇：指定楼层范围内，普通战斗有一定概率直接出这一组 */
 export interface EncounterSpec {
+  stage?: number
   id: string
   name: string
   enemies: string[]
   minFloor: number
   maxFloor: number
+  role?: 'monster' | 'elite' | 'boss'
 }
 
 export interface EnemyData {
@@ -40,7 +65,22 @@ export interface EnemyData {
   encounters: EncounterSpec[]
 }
 
-const INTENT_TYPES = ['attack', 'defend', 'debuff', 'buff', 'addCards', 'idle', 'summon', 'steal', 'flee']
+const INTENT_TYPES = [
+  'attack',
+  'defend',
+  'heal',
+  'shareLife',
+  'sacrificeExplosion',
+  'explode',
+  'revive',
+  'debuff',
+  'buff',
+  'addCards',
+  'idle',
+  'summon',
+  'steal',
+  'flee',
+]
 const isInt = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n)
 
 /** 校验整份数据；返回错误列表，空表示通过（编辑器保存前与构建时都用） */
@@ -62,21 +102,75 @@ export function validateEnemyData(data: EnemyData): string[] {
       errors.push(`${at}：威胁值必须大于 0`)
     if (e.role === 'monster' && e.threat === undefined) errors.push(`${at}：普通怪需要威胁值`)
     if (e.intents.length === 0) errors.push(`${at}：意图列表不能为空`)
-    if (e.loopFrom !== undefined && (!isInt(e.loopFrom) || e.loopFrom < 0 || e.loopFrom >= e.intents.length))
+    if (
+      e.loopFrom !== undefined &&
+      (!isInt(e.loopFrom) || e.loopFrom < 0 || e.loopFrom >= e.intents.length)
+    )
       errors.push(`${at}：循环起点必须是意图列表内的下标`)
-    for (const [k, v] of Object.entries(e.startStatuses ?? {})) {
-      if (!k.trim() || !isInt(v)) errors.push(`${at}：初始状态 ${k || '(空)'} 的层数必须是整数`)
+    if (e.actionPriority !== undefined && !isInt(e.actionPriority)) errors.push(`${at}：行动优先级必须是整数`)
+    if (e.nativeStage !== undefined && (!isInt(e.nativeStage) || e.nativeStage < 1)) errors.push(`${at}：原生大层必须是正整数`)
+    if (e.family !== undefined && typeof e.family !== 'string') errors.push(`${at}：族群必须是文字`)
+    if (e.deathHealFamily && !e.family) errors.push(`${at}：死亡恢复队友需要族群`)
+    if (e.revival && (!e.family || !isInt(e.revival.limit) || e.revival.limit < 1 ||
+      !(e.revival.hpRatio > 0 && e.revival.hpRatio <= 1))) errors.push(`${at}：复活需要族群、正整数次数和 0–1 生命比例`)
+    if (e.delayedExplosion !== undefined && typeof e.delayedExplosion !== 'boolean') errors.push(`${at}：延迟爆炸必须是布尔值`)
+    if (e.deathHealFamily !== undefined && typeof e.deathHealFamily !== 'boolean') errors.push(`${at}：死亡恢复必须是布尔值`)
+    if (e.stunPhase) {
+      if (!e.stunPhase.intents?.length) errors.push(`${at}：眩晕后意图不能为空`)
+      const from = e.stunPhase.loopFrom
+      if (from !== undefined && (!isInt(from) || from < 0 || from >= e.stunPhase.intents.length))
+        errors.push(`${at}：眩晕后循环起点不合法`)
     }
-    for (const top of e.intents) {
+    const phase = e.hpPhase
+    if (phase) {
+      if (!(typeof phase.threshold === 'number' && phase.threshold > 0 && phase.threshold < 1))
+        errors.push(`${at}：阶段生命比例必须在 0 与 1 之间`)
+      if (
+        !Array.isArray(phase.removeStatuses) ||
+        phase.removeStatuses.some((id) => typeof id !== 'string' || !id.trim())
+      )
+        errors.push(`${at}：阶段移除状态必须是状态 id 列表`)
+      if (!Array.isArray(phase.intents) || phase.intents.length === 0)
+        errors.push(`${at}：阶段意图不能为空`)
+      if (
+        phase.loopFrom !== undefined &&
+        (!isInt(phase.loopFrom) ||
+          phase.loopFrom < 0 ||
+          phase.loopFrom >= (phase.intents?.length ?? 0))
+      )
+        errors.push(`${at}：阶段循环起点必须是意图列表内的下标`)
+    }
+    if (e.stunPhase?.removeStatuses !== undefined && (!Array.isArray(e.stunPhase.removeStatuses) || e.stunPhase.removeStatuses.some((id) => typeof id !== 'string' || !id.trim())))
+      errors.push(`${at}：眩晕阶段移除状态必须是状态 id 列表`)
+    for (const statuses of [e.startStatuses, e.playerTurnStatuses, phase?.startStatuses, e.stunPhase?.startStatuses]) {
+      for (const [k, v] of Object.entries(statuses ?? {})) {
+        if (!k.trim() || !isInt(v) || v < 0)
+          errors.push(`${at}：状态 ${k || '(空)'} 的层数必须是非负整数`)
+      }
+    }
+    for (const top of [
+      ...e.intents,
+      ...(phase?.intents ?? []),
+      ...(e.stunPhase?.intents ?? []),
+      ...(e.stunPhase?.evenTurnActions ?? []),
+      ...(e.evenTurnActions ?? []),
+      ...(phase?.evenTurnActions ?? []),
+    ] as IntentSpec[]) {
       for (const it of [top, ...(top.also ?? [])] as ActionSpec[]) {
         if (!INTENT_TYPES.includes(it.type)) {
           errors.push(`${at}：未知意图 ${it.type}`)
           continue
         }
         const nums: Record<string, unknown> = {}
-        if (it.type === 'attack') nums['伤害'] = it.damage
+        if (it.type === 'attack' || it.type === 'explode') nums['伤害'] = it.damage
+        if (it.type === 'sacrificeExplosion' && !e.delayedExplosion) errors.push(`${at}：支付生命爆炸需要延迟爆炸机制`)
+        if (it.type === 'revive' && !e.revival) errors.push(`${at}：复活意图需要复活机制`)
         if (it.type === 'attack' && it.grow !== undefined) nums['递增'] = it.grow
         if (it.type === 'defend') nums['格挡'] = it.block
+        if (it.type === 'heal') nums['治疗'] = it.amount
+        if (it.type === 'attack' && it.selfStun !== undefined) nums['自晕'] = it.selfStun
+        if ((it.type === 'defend' || it.type === 'heal') && it.target !== undefined && !['self', 'allAllies'].includes(it.target))
+          errors.push(`${at}：队友目标不合法`)
         if (it.type === 'steal') nums['金币'] = it.amount
         if (it.type === 'debuff' || it.type === 'buff') nums['层数'] = it.stacks
         if (it.type === 'addCards') nums['张数'] = it.count
@@ -88,9 +182,21 @@ export function validateEnemyData(data: EnemyData): string[] {
         if ((it.type === 'debuff' || it.type === 'buff') && !it.status.trim())
           errors.push(`${at}：${it.type} 需要状态 id`)
         if (it.type === 'addCards' && !it.cardId.trim()) errors.push(`${at}：addCards 需要卡牌 id`)
-        if (it.type === 'attack' && it.addCards && (!it.addCards.cardId.trim() || !isInt(it.addCards.count)))
+        if (
+          it.type === 'addCards' &&
+          it.to !== undefined &&
+          it.to !== 'draw' &&
+          it.to !== 'discard'
+        )
+          errors.push(`${at}：塞牌目标必须是抽牌堆或弃牌堆`)
+        if (
+          it.type === 'attack' &&
+          it.addCards &&
+          (!it.addCards.cardId.trim() || !isInt(it.addCards.count))
+        )
           errors.push(`${at}：攻击附带塞牌的参数不完整`)
-        if (it.type === 'summon' && !has(it.enemy)) errors.push(`${at}：召唤的敌人 ${it.enemy} 不存在`)
+        if (it.type === 'summon' && !has(it.enemy))
+          errors.push(`${at}：召唤的敌人 ${it.enemy} 不存在`)
       }
     }
     for (const s of [...(e.splitInto ?? []), ...(e.splitOnDeath ?? [])]) {
@@ -101,7 +207,16 @@ export function validateEnemyData(data: EnemyData): string[] {
   const refs = (e: EnemySpec) => [
     ...(e.splitInto ?? []),
     ...(e.splitOnDeath ?? []),
-    ...e.intents.flatMap((i) => [i, ...(i.also ?? [])].flatMap((a) => (a.type === 'summon' ? [a.enemy] : []))),
+    ...(
+      [
+        ...e.intents,
+        ...(e.hpPhase?.intents ?? []),
+        ...(e.stunPhase?.intents ?? []),
+        ...(e.stunPhase?.evenTurnActions ?? []),
+        ...(e.evenTurnActions ?? []),
+        ...(e.hpPhase?.evenTurnActions ?? []),
+      ] as IntentSpec[]
+    ).flatMap((i) => [i, ...(i.also ?? [])].flatMap((a) => (a.type === 'summon' ? [a.enemy] : []))),
   ]
   const byId = new Map(data.enemies.map((e) => [e.id, e]))
   const state = new Map<string, 1 | 2>()
@@ -113,13 +228,16 @@ export function validateEnemyData(data: EnemyData): string[] {
     state.set(id, 2)
     return false
   }
-  for (const e of data.enemies) if (visit(e.id)) errors.push(`${e.name || e.id}：分裂 / 召唤引用成环`)
+  for (const e of data.enemies)
+    if (visit(e.id)) errors.push(`${e.name || e.id}：分裂 / 召唤引用成环`)
 
   const eids = new Set<string>()
   for (const c of data.encounters) {
     if (!/^[\w-]+$/.test(c.id)) errors.push(`非法的遭遇 id：${c.id}`)
     if (eids.has(c.id)) errors.push(`遭遇 id 重复：${c.id}`)
     eids.add(c.id)
+    if (c.role !== undefined && c.role !== 'monster' && c.role !== 'elite' && c.role !== 'boss') errors.push(`遭遇 ${c.name || c.id}：定位不合法`)
+    if (c.stage !== undefined && (!isInt(c.stage) || c.stage < 1)) errors.push(`遭遇 ${c.name || c.id}：大层必须是正整数`)
     if (c.enemies.length === 0) errors.push(`遭遇 ${c.name || c.id}：至少一只敌人`)
     if (c.enemies.some((id) => !has(id))) errors.push(`遭遇 ${c.name || c.id}：包含不存在的敌人`)
     if (!isInt(c.minFloor) || !isInt(c.maxFloor) || c.minFloor < 1 || c.minFloor > c.maxFloor)
@@ -138,15 +256,45 @@ export function buildEnemies(data: EnemyData) {
     const hit = cache.get(id)
     if (hit) return hit
     const s = specs.get(id) as EnemySpec
-    const action = (a: ActionSpec): IntentAction => (a.type === 'summon' ? { type: 'summon', enemy: build(a.enemy) } : { ...a })
+    const action = (a: ActionSpec): IntentAction =>
+      a.type === 'summon' ? { type: 'summon', enemy: build(a.enemy) } : { ...a }
     const def: EnemyDef = {
       id: s.id,
       name: s.name,
       ...(s.icon && { icon: s.icon }),
+      ...(s.iconColor && { iconColor: s.iconColor }),
       maxHp: s.maxHp,
       ...(s.role === 'monster' && s.threat !== undefined && { threat: s.threat }),
-      ...(s.startStatuses && Object.keys(s.startStatuses).length > 0 && { startStatuses: { ...s.startStatuses } }),
+      ...(s.startStatuses &&
+        Object.keys(s.startStatuses).length > 0 && { startStatuses: { ...s.startStatuses } }),
       ...(s.loopFrom !== undefined && { loopFrom: s.loopFrom }),
+      ...(s.actionPriority !== undefined && { actionPriority: s.actionPriority }),
+      ...(s.nativeStage !== undefined && { nativeStage: s.nativeStage }),
+      ...(s.family && { family: s.family }),
+      ...(s.deathHealFamily && { deathHealFamily: true }),
+      ...(s.delayedExplosion && { delayedExplosion: true }),
+      ...(s.revival && { revival: { ...s.revival } }),
+      ...(s.stunPhase && { stunPhase: {
+        ...s.stunPhase,
+        removeStatuses: [...(s.stunPhase.removeStatuses ?? [])],
+        startStatuses: { ...s.stunPhase.startStatuses },
+        intents: s.stunPhase.intents.map(({ also, ...main }) => ({ ...action(main), ...(also?.length && { also: also.map(action) }) })),
+        evenTurnActions: s.stunPhase.evenTurnActions?.map(action),
+      } }),
+      ...(s.playerTurnStatuses && { playerTurnStatuses: { ...s.playerTurnStatuses } }),
+      ...(s.evenTurnActions?.length && { evenTurnActions: s.evenTurnActions.map(action) }),
+      ...(s.hpPhase && {
+        hpPhase: {
+          ...s.hpPhase,
+          startStatuses: { ...s.hpPhase.startStatuses },
+          removeStatuses: [...s.hpPhase.removeStatuses],
+          intents: s.hpPhase.intents.map(({ also, ...main }) => ({
+            ...action(main),
+            ...(also?.length && { also: also.map(action) }),
+          })),
+          evenTurnActions: s.hpPhase.evenTurnActions?.map(action),
+        },
+      }),
       intents: s.intents.map(({ also, ...main }) => ({
         ...action(main),
         ...(also?.length && { also: also.map(action) }),
@@ -159,13 +307,16 @@ export function buildEnemies(data: EnemyData) {
   }
   const byId: Record<string, EnemyDef> = {}
   for (const s of data.enemies) byId[s.id] = build(s.id)
-  const pool = (role: EnemyRole) => data.enemies.filter((s) => s.role === role).map((s) => byId[s.id] as EnemyDef)
+  const pool = (role: EnemyRole) =>
+    data.enemies.filter((s) => s.role === role).map((s) => byId[s.id] as EnemyDef)
   const encounters: EncounterDef[] = data.encounters.map((c) => ({
     id: c.id,
     name: c.name,
     enemies: c.enemies.map((id) => byId[id] as EnemyDef),
     minFloor: c.minFloor,
     maxFloor: c.maxFloor,
+    ...(c.role && { role: c.role }),
+    ...(c.stage !== undefined && { stage: c.stage }),
   }))
   return { byId, pool, encounters }
 }

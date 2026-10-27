@@ -81,6 +81,144 @@ function noiseBurst(c: AudioContext, out: AudioNode, at: number, dur: number, ga
   src.start(at)
 }
 
+/** 纸牌燃烧：点火的呼声、持续火焰和细碎爆裂，末尾随余烬淡出。 */
+async function playBurnSfx(volume = 1) {
+  if (sfxVolume.value <= 0) return
+  try {
+    ctx ??= new AudioContext()
+    if (ctx.state === 'suspended') await ctx.resume()
+    const c = ctx
+    const t0 = c.currentTime
+    const out = c.createGain()
+    out.gain.setValueAtTime(0.0001, t0)
+    out.gain.linearRampToValueAtTime(sfxVolume.value * volume * 0.45, t0 + 0.06)
+    out.gain.setValueAtTime(sfxVolume.value * volume * 0.45, t0 + 0.65)
+    out.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.25)
+    out.connect(c.destination)
+    noiseBurst(c, out, t0, 0.28, 0.6, 'bandpass', 700, 1800)
+    noiseBurst(c, out, t0 + 0.05, 1.15, 0.4, 'lowpass', 2400, 650)
+    for (let i = 0; i < 18; i++) {
+      const at = t0 + 0.04 + i * 0.055 + Math.random() * 0.025
+      noiseBurst(c, out, at, 0.012 + Math.random() * 0.025, 0.12 + Math.random() * 0.22, 'highpass', 1800 + Math.random() * 3200)
+    }
+    setTimeout(() => out.disconnect(), 1500)
+  } catch {
+    // 音效失败不能影响游戏
+  }
+}
+
+export async function playMentalOverloadSfx(signal: AbortSignal) {
+  if (sfxVolume.value <= 0 || signal.aborted) return
+  try {
+    ctx ??= new AudioContext()
+    if (ctx.state === 'suspended') await ctx.resume()
+    if (signal.aborted) return
+    const c = ctx
+    const at = c.currentTime
+    const out = c.createGain()
+    out.gain.value = sfxVolume.value * 0.45
+    out.connect(c.destination)
+    const cleanup = () => {
+      out.disconnect()
+      clearTimeout(timer)
+      signal.removeEventListener('abort', cleanup)
+    }
+    const timer = setTimeout(cleanup, 1700)
+    signal.addEventListener('abort', cleanup, { once: true })
+
+    for (let i = 0; i < 3; i++) {
+      const cut = at + 0.18 + i * 0.14
+      noiseBurst(c, out, cut, 0.12, 0.6 + i * 0.12, 'bandpass', 4200 + i * 600, 800)
+      noiseBurst(c, out, cut + 0.025, 0.045, 0.35, 'highpass', 5000)
+      const blade = c.createOscillator()
+      const gain = c.createGain()
+      blade.type = 'triangle'
+      blade.frequency.setValueAtTime(1800 + i * 250, cut)
+      blade.frequency.exponentialRampToValueAtTime(600, cut + 0.1)
+      gain.gain.setValueAtTime(0.18, cut)
+      gain.gain.exponentialRampToValueAtTime(0.0001, cut + 0.12)
+      blade.connect(gain).connect(out)
+      blade.start(cut)
+      blade.stop(cut + 0.13)
+    }
+    noiseBurst(c, out, at + 0.58, 0.08, 0.35, 'highpass', 3800)
+    const shatter = at + 0.84
+    noiseBurst(c, out, shatter, 0.18, 0.8, 'highpass', 2600)
+    noiseBurst(c, out, shatter + 0.03, 0.58, 0.45, 'bandpass', 6500, 2200)
+    for (let i = 0; i < 20; i++) {
+      const hit = shatter + 0.015 + i * 0.025
+      const level = 1 - i / 22
+      const hz = 2800 + Math.random() * 6000
+      noiseBurst(c, out, hit, 0.018, 0.22 * level, 'highpass', hz)
+      for (const ratio of [1, 1.47]) {
+        const glass = c.createOscillator()
+        const gain = c.createGain()
+        glass.type = 'sine'
+        glass.frequency.value = hz * ratio
+        gain.gain.setValueAtTime(0.09 * level, hit)
+        gain.gain.exponentialRampToValueAtTime(0.0001, hit + 0.12)
+        glass.connect(gain).connect(out)
+        glass.start(hit)
+        glass.stop(hit + 0.13)
+      }
+    }
+  } catch {
+    // 音效失败不能影响游戏
+  }
+}
+
+export async function playLifeOverloadSfx(signal: AbortSignal) {
+  if (sfxVolume.value <= 0 || signal.aborted) return
+  try {
+    ctx ??= new AudioContext()
+    if (ctx.state === 'suspended') await ctx.resume()
+    if (signal.aborted) return
+    const c = ctx
+    const at = c.currentTime
+    const burst = at + 0.6
+    const out = c.createGain()
+    out.gain.value = sfxVolume.value * 0.5
+    out.connect(c.destination)
+    const cleanup = () => {
+      out.disconnect()
+      clearTimeout(timer)
+      signal.removeEventListener('abort', cleanup)
+    }
+    const timer = setTimeout(cleanup, 1700)
+    signal.addEventListener('abort', cleanup, { once: true })
+
+    const hum = c.createOscillator()
+    const hg = c.createGain()
+    hum.type = 'triangle'
+    hum.frequency.setValueAtTime(65, at)
+    hum.frequency.exponentialRampToValueAtTime(310, burst)
+    hg.gain.setValueAtTime(0.0001, at)
+    hg.gain.exponentialRampToValueAtTime(0.7, burst - 0.04)
+    hg.gain.linearRampToValueAtTime(0, burst)
+    hum.connect(hg).connect(out)
+    hum.start(at)
+    hum.stop(burst)
+    noiseBurst(c, out, at, 0.6, 0.25, 'bandpass', 250, 2200)
+
+    const impact = c.createOscillator()
+    const ig = c.createGain()
+    impact.frequency.setValueAtTime(160, burst)
+    impact.frequency.exponentialRampToValueAtTime(38, burst + 0.3)
+    ig.gain.setValueAtTime(0.9, burst)
+    ig.gain.exponentialRampToValueAtTime(0.0001, burst + 0.4)
+    impact.connect(ig).connect(out)
+    impact.start(burst)
+    impact.stop(burst + 0.4)
+    noiseBurst(c, out, burst, 0.35, 0.85, 'bandpass', 3000, 350)
+    noiseBurst(c, out, burst + 0.04, 0.86, 0.45, 'lowpass', 2200, 500)
+    for (let i = 0; i < 16; i++) {
+      noiseBurst(c, out, burst + 0.05 + i * 0.05, 0.025, 0.18 * (1 - i / 18), 'highpass', 2200 + Math.random() * 3000)
+    }
+  } catch {
+    // 音效失败不能影响游戏
+  }
+}
+
 /** 合成的训练声（成长未满）：短促的蓄力嗡鸣，两声裂纹“咔”，收尾一记低沉的闷响，不爆发 */
 async function playTrainSfx(volume = 1) {
   if (sfxVolume.value <= 0) return
@@ -475,7 +613,11 @@ export async function playSfx(slot: string, opts?: { volume?: number; maxSeconds
   if (!url && !config.synth) return
   lastPlayed.set(slot, now)
   const volume = (config.volume ?? 1) * (opts?.volume ?? 1)
-  if (!url) return void (await (config.synth === 'evolve' ? playEvolveSfx(volume) : config.synth === 'train' ? playTrainSfx(volume) : playSplitSfx(volume)))
+  if (!url) {
+    const synths = { evolve: playEvolveSfx, train: playTrainSfx, split: playSplitSfx, burn: playBurnSfx }
+    if (config.synth) await synths[config.synth](volume)
+    return
+  }
   const maxSeconds = opts?.maxSeconds ?? config.maxSeconds
   try {
     ctx ??= new AudioContext()

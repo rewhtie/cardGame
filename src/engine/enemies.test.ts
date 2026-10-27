@@ -477,17 +477,18 @@ describe('雕像', () => {
   it('数据', () => {
     expect(statue.maxHp).toBe(80)
     expect(statue.startStatuses).toEqual({ crack: 1 })
-    expect(statue.loopFrom).toBe(3)
+    expect(statue.loopFrom).toBe(2)
     expect(statue.intents).toEqual([
       { type: 'idle' },
       { type: 'idle' },
-      { type: 'idle' },
-      { type: 'attack', damage: 23, grow: 2 },
+      { type: 'attack', damage: 23 },
+      { type: 'attack', damage: 25 },
+      { type: 'attack', damage: 27, also: [{ type: 'debuff', status: 'frail', stacks: 2 }] },
     ])
     expect(monsterPool).toContain(statue)
   })
-  it('前 3 回合不攻击，第 4、5、6 回合打 23、25、27', () => {
-    expect(run(6)).toEqual([0, 0, 0, 23, 25, 27])
+  it('前 2 回合蓄力，之后循环攻击 23、25、27', () => {
+    expect(run(8)).toEqual([0, 0, 23, 25, 27, 23, 25, 27])
   })
   it('没有 loopFrom 的敌人仍整体循环', () => {
     let s = fight([dummy({ intents: [{ type: 'defend', block: 1 }, { type: 'defend', block: 2 }] })])
@@ -499,11 +500,11 @@ describe('雕像', () => {
     }
     expect(blocks).toEqual([1, 2, 1, 2])
   })
-  it('完美格挡判断含累计加成', () => {
+  it('25 点攻击的完美格挡判断', () => {
     let s = fight([statue])
     s.player.maxHp = s.player.hp = 9999
-    for (let i = 0; i < 4; i++) s = dispatch(s, { type: 'endTurn' }).state
-    // 第 5 个敌方回合伤害 25：25 格挡是完美格挡，24 不是
+    for (let i = 0; i < 3; i++) s = dispatch(s, { type: 'endTurn' }).state
+    // 第 4 个敌方回合伤害 25：25 格挡是完美格挡，24 不是
     const r25 = dispatch({ ...s, player: { ...s.player, block: 25 } }, { type: 'endTurn' })
     const r24 = dispatch({ ...s, player: { ...s.player, block: 24 } }, { type: 'endTurn' })
     expect(r25.events.some((e) => e.type === 'perfectBlock')).toBe(true)

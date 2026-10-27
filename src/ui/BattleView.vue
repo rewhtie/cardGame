@@ -3,20 +3,26 @@ import Emoji from '@/ui/Emoji.vue'
 import { willSplit } from '@/engine/effects'
 import AimArrow from './AimArrow.vue'
 import CardView from './CardView.vue'
+import CardAddFx from './CardAddFx.vue'
 import EnemyView from './EnemyView.vue'
 import HandView from './HandView.vue'
 import PileButton from './PileButton.vue'
 import PendingPicker from './PendingPicker.vue'
 import PileModal from './PileModal.vue'
 import StatusIcons from './StatusIcons.vue'
+import SpearFx from './SpearFx.vue'
+import LifeOverloadFx from './LifeOverloadFx.vue'
+import MentalOverloadFx from './MentalOverloadFx.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { clearFxHandler, fxReset, lag, setFxCards, setFxHandler, whenFxIdle } from '@/composables/useFx'
-import { playSwordArraySfx } from '@/composables/useSfx'
+import { clearFxHandler, fxBatch, fxReset, fxTimes, lag, setFxCards, setFxHandler, whenFxIdle } from '@/composables/useFx'
+import { playSfx, playSwordArraySfx } from '@/composables/useSfx'
+import { playLifeOverloadMusic, stopLifeOverloadMusic } from '@/composables/useMusic'
 import { potions as potionDefs } from '@/data/items'
 import { rawId } from '@/engine/enchant'
-import { intentIndexAt } from '@/engine/intents'
+import { currentIntent, intentIndexAt } from '@/engine/intents'
+import { cardPlayBlock } from '@/engine/cardRules'
 import { BUFFS, DEBUFFS, statusById } from '@/engine/statuses'
-import type { Action, BattleState, GameEvent, Side } from '@/engine/types'
+import type { Action, BattleState, CardDef, GameEvent, Side } from '@/engine/types'
 
 const props = defineProps<{
   state: BattleState
@@ -26,6 +32,18 @@ const props = defineProps<{
   hasRelics?: boolean
 }>()
 const emit = defineEmits<{ action: [action: Action]; continue: [] }>()
+
+const mentalFx = ref<{ key: number; card: CardDef } | null>(null)
+const overloadFx = ref<{ key: number; card: CardDef } | null>(null)
+let overloadKey = 0
+const spearFx = ref<{ key: number; delay: number } | null>(null)
+let spearKey = 0
+watch(fxBatch, (b) => {
+  const times = fxTimes(b.events)
+  const i = b.events.findIndex((e) => e.type === 'cardPlayed' && e.cardId === 'legendSpear')
+  if (i < 0) return
+  spearFx.value = { key: ++spearKey, delay: times[i] ?? 0 }
+})
 
 const openPile = ref<'draw' | 'discard' | 'exhaust' | null>(null)
 const pileView = computed(() => {
@@ -98,6 +116,7 @@ watch(
     }
     await whenFxIdle()
     if (token !== phaseToken || props.state.phase !== phase) return
+    stopLifeOverloadMusic()
     if (phase === 'won' && !props.readonly) emit('continue')
     else if (phase === 'lost') lostShown.value = true
   },
@@ -106,8 +125,8 @@ watch(
 
 const livingCount = computed(() => props.state.enemies.filter((e) => e.hp > 0).length)
 
-function intentOf(enemy: BattleState['enemies'][number]) {
-  return enemy.def.intents[enemy.intentIndex] ?? null
+function intentOf(enemy: BattleState['enemies'][number], enemyIndex: number) {
+  return lag.intentPreview[enemyIndex] ?? currentIntent(enemy, enemies.value) ?? null
 }
 
 // ---- 拖拽出牌：把卡牌拖到敌人身上打出；自身牌拖到手牌区以上松手即可 ----
@@ -181,6 +200,8 @@ function onPress(index: number, e: PointerEvent) {
     if (pickable.value.includes(index)) emit('action', { type: 'playCard', handIndex: m.handIndex, pick: index })
     return
   }
+  const card = props.state.cards[props.state.hand[index] ?? '']
+  if (!card || cardPlayBlock(props.state, card)) return
   const p = toStage(e.clientX, e.clientY)
   drag.value = { index, startX: p.x, startY: p.y, x: p.x, y: p.y, active: false }
   window.addEventListener('pointermove', onMove)
@@ -261,6 +282,15 @@ interface Floater {
   cls?: string
 }
 const floaters = ref<Floater[]>([])
+const addedCards = ref<{
+  id: number
+  card: CardDef
+  to: 'draw' | 'discard'
+  destination: { x: number; y: number }
+  delay: number
+  index: number
+  total: number
+}[]>([])
 const playerEl = ref<HTMLElement | null>(null)
 const blockEl = ref<HTMLElement | null>(null)
 const energyEl = ref<HTMLElement | null>(null)
@@ -562,7 +592,21 @@ const players: { [T in GameEvent['type']]?: (e: Ev<T>, ctx: PlayCtx) => Promise<
     return e.intent.type === 'attack' ? lunge(el) : glow(el, GLOW.enemyAct)
   },
   cardPlayed: (e) => {
-    if (rawId(e.cardId) !== 'bladeMasterPower') return
+    const id = rawId(e.cardId)
+    if (['lifeOverload', 'sensoryOverload', 'mentalOverload'].includes(id)) playLifeOverloadMusic()
+    if (id === 'lifeOverload') {
+      const card = props.state.cards[e.cardId]
+      if (!card) return
+      overloadFx.value = { key: ++overloadKey, card }
+      return new Promise((resolve) => later(1500, () => resolve(undefined)))
+    }
+    if (id === 'mentalOverload') {
+      const card = props.state.cards[e.cardId]
+      if (!card) return
+      mentalFx.value = { key: ++overloadKey, card }
+      return new Promise((resolve) => later(1500, () => resolve(undefined)))
+    }
+    if (id !== 'bladeMasterPower') return
     swordArray()
     return new Promise((resolve) => later(650, () => resolve(undefined)))
   },
@@ -590,6 +634,18 @@ const players: { [T in GameEvent['type']]?: (e: Ev<T>, ctx: PlayCtx) => Promise<
     float(energyEl.value, `+${e.amount} ⚡`, 'fx-energy')
     return glow(energyEl.value, GLOW.energy)
   },
+  enemyExplosionPending: (e) => {
+    const el = spriteOf('enemy', e.enemyIndex)
+    float(el, `待爆炸 ${e.damage}`, 'fx-debuff')
+    return glow(el, GLOW.enemyAct)
+  },
+  enemyExploded: (e) => glow(spriteOf('enemy', e.enemyIndex), GLOW.enemyAct),
+  enemyRevived: (e) => {
+    const el = spriteOf('enemy', e.enemyIndex)
+    healRing(el)
+    float(el, `复活 +${e.amount} ❤`, 'fx-heal')
+    return glow(el, GLOW.heal)
+  },
   healed: (e) => {
     const el = spriteOf(e.target, e.enemyIndex)
     healRing(el)
@@ -608,10 +664,30 @@ const players: { [T in GameEvent['type']]?: (e: Ev<T>, ctx: PlayCtx) => Promise<
     float(el, cardLabel(e.cardId), 'fx-debuff')
     return glow(el, GLOW.cardHurt)
   },
-  cardAdded: (e) => {
-    const el = spriteOf('player')
-    float(el, `${cardLabel(e.cardId)} ×${e.count}`, 'fx-debuff')
-    return glow(el, GLOW.cardAdd)
+  cardAdded: async (e) => {
+    const card = props.state.cards[e.cardId]
+    if (!card || e.count <= 0) return
+    const bad = card.rarity === 'curse' || card.rarity === 'status'
+    if (e.to === 'hand') {
+      void playSfx(bad ? 'battle.cardAdded.bad' : 'battle.cardAdded.normal')
+      return
+    }
+    const pile = e.to ?? 'discard'
+    const target = root.value?.querySelector<HTMLElement>(`[data-pile="${pile}"]`)
+    if (!target) return
+    const rect = target.getBoundingClientRect()
+    const destination = toStage(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    const duration = 1400 + (e.count - 1) * 90
+    const items = Array.from({ length: e.count }, (_, index) => ({
+      id: ++floaterId, card, to: pile, destination, delay: index * 90, index, total: e.count,
+    }))
+    addedCards.value.push(...items)
+    items.forEach((item) => later(item.delay, () => void playSfx(bad ? 'battle.cardAdded.bad' : 'battle.cardAdded.normal')))
+    await new Promise((resolve) => later(duration, () => {
+      const ids = new Set(items.map((item) => item.id))
+      addedCards.value = addedCards.value.filter((item) => !ids.has(item.id))
+      resolve(undefined)
+    }))
   },
   // 只飘字，不占队列时间
   statusApplied: (e) => {
@@ -635,7 +711,9 @@ const enemies = computed(() =>
     return {
       ...e,
       hp: e.hp + (lag.enemyHp[i] ?? 0),
+      pendingExplosion: e.hp + (lag.enemyHp[i] ?? 0) > 0 ? undefined : (lag.explosionPreview[i] ?? e.pendingExplosion),
       block: e.block + (lag.enemyBlock[i] ?? 0),
+      statuses: { ...e.statuses, stunned: Math.max(0, (e.statuses.stunned ?? 0) + (lag.enemyStunned[i] ?? 0)) },
       turns,
       intentIndex: intentIndexAt(e.def, turns),
     }
@@ -645,13 +723,19 @@ const shownBlock = computed(() => props.state.player.block + lag.playerBlock)
 
 // 读档 / 重开：旧战斗没播完的飘字和遮罩立刻作废（队列本身由 resetFx 清空）
 watch(fxReset, () => {
+  stopLifeOverloadMusic()
   phaseToken++
   lostShown.value = false
   timers.forEach((id) => clearTimeout(id))
   timers.clear()
   floaters.value = []
+  addedCards.value = []
+  spearFx.value = null
+  overloadFx.value = null
+  mentalFx.value = null
 })
 onBeforeUnmount(() => {
+  stopLifeOverloadMusic()
   clearFxHandler(playEvent)
   setFxCards(null)
   phaseToken++
@@ -664,6 +748,29 @@ onBeforeUnmount(() => {
     ref="root"
     class="relative w-full h-full overflow-hidden flex flex-col justify-between px-6 pb-6 pt-36 theme-bg text-slate-100"
   >
+    <MentalOverloadFx
+      v-if="mentalFx"
+      :key="mentalFx.key"
+      :card="mentalFx.card"
+      @done="mentalFx = null"
+    />
+    <LifeOverloadFx
+      v-if="overloadFx"
+      :key="overloadFx.key"
+      :card="overloadFx.card"
+      @done="overloadFx = null"
+    />
+    <SpearFx v-if="spearFx" :key="spearFx.key" :delay="spearFx.delay" @done="spearFx = null" />
+    <CardAddFx
+      v-for="item in addedCards"
+      :key="item.id"
+      :card="item.card"
+      :to="item.to"
+      :destination="item.destination"
+      :delay="item.delay"
+      :index="item.index"
+      :total="item.total"
+    />
     <div
       v-if="isDev && !readonly"
       class="absolute right-3 z-50 flex flex-col items-end gap-1.5"
@@ -738,10 +845,11 @@ onBeforeUnmount(() => {
         v-show="!(enemy.vanishOnDeath && enemy.hp <= 0)"
         :key="i"
         :data-enemy-index="i"
+        :style="{ order: -(enemy.def.actionPriority ?? 0) }"
       >
         <EnemyView
           :enemy="enemy"
-          :intent="intentOf(enemy)"
+          :intent="intentOf(enemy, i)"
           :splitting="state.phase === 'player' && willSplit(enemy, livingCount)"
           :cards="state.cards"
           :player-statuses="state.player.statuses"
@@ -805,6 +913,7 @@ onBeforeUnmount(() => {
           <StatusIcons :statuses="state.player.statuses" vertical />
         </div>
         <PileButton
+          data-pile="draw"
           kind="draw"
           label="抽牌堆"
           :count="state.drawPile.length"
@@ -1065,10 +1174,9 @@ onBeforeUnmount(() => {
   line-height: 1;
 }
 .block-icon {
-  font-size: 3.4rem;
+  font-size: 2.8rem;
 }
 .block-num {
-  top: 9px; /* 盾牌 emoji 视觉中心偏下，数字需下移才对准 */
   font-size: 1.1rem;
   font-weight: 900;
   color: #fff;

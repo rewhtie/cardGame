@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Emoji from '@/ui/Emoji.vue'
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { useDevHotState } from '@/composables/useDevHotState'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { cards } from '@/data/cards'
 import { pushFx } from '@/composables/useFx'
 import { DEFAULT_TEST_TURNS, traceCard, type Trace } from '@/testing/autoRun'
@@ -45,6 +46,26 @@ const logLines = computed(() =>
   ]),
 )
 const clampedTurns = computed(() => Math.min(20, Math.max(1, Math.floor(turns.value) || 1)))
+
+if (useDevHotState(import.meta.hot, 'card-test', {
+  kind, turns, speedMs, selectedId, cursor, playing,
+}) && selectedId.value) {
+  try {
+    if (!cards[selectedId.value]) throw new Error('卡牌已删除')
+    trace.value = traceCard(selectedId.value, { turns: clampedTurns.value })
+    cursor.value = Math.min(Math.max(0, cursor.value), Math.max(0, trace.value.steps.length - 1))
+  } catch {
+    selectedId.value = null
+    trace.value = null
+    cursor.value = 0
+    playing.value = false
+  }
+}
+onMounted(() => {
+  if (step.value) pushFx(step.value.events)
+  if (playing.value && !atEnd.value) start()
+  else playing.value = false
+})
 
 function stop() {
   playing.value = false

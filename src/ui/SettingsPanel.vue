@@ -2,6 +2,7 @@
 import Emoji from '@/ui/Emoji.vue'
 import { computed, ref } from 'vue'
 import { useRun } from '@/composables/useRun'
+import { useDevHotState } from '@/composables/useDevHotState'
 import { useSettings } from '@/composables/useSettings'
 import { RESOLUTIONS, type DisplayMode } from '@/settings/settings'
 import { quitApp } from '@/platform/window'
@@ -32,6 +33,8 @@ const SHOW_SEED = false
 /** 设置内的页面：主列表 / 画面设置 */
 const page = ref<'main' | 'display' | 'audio'>('main')
 const copied = ref(false)
+
+useDevHotState(import.meta.hot, 'settings', { showCodex, page })
 
 async function copy(seed: string) {
   try {

@@ -25,7 +25,12 @@ export const largeAcidSlime = get('large-acid-slime')
 export const slimeBoss = get('slime-boss')
 export const ghost = get('ghost')
 export const drainer = get('drainer')
+export const eggshell = get('eggshell')
 export const statue = get('statue')
+export const bullHead = get('bull-head')
+export const horseFace = get('horse-face')
+export const seal = get('seal')
+export const lock = get('lock')
 
 function rotate<T>(list: T[], by: number): T[] {
   return [...list.slice(by), ...list.slice(0, by)]
@@ -40,9 +45,13 @@ export const slimeGroup: EnemyDef[] = [
 
 /** 普通战斗的怪池（定位为 monster 的敌人）：按各自 threat 与楼层预算组怪，见 engine/encounter */
 export const monsterPool: EnemyDef[] = built.pool('monster')
+export const elitePool: EnemyDef[] = built.pool('elite')
 
 /** 固定遭遇（组合怪）：楼层命中时按概率优先于预算组怪 */
 export const encounterList = built.encounters
 
 /** 开发作弊用：全部敌人（含精英 / Boss / 附属）及其定位 */
-export const enemyCatalog = (raw as EnemyData).enemies.map((s) => ({ def: built.byId[s.id] as EnemyDef, role: s.role }))
+export const enemyCatalog = (raw as EnemyData).enemies.map((s) => ({
+  def: built.byId[s.id] as EnemyDef,
+  role: s.role,
+}))

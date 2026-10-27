@@ -95,9 +95,9 @@ describe('传说背心', () => {
     expect(s.player.statuses.perfectGuard).toBe(1)
   })
 
-  it('一次满多个 100 叠多层；计数可带入下一场战斗', () => {
+  it('一次满多个 100 仍最多 1 层；计数可带入下一场战斗', () => {
     const s = play(mk([{ type: 'damage', amount: 250 }], { legendVest: 90 }))
-    expect(s.player.statuses.perfectGuard).toBe(3)
+    expect(s.player.statuses.perfectGuard).toBe(1)
     expect(s.relicState.legendVest).toBe(40)
   })
 })

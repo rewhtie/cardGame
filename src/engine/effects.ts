@@ -3,8 +3,23 @@ import { attackBonusAt } from './intents'
 import { POTION_RULES } from './potions'
 import { attackerOf, attackMods, attacksThisTurn, enemyAttack } from './blades'
 import { fireRelics, relicKeepsWounds } from './relics'
-import { calcAttack, calcBlock, capHpLoss, decayTiming, STATUSES, statusById, triggerTiming, type Timing } from './statuses'
+import {
+  calcAttack,
+  calcBlock,
+  capHpLoss,
+  decayTiming,
+  STATUSES,
+  statusById,
+  triggerTiming,
+  type Timing,
+} from './statuses'
 import type { BattleState, CardDef, Effect, EnemyDef, EnemyState, GameEvent, Side } from './types'
+
+export function exhaustCard(s: BattleState, cardId: string, events: GameEvent[], animate = true) {
+  s.exhaustPile.push(cardId)
+  if (animate) events.push({ type: 'cardExhausted', cardId })
+  fireRelics(s, 'onCardExhausted', events, cardId)
+}
 
 /** 内部使用：浅拷贝出可变草稿，保证 dispatch 不修改入参 */
 export function draft(state: BattleState): BattleState {
@@ -65,7 +80,7 @@ export function deathSplits(s: BattleState, events: GameEvent[]) {
   for (let enemyIndex = 0; enemyIndex < count; enemyIndex++) {
     const e = s.enemies[enemyIndex]!
     const targets = e.def.splitOnDeath ?? []
-    if (isAlive(e) || e.fled || e.deathSplit || targets.length === 0) continue
+    if (isAlive(e) || e.pendingExplosion || e.fled || e.deathSplit || targets.length === 0) continue
     e.deathSplit = true
     e.vanishOnDeath = true
     const spawned = targets.map((def) => spawnEnemy(s, def, events)).filter((i) => i >= 0)
@@ -79,7 +94,12 @@ export const MAX_ENEMIES = 4
 export const livingCount = (s: BattleState) => s.enemies.filter(isAlive).length
 
 /** 战斗中追加一只敌人；已达上限返回 -1，否则返回新敌人的下标 */
-export function spawnEnemy(s: BattleState, def: EnemyDef, events: GameEvent[], hp?: number): number {
+export function spawnEnemy(
+  s: BattleState,
+  def: EnemyDef,
+  events: GameEvent[],
+  hp?: number,
+): number {
   if (livingCount(s) >= MAX_ENEMIES) return -1
   s.enemies.push({
     def,
@@ -94,19 +114,111 @@ export function spawnEnemy(s: BattleState, def: EnemyDef, events: GameEvent[], h
   return enemyIndex
 }
 
+function recordGeneratedStatuses(s: BattleState, cardId: string, count: number, source?: Side) {
+  if (source === 'player' && s.cards[cardId]?.rarity === 'status') {
+    s.playerGeneratedStatuses = (s.playerGeneratedStatuses ?? 0) + count
+  }
+}
+
+export function addCardsToPile(
+  s: BattleState,
+  cardId: string,
+  count: number,
+  events: GameEvent[],
+  to: 'discard' | 'draw' | 'hand' = 'discard',
+  source?: Side,
+) {
+  count = Math.max(0, Math.floor(count))
+  if (count === 0) return
+  for (let i = 0; i < count; i++) {
+    if (to === 'draw') {
+      const r = nextRandom(s.rngState)
+      s.rngState = r[1]
+      s.drawPile.splice(Math.floor(r[0] * (s.drawPile.length + 1)), 0, cardId)
+    } else if (to === 'hand') s.hand.push(cardId)
+    else s.discardPile.push(cardId)
+  }
+  recordGeneratedStatuses(s, cardId, count, source)
+  events.push({ type: 'cardAdded', cardId, count, ...(to !== 'discard' && { to }) })
+}
+
 /** 往玩家弃牌堆塞牌 */
-export function addCardsToDiscard(s: BattleState, cardId: string, count: number, events: GameEvent[]) {
-  for (let i = 0; i < count; i++) s.discardPile.push(cardId)
-  events.push({ type: 'cardAdded', cardId, count })
+export function addCardsToDiscard(
+  s: BattleState,
+  cardId: string,
+  count: number,
+  events: GameEvent[],
+  source?: Side,
+) {
+  addCardsToPile(s, cardId, count, events, 'discard', source)
+}
+
+export function changeEnemyPhase(s: BattleState, enemyIndex: number, events: GameEvent[]) {
+  const e = s.enemies[enemyIndex]
+  const phase = e?.def.hpPhase
+  if (!e || !phase || e.phaseChanged || !isAlive(e) || e.hp > e.def.maxHp * phase.threshold) return
+  e.phaseChanged = true
+  for (const status of phase.removeStatuses) {
+    if (e.statuses[status] === undefined) continue
+    delete e.statuses[status]
+    events.push({ type: 'statusRemoved', target: 'enemy', status, enemyIndex })
+  }
+  e.def = {
+    ...e.def,
+    ...(phase.name && { name: phase.name }),
+    ...(phase.icon && { icon: phase.icon }),
+    intents: phase.intents,
+    loopFrom: phase.loopFrom,
+    playerTurnStatuses: undefined,
+    evenTurnActions: phase.evenTurnActions,
+  }
+  e.turns = 0
+  e.intentIndex = 0
+  for (const [status, stacks] of Object.entries(phase.startStatuses ?? {}))
+    addStatus(s, 'enemy', enemyIndex, status, stacks, events)
 }
 
 /** 敌人生命归零时：归还偷走的金币 */
-export function onEnemyDeath(s: BattleState, enemyIndex: number, events: GameEvent[]) {
+export function beginExplosion(s: BattleState, enemyIndex: number, damage: number, events: GameEvent[]) {
   const e = s.enemies[enemyIndex]
-  if (!e?.stolenGold) return
-  s.gold += e.stolenGold
-  events.push({ type: 'goldReturned', amount: e.stolenGold })
-  e.stolenGold = 0
+  if (!e || e.pendingExplosion || e.deathHandled) return
+  e.hp = 0
+  e.block = 0
+  e.statuses = {}
+  e.turns = 0
+  e.intentIndex = 0
+  e.pendingExplosion = { damage, dueTurn: s.turn + 1 }
+  events.push({ type: 'enemyExplosionPending', enemyIndex, damage })
+}
+
+export const isCombatRemaining = (e: EnemyState) => isAlive(e) || !!e.pendingExplosion
+
+export function onEnemyDeath(s: BattleState, enemyIndex: number, events: GameEvent[], exploded = false) {
+  const e = s.enemies[enemyIndex]
+  if (!e || e.deathHandled || e.pendingExplosion) return
+  if (e.def.delayedExplosion && !exploded) {
+    beginExplosion(s, enemyIndex, 0, events)
+    return
+  }
+  e.deathHandled = true
+  e.deathOrder = Math.max(0, ...s.enemies.map((enemy) => enemy.deathOrder ?? 0)) + 1
+  if (e.def.family) {
+    e.statuses = {}
+    e.block = 0
+    e.turns = 0
+    e.intentIndex = 0
+  }
+  if (e.stolenGold) {
+    s.gold += e.stolenGold
+    events.push({ type: 'goldReturned', amount: e.stolenGold })
+    e.stolenGold = 0
+  }
+  if (e.def.deathHealFamily && e.def.family) {
+    s.enemies.forEach((ally, index) => {
+      if (ally !== e && isAlive(ally) && !ally.fled && ally.def.family === e.def.family)
+        heal(s, 'enemy', index, ally.maxHpOverride ?? ally.def.maxHp, events)
+    })
+  }
 }
 
 /** 第一只存活敌人的下标；全部死亡返回 -1 */
@@ -134,7 +246,7 @@ export function applyDamage(
   opts: DamageOpts = {},
 ) {
   const t = target === 'player' ? s.player : s.enemies[enemyIndex]
-  if (!t) return
+  if (!t || (target === 'enemy' && s.enemies[enemyIndex]?.pendingExplosion)) return
   const attacker = opts.source ? statusesOf(s, opts.source.side, opts.source.enemyIndex) : undefined
   // 出手方（玩家或敌人）身上的背水 / 感电 / 活力 / 冰霜穿甲等一律按出手方自己的状态算，增益跟着状态走
   const from =
@@ -154,26 +266,25 @@ export function applyDamage(
   let titBack = 0
   const tit = t.statuses.tit4tat ?? 0
   if (opts.source && opts.source.side !== target && amount > 0 && tit > 0) {
-    events.push({ type: 'statusTriggered', target, status: 'tit4tat', ...(target === 'enemy' ? { enemyIndex } : {}) })
+    events.push({
+      type: 'statusTriggered',
+      target,
+      status: 'tit4tat',
+      ...(target === 'enemy' ? { enemyIndex } : {}),
+    })
     titBack = amount * tit
   }
+  if (target === 'enemy' && hpLost > 0) changeEnemyPhase(s, enemyIndex, events)
   if (target === 'enemy' && hpLost > 0 && t.hp <= 0) {
     // 斩杀：致命一击来自玩家自己的伤害（有来源），中毒 / 反伤 / 遗物等无来源伤害不算
-    if (opts.source?.side === 'player') s.cardKill = true
-    onEnemyDeath(s, enemyIndex, events)
+    if (opts.source?.side === 'player' && !s.enemies[enemyIndex]?.def.delayedExplosion) s.cardKill = true
   }
   if (target === 'player' && hpLost > 0) {
-    for (let i = 0; i < (t.statuses.oldWounds ?? 0); i++) s.discardPile.push(WOUND)
+    addCardsToDiscard(s, WOUND, t.statuses.oldWounds ?? 0, events, target)
   }
   if (hurt && (t.statuses.woundSpawn ?? 0) > 0) {
     // 伤口滋生：每次受伤往抽牌堆随机位置塞 N 张伤口
-    const n = t.statuses.woundSpawn!
-    for (let i = 0; i < n; i++) {
-      const r = nextRandom(s.rngState)
-      s.rngState = r[1]
-      s.drawPile.splice(Math.floor(r[0] * (s.drawPile.length + 1)), 0, WOUND)
-    }
-    events.push({ type: 'cardAdded', cardId: WOUND, count: n })
+    addCardsToPile(s, WOUND, t.statuses.woundSpawn!, events, 'draw', target)
   }
   events.push({
     type: 'damageDealt',
@@ -182,13 +293,21 @@ export function applyDamage(
     blocked,
     ...(target === 'enemy' ? { enemyIndex } : {}),
   })
+  if (target === 'enemy' && hpLost > 0 && t.hp <= 0) onEnemyDeath(s, enemyIndex, events)
   if (target === 'enemy') legendVestAdd(s, hpLost + blocked, events)
 
   const src = opts.source
   // 汲血：出手方每段伤害各恢复实际损失生命的 10%×层数，至少 1 点（玩家、敌人通用）
   if (src && from && hpLost > 0) {
     const drain = from.statuses.bloodDrain ?? 0
-    if (drain > 0) heal(s, src.side, src.enemyIndex ?? 0, Math.max(1, Math.round(hpLost * 0.1 * drain + 1e-9)), events)
+    if (drain > 0)
+      heal(
+        s,
+        src.side,
+        src.enemyIndex ?? 0,
+        Math.max(1, Math.round(hpLost * 0.1 * drain + 1e-9)),
+        events,
+      )
   }
   if (target === 'enemy' && src?.side === 'player') {
     // 寄生种子：被玩家攻击命中（哪怕全被格挡）→ 回复层数的一半，然后清空
@@ -203,7 +322,7 @@ export function applyDamage(
       if (stacks <= 0 || !def.onHit) continue
       const { cardId, count } = def.onHit(stacks)
       events.push({ type: 'statusTriggered', target, status: def.id, enemyIndex })
-      addCardsToDiscard(s, cardId, count, events)
+      addCardsToDiscard(s, cardId, count, events, target)
     }
   }
   if (
@@ -223,7 +342,8 @@ export function applyDamage(
       })
       applyDamage(s, src.side, back, events, src.enemyIndex ?? 0, { reflect: false })
     }
-    if (titBack > 0) applyDamage(s, src.side, titBack, events, src.enemyIndex ?? 0, { reflect: false })
+    if (titBack > 0)
+      applyDamage(s, src.side, titBack, events, src.enemyIndex ?? 0, { reflect: false })
   }
 }
 
@@ -237,7 +357,7 @@ export function applyBlock(
   fromCard = false,
 ) {
   const t = target === 'player' ? s.player : s.enemies[enemyIndex]
-  if (!t) return
+  if (!t || (target === 'enemy' && s.enemies[enemyIndex]?.pendingExplosion)) return
   // 直觉：本回合卡牌获得的格挡不生效，存起来下回合开始再给（传说背心等到真正获得时才计数）
   if (fromCard && target === 'player' && (s.player.statuses.intuition ?? 0) > 0) {
     addStatus(s, 'player', 0, 'intuitionStore', amount, events)
@@ -276,10 +396,14 @@ export function addStatus(
   if (stacks <= 0) return
   if (!statusById[id]) throw new Error(`未知状态：${id}`)
   const owner = side === 'player' ? s.player : s.enemies[enemyIndex]
-  if (!owner) return
+  if (!owner || (side === 'enemy' && s.enemies[enemyIndex]?.pendingExplosion)) return
   // 营养：敌人获得的寄生种子层数 ×1.5（向下取整）
   if (id === 'parasite' && (owner.statuses.nutrient ?? 0) > 0) stacks = Math.floor(stacks * 1.5)
-  owner.statuses[id] = (owner.statuses[id] ?? 0) + stacks
+  const before = owner.statuses[id] ?? 0
+  const next = id === 'perfectGuard' || statusById[id]?.cardPlayLimit ? Math.min(1, before + stacks) : before + stacks
+  owner.statuses[id] = next
+  stacks = next - before
+  if (stacks === 0) return
   events.push({
     type: 'statusApplied',
     target: side,
@@ -300,10 +424,19 @@ export function stripEnemyBuff(s: BattleState, enemyIndex: number, events: GameE
 }
 
 /** 长枪的一次剥除：随机拿走 victim 一个增益，让 holder 本回合获得等量层数的英勇（双方通用） */
-export function spearStrip(s: BattleState, victim: Side, vIdx: number, holder: Side, hIdx: number, events: GameEvent[]) {
+export function spearStrip(
+  s: BattleState,
+  victim: Side,
+  vIdx: number,
+  holder: Side,
+  hIdx: number,
+  events: GameEvent[],
+) {
   const v = victim === 'player' ? s.player : s.enemies[vIdx]
-  if (!v) return
-  const buffs = Object.keys(v.statuses).filter((id) => statusById[id]?.kind === 'buff' && v.statuses[id]! > 0)
+  if (!v || (victim === 'enemy' && s.enemies[vIdx]?.pendingExplosion)) return
+  const buffs = Object.keys(v.statuses).filter(
+    (id) => statusById[id]?.kind === 'buff' && v.statuses[id]! > 0,
+  )
   if (buffs.length === 0) return
   const r = nextRandom(s.rngState)
   s.rngState = r[1]
@@ -311,7 +444,12 @@ export function spearStrip(s: BattleState, victim: Side, vIdx: number, holder: S
   const stacks = v.statuses[id]!
   delete v.statuses[id]
   delete v.statuses[TEMP_PREFIX + id]
-  events.push({ type: 'statusRemoved', target: victim, status: id, ...(victim === 'enemy' ? { enemyIndex: vIdx } : {}) })
+  events.push({
+    type: 'statusRemoved',
+    target: victim,
+    status: id,
+    ...(victim === 'enemy' ? { enemyIndex: vIdx } : {}),
+  })
   addTempStatus(s, holder, hIdx, 'bladeMaster', stacks, events)
 }
 
@@ -319,8 +457,15 @@ export function spearStrip(s: BattleState, victim: Side, vIdx: number, holder: S
 export const TEMP_PREFIX = 'temp:'
 
 /** 获得「回合结束失去」的临时层数：状态本身照常叠加，另记一笔供回合结束扣除 */
-export function addTempStatus(s: BattleState, side: Side, enemyIndex: number, id: string, stacks: number, events: GameEvent[]) {
-  if (stacks <= 0) return
+export function addTempStatus(
+  s: BattleState,
+  side: Side,
+  enemyIndex: number,
+  id: string,
+  stacks: number,
+  events: GameEvent[],
+) {
+  if (stacks <= 0 || (side === 'enemy' && s.enemies[enemyIndex]?.pendingExplosion)) return
   addStatus(s, side, enemyIndex, id, stacks, events)
   const owner = side === 'player' ? s.player : s.enemies[enemyIndex]
   if (owner) owner.statuses[TEMP_PREFIX + id] = (owner.statuses[TEMP_PREFIX + id] ?? 0) + stacks
@@ -343,8 +488,13 @@ function expireTempStatuses(s: BattleState, events: GameEvent[], side: Side = 'p
 /** 场上所有增益的层数总和：玩家 + 存活敌人，只数 kind 为 buff 且层数为正的状态（临时记账键不算） */
 export function fieldBuffTotal(s: BattleState): number {
   const sum = (st: Record<string, number>) =>
-    Object.entries(st).reduce((n, [id, v]) => (statusById[id]?.kind === 'buff' && v > 0 ? n + v : n), 0)
-  return sum(s.player.statuses) + s.enemies.reduce((n, e) => (isAlive(e) ? n + sum(e.statuses) : n), 0)
+    Object.entries(st).reduce(
+      (n, [id, v]) => (statusById[id]?.kind === 'buff' && v > 0 ? n + v : n),
+      0,
+    )
+  return (
+    sum(s.player.statuses) + s.enemies.reduce((n, e) => (isAlive(e) ? n + sum(e.statuses) : n), 0)
+  )
 }
 
 type DamageEffect = Extract<Effect, { type: 'damage' }>
@@ -353,7 +503,13 @@ type DamageEffect = Extract<Effect, { type: 'damage' }>
  * 伤害牌单段的基数（尚未套状态修正）：基础值 + 伤口 / 层数 / 目标状态 / 目标格挡 / 本回合攻击数等追加。
  * 结算（resolveEffect）与卡面预览（preview.ts）共用，保证两边口径一致。
  */
-export function damageBase(s: BattleState, effect: DamageEffect, enemyIndex: number, x: number, own: number): number {
+export function damageBase(
+  s: BattleState,
+  effect: DamageEffect,
+  enemyIndex: number,
+  x: number,
+  own: number,
+): number {
   const field = effect.buffTotal ? fieldBuffTotal(s) : 0
   const base = effect.buffTotal
     ? field > 0
@@ -372,7 +528,8 @@ export function damageBase(s: BattleState, effect: DamageEffect, enemyIndex: num
   const extra = effect.perStack
     ? Math.max(0, s.player.statuses[effect.perStack.status] ?? 0) * effect.perStack.per
     : 0
-  const blockBonus = effect.ifTargetBlock && (target?.block ?? 0) > 0 ? effect.ifTargetBlock.bonus : 0
+  const blockBonus =
+    effect.ifTargetBlock && (target?.block ?? 0) > 0 ? effect.ifTargetBlock.bonus : 0
   const attackBonus = effect.perAttackPlayed ? attacksThisTurn(s) * effect.perAttackPlayed.per : 0
   return base + bonus + extra + tExtra + blockBonus + attackBonus
 }
@@ -389,8 +546,11 @@ export function shiftStatus(
   if (delta === 0) return
   if (!statusById[id]) throw new Error(`未知状态：${id}`)
   const owner = side === 'player' ? s.player : s.enemies[enemyIndex]
-  if (!owner) return
-  const next = (owner.statuses[id] ?? 0) + delta
+  if (!owner || (side === 'enemy' && s.enemies[enemyIndex]?.pendingExplosion)) return
+  const before = owner.statuses[id] ?? 0
+  const next = id === 'perfectGuard' || statusById[id]?.cardPlayLimit ? Math.min(1, before + delta) : before + delta
+  delta = next - before
+  if (delta === 0) return
   const at = side === 'enemy' ? { enemyIndex } : {}
   if (next === 0) {
     delete owner.statuses[id]
@@ -424,8 +584,8 @@ export function heal(
   events: GameEvent[],
 ) {
   const t = side === 'player' ? s.player : s.enemies[enemyIndex]
-  if (!t) return
-  const max = side === 'player' ? s.player.maxHp : s.enemies[enemyIndex]!.def.maxHp
+  if (!t || (side === 'enemy' && !isAlive(s.enemies[enemyIndex]!))) return
+  const max = side === 'player' ? s.player.maxHp : (s.enemies[enemyIndex]!.maxHpOverride ?? s.enemies[enemyIndex]!.def.maxHp)
   const gained = Math.max(0, Math.min(max - t.hp, amount))
   t.hp += gained
   // 实际没回复（已满血）就不发事件，否则界面会飘 "+0 ❤"、音效也会误响
@@ -448,10 +608,10 @@ export function loseHp(
   events: GameEvent[],
 ) {
   const t = side === 'player' ? s.player : s.enemies[enemyIndex]
-  if (!t) return
+  if (!t || (side === 'enemy' && s.enemies[enemyIndex]?.pendingExplosion)) return
   const lost = Math.min(t.hp, amount)
   t.hp -= lost
-  if (side === 'enemy' && lost > 0 && t.hp <= 0) onEnemyDeath(s, enemyIndex, events)
+  if (side === 'enemy' && lost > 0) changeEnemyPhase(s, enemyIndex, events)
   events.push({
     type: 'damageDealt',
     target: side,
@@ -459,6 +619,7 @@ export function loseHp(
     blocked: 0,
     ...(side === 'enemy' ? { enemyIndex } : {}),
   })
+  if (side === 'enemy' && lost > 0 && t.hp <= 0) onEnemyDeath(s, enemyIndex, events)
   if (side === 'enemy') legendVestAdd(s, lost, events)
 }
 
@@ -536,7 +697,8 @@ function fireStatus(
   })
   if (trigger.type === 'loseHp') loseHp(s, side, enemyIndex, trigger.amount, events)
   else if (trigger.type === 'heal') heal(s, side, enemyIndex, trigger.amount, events)
-  else if (trigger.type === 'gainStatus') addStatus(s, side, enemyIndex, trigger.status, trigger.stacks, events)
+  else if (trigger.type === 'gainStatus')
+    addStatus(s, side, enemyIndex, trigger.status, trigger.stacks, events)
   else applyBlock(s, side, trigger.amount, events, enemyIndex)
 }
 
@@ -563,7 +725,8 @@ export function tickStatuses(s: BattleState, side: Side, enemyIndex: number, eve
   if (!owner) return
   for (const def of STATUSES) {
     const stacks = owner.statuses[def.id] ?? 0
-    if (stacks > 0 && (def.decay === 'tick' || def.decay === 'halve')) stepStatus(owner, def, stacks, side, enemyIndex, events)
+    if (stacks > 0 && (def.decay === 'tick' || def.decay === 'halve'))
+      stepStatus(owner, def, stacks, side, enemyIndex, events)
   }
 }
 
@@ -588,7 +751,12 @@ function stepStatus(
  * 不给 enemyIndex：玩家身上落在该时点的状态结算一次，玩家时点还会结算所有存活敌人身上的；
  * 给了 enemyIndex：只结算这个敌人身上落在敌方时点的状态（每个敌人行动前 / 后各一次）。
  */
-export function runTiming(s: BattleState, timing: Timing, events: GameEvent[], enemyIndex?: number) {
+export function runTiming(
+  s: BattleState,
+  timing: Timing,
+  events: GameEvent[],
+  enemyIndex?: number,
+) {
   const owners: [Side, number][] = []
   if (enemyIndex === undefined) {
     owners.push(['player', 0])
@@ -617,7 +785,8 @@ export function runTiming(s: BattleState, timing: Timing, events: GameEvent[], e
       if (def.decay !== 'turnEnd' && def.decay !== 'playerTurnStart') continue
       if ((owner.statuses[def.id] ?? 0) <= 0 || decayTiming(def, side) !== timing) continue
       // 默认的回合结束清空只清玩家的增益：敌人加在玩家身上的减益要撑过敌方回合
-      if (side === 'player' && def.decay === 'turnEnd' && !def.decayAt && def.kind !== 'buff') continue
+      if (side === 'player' && def.decay === 'turnEnd' && !def.decayAt && def.kind !== 'buff')
+        continue
       delete owner.statuses[def.id]
       events.push(removedEvent(side, def.id, idx))
     }
@@ -685,11 +854,19 @@ export function convertCorpseBlock(s: BattleState, enemyIndex: number): string |
 }
 
 /** 新生成一张牌实例：给定定义的副本，id 带唯一后缀，登记进 s.cards */
-export function spawnCardInstance(s: BattleState, baseId: string, tag: string, patch: Partial<CardDef> = {}): string {
+export function spawnCardInstance(
+  s: BattleState,
+  baseId: string,
+  tag: string,
+  patch: Partial<CardDef> = {},
+): string {
   s.spawned = (s.spawned ?? 0) + 1
   const id = `${baseId.split('#')[0]}#${tag}${s.spawned}`
   const def = s.cards[baseId] ?? s.cards[baseId.split('#')[0] as string]
-  if (def) s.cards = { ...s.cards, [id]: { ...def, ...patch, id } }
+  if (def) {
+    s.cards = { ...s.cards, [id]: { ...def, ...patch, id } }
+    recordGeneratedStatuses(s, id, 1, 'player')
+  }
   return id
 }
 
@@ -702,14 +879,28 @@ function openChoice(
 ) {
   if (mode === 'retrieve') {
     // 正在打出的牌已先进了弃牌堆，不能把自己捞回来
-    const slots = s.discardPile.map((_, k) => k).filter((k) => !isWound(s.discardPile[k] as string) && !(s.discardPile[k] === playedId && k === s.discardPile.length - 1))
+    const slots = s.discardPile
+      .map((_, k) => k)
+      .filter(
+        (k) =>
+          !isWound(s.discardPile[k] as string) &&
+          !(s.discardPile[k] === playedId && k === s.discardPile.length - 1),
+      )
     if (slots.length > 0)
-      s.pending = { kind: 'retrieve', count: Math.min(count, slots.length), cards: slots.map((k) => s.discardPile[k] as string), slots }
+      s.pending = {
+        kind: 'retrieve',
+        count: Math.min(count, slots.length),
+        cards: slots.map((k) => s.discardPile[k] as string),
+        slots,
+      }
     return
   }
   if (mode === 'exhaust' || mode === 'copy') {
     if (s.hand.length === 0) return
-    s.pending = mode === 'exhaust' ? { kind: 'exhaust', count: Math.min(count, s.hand.length) } : { kind: 'copy' }
+    s.pending =
+      mode === 'exhaust'
+        ? { kind: 'exhaust', count: Math.min(count, s.hand.length) }
+        : { kind: 'copy' }
   } else if (mode === 'scry') {
     if (s.drawPile.length === 0 && s.discardPile.length > 0) {
       const [pile, rngState] = shuffle(s.discardPile, s.rngState)
@@ -775,6 +966,7 @@ export function resolveEffect(
   /** 正在打出的牌：它已先进了弃牌堆，捞牌时不能把自己捞回来 */
   playedId?: string,
 ) {
+  if (s.enemies[enemyIndex]?.pendingExplosion && hitsTarget(effect)) return
   switch (effect.type) {
     case 'convertCorpse': {
       const e = s.enemies[enemyIndex]!
@@ -782,7 +974,7 @@ export function resolveEffect(
       e.hp = 0
       e.statuses = {}
       onEnemyDeath(s, enemyIndex, events)
-      if (!last) {
+      if (!last && !e.pendingExplosion) {
         s.minions = [...(s.minions ?? []), { hp: MINION_HP, enemyIndex }]
         events.push({ type: 'minionRaised', enemyIndex })
       }
@@ -810,7 +1002,9 @@ export function resolveEffect(
       }
       const rest = e.statuses.parasite
       delete e.statuses.parasite
-      applyDamage(s, 'enemy', eaten * effect.per, events, enemyIndex, { source: { side: 'player' } })
+      applyDamage(s, 'enemy', eaten * effect.per, events, enemyIndex, {
+        source: { side: 'player' },
+      })
       if (rest !== undefined) e.statuses.parasite = rest
       break
     }
@@ -820,7 +1014,14 @@ export function resolveEffect(
     case 'parasiteStatus': {
       const layers = s.enemies[enemyIndex]?.statuses.parasite ?? 0
       if (layers <= 0) break
-      addStatus(s, 'enemy', enemyIndex, effect.status, Math.max(1, Math.floor(layers / effect.divisor)), events)
+      addStatus(
+        s,
+        'enemy',
+        enemyIndex,
+        effect.status,
+        Math.max(1, Math.floor(layers / effect.divisor)),
+        events,
+      )
       break
     }
     case 'blockFromDamage':
@@ -844,7 +1045,9 @@ export function resolveEffect(
     }
     case 'purgeSelfBuff': {
       // 增益减益都算；临时记账键不是真状态，跳过
-      const ids = Object.keys(s.player.statuses).filter((id) => statusById[id] && s.player.statuses[id]! > 0)
+      const ids = Object.keys(s.player.statuses).filter(
+        (id) => statusById[id] && s.player.statuses[id]! > 0,
+      )
       if (ids.length === 0) break
       const r = nextRandom(s.rngState)
       s.rngState = r[1]
@@ -893,7 +1096,13 @@ export function resolveEffect(
     }
     case 'damage': {
       const lowHp = effect.lowHp && s.player.hp * 2 <= s.player.maxHp
-      const base = damageBase(s, effect, enemyIndex, x, lowHp ? effect.lowHp!.amount : effect.amount)
+      const base = damageBase(
+        s,
+        effect,
+        enemyIndex,
+        x,
+        lowHp ? effect.lowHp!.amount : effect.amount,
+      )
       const tStacks = effect.perTargetStatus
         ? Math.max(0, s.enemies[enemyIndex]?.statuses[effect.perTargetStatus.status] ?? 0)
         : 0
@@ -909,11 +1118,17 @@ export function resolveEffect(
       }
       s.lastDamage = events
         .slice(evFrom)
-        .reduce((n, ev) => (ev.type === 'damageDealt' && ev.target === 'enemy' ? n + ev.amount + ev.blocked : n), 0)
+        .reduce(
+          (n, ev) =>
+            ev.type === 'damageDealt' && ev.target === 'enemy' ? n + ev.amount + ev.blocked : n,
+          0,
+        )
       if (effect.perTargetStatus && tStacks > 0) {
         const after = effect.perTargetStatus.after ?? 'double'
-        if (after === 'double') shiftStatus(s, 'enemy', enemyIndex, effect.perTargetStatus.status, tStacks, events)
-        else if (after === 'clear') shiftStatus(s, 'enemy', enemyIndex, effect.perTargetStatus.status, -tStacks, events)
+        if (after === 'double')
+          shiftStatus(s, 'enemy', enemyIndex, effect.perTargetStatus.status, tStacks, events)
+        else if (after === 'clear')
+          shiftStatus(s, 'enemy', enemyIndex, effect.perTargetStatus.status, -tStacks, events)
       }
       if (effect.perStack && stacks > 0) {
         delete s.player.statuses[effect.perStack.status]
@@ -923,22 +1138,13 @@ export function resolveEffect(
     }
     case 'multiplyStatus': {
       const cur = s.enemies[enemyIndex]?.statuses[effect.status] ?? 0
-      if (cur > 0) shiftStatus(s, 'enemy', enemyIndex, effect.status, cur * (effect.factor - 1), events)
+      if (cur > 0)
+        shiftStatus(s, 'enemy', enemyIndex, effect.status, cur * (effect.factor - 1), events)
       break
     }
-    case 'addCard': {
-      const n = Math.max(0, Math.floor(effect.count))
-      for (let i = 0; i < n; i++) {
-        if (effect.to === 'draw') {
-          const r = nextRandom(s.rngState)
-          s.rngState = r[1]
-          s.drawPile.splice(Math.floor(r[0] * (s.drawPile.length + 1)), 0, effect.cardId)
-        } else if (effect.to === 'hand') s.hand.push(effect.cardId)
-        else s.discardPile.push(effect.cardId)
-      }
-      if (n > 0) events.push({ type: 'cardAdded', cardId: effect.cardId, count: n })
+    case 'addCard':
+      addCardsToPile(s, effect.cardId, effect.count, events, effect.to, 'player')
       break
-    }
     case 'penalty': {
       const n = Math.floor(effect.amount)
       if (n <= 0) break
@@ -946,12 +1152,19 @@ export function resolveEffect(
       else if (effect.stat === 'draw') addStatus(s, 'player', 0, 'drawDown', n, events)
       else {
         shiftStatus(s, 'player', 0, effect.stat, -n, events)
-        addStatus(s, 'player', 0, effect.stat === 'strength' ? 'overdraft' : 'overdraftDex', n, events)
+        addStatus(
+          s,
+          'player',
+          0,
+          effect.stat === 'strength' ? 'overdraft' : 'overdraftDex',
+          n,
+          events,
+        )
       }
       break
     }
     case 'addWound':
-      for (let i = 0; i < effect.count; i++) s.discardPile.push(WOUND)
+      addCardsToDiscard(s, WOUND, effect.count, events, 'player')
       break
     case 'exhaustWounds': {
       const pile = effect.from === 'hand' ? s.hand : s.discardPile
@@ -961,8 +1174,7 @@ export function resolveEffect(
       pile.length = 0
       pile.push(...rest)
       for (let i = 0; i < n; i++) {
-        s.exhaustPile.push(WOUND)
-        events.push({ type: 'cardExhausted', cardId: WOUND })
+        exhaustCard(s, WOUND, events)
       }
       const total = effect.per * n
       if (effect.gain === 'block')
@@ -1034,8 +1246,7 @@ export function resolveEffect(
         exhausted += picked.length
         const chosen = new Set(picked)
         for (const k of picked) {
-          s.exhaustPile.push(pile[k] as string)
-          events.push({ type: 'cardExhausted', cardId: pile[k] as string })
+          exhaustCard(s, pile[k] as string, events)
         }
         const rest = pile.filter((_, k) => !chosen.has(k))
         pile.length = 0
@@ -1043,7 +1254,8 @@ export function resolveEffect(
       }
       // 衍生效果：每消耗一张结算一遍（单体目标取当前目标）
       for (let i = 0; i < exhausted; i++)
-        for (const sub of effect.perCard ?? []) resolveEffect(s, sub, events, x, enemyIndex, playedId)
+        for (const sub of effect.perCard ?? [])
+          resolveEffect(s, sub, events, x, enemyIndex, playedId)
       break
     }
     case 'reshuffle': {
@@ -1054,6 +1266,17 @@ export function resolveEffect(
       s.discardPile = []
       s.rngState = rngState
       events.push({ type: 'reshuffled' })
+      break
+    }
+    case 'sensoryOverload': {
+      const stacks = (s.playerGeneratedStatuses ?? 0) * effect.per
+      const target = s.enemies[enemyIndex]
+      if (target && stacks > 0) {
+        for (const status of ['gash', 'vulnerable']) {
+          const room = Math.max(0, 999 - (target.statuses[status] ?? 0))
+          addStatus(s, 'enemy', enemyIndex, status, Math.min(stacks, room), events)
+        }
+      }
       break
     }
     case 'blockByIntent': {
@@ -1122,7 +1345,8 @@ export function resolveEffect(
     case 'woundStatus': {
       const stacks = countWounds(s) * effect.per
       if (effect.to === 'self') addStatus(s, 'player', 0, effect.status, stacks, events)
-      else if (effect.to === 'target') addStatus(s, 'enemy', enemyIndex, effect.status, stacks, events)
+      else if (effect.to === 'target')
+        addStatus(s, 'enemy', enemyIndex, effect.status, stacks, events)
       else
         s.enemies.forEach((e, i) => {
           if (isAlive(e)) addStatus(s, 'enemy', i, effect.status, stacks, events)
@@ -1134,6 +1358,16 @@ export function resolveEffect(
       break
     case 'loseHp':
       loseHp(s, 'player', 0, effect.amount, events)
+      break
+    case 'lifeOverload':
+      loseHp(s, 'player', 0, Math.max(0, s.player.hp - 1), events)
+      applyBlock(s, 'player', Math.max(0, 999 - s.player.block), events, 0, true)
+      break
+    case 'mentalOverload':
+      loseHp(s, 'player', 0, Math.max(0, s.player.hp - 1), events)
+      s.player.maxHp = 1
+      s.player.hp = Math.min(s.player.hp, 1)
+      s.permanentMaxHp = 1
       break
     case 'draw':
       drawCards(s, effect.count, events)

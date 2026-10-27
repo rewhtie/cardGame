@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { markEditorWrite, writeEditorFile } from './editorWrites'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Plugin } from 'vite'
@@ -52,7 +53,7 @@ function save(body: SaveBody): Record<string, string> {
     const data = Buffer.from(w.imp.dataBase64, 'base64')
     const out = join(SFX_DIR, w.final)
     if (!w.compress) {
-      writeFileSync(out, data)
+      writeEditorFile(out, data)
       continue
     }
     const tmp = join(SFX_DIR, `.import-${Date.now()}-${w.final}`)
@@ -60,12 +61,13 @@ function save(body: SaveBody): Record<string, string> {
     const tmpIn = `${tmp}${safeFileName(w.imp.name).slice(safeFileName(w.imp.name).lastIndexOf('.'))}`
     writeFileSync(tmpIn, data)
     try {
-      if (!compress(tmpIn, out)) writeFileSync(out, data)
+      if (!compress(tmpIn, out)) writeEditorFile(out, data)
+      else markEditorWrite(out)
     } finally {
       rmSync(tmpIn, { force: true })
     }
   }
-  writeFileSync(MAP_FILE, renderSfxMap(map))
+  writeEditorFile(MAP_FILE, renderSfxMap(map))
   return renamed
 }
 

@@ -63,6 +63,10 @@ export type Effect =
   | { type: 'heal'; amount: number }
   /** 玩家失去生命：无视格挡 */
   | { type: 'loseHp'; amount: number }
+  | { type: 'lifeOverload' }
+  /** 整局最大生命变为 1，当前生命压至 1（不能复活）；极限、俱焚由卡牌另行 applyStatus */
+  | { type: 'mentalOverload' }
+  | { type: 'sensoryOverload'; per: number }
   /** 把 count 张伤口置入弃牌堆 */
   | { type: 'addWound'; count: number }
   /** 消耗手牌 / 弃牌堆中所有伤口，每张按 gain 结算 per 点收益 */
@@ -119,6 +123,9 @@ export interface CardDef {
   kind: 'attack' | 'skill' | 'power'
   /** 打出后进消耗牌堆（能力牌无效） */
   exhaust?: boolean
+  replay?: boolean
+  /** 成功打出后从本局牌组永久移除这一张，不进入任何牌堆 */
+  oneShot?: boolean
   /** 虚无：回合结束时若还在手牌中，被消耗（优先于保留） */
   ethereal?: boolean
   /** 保留：回合结束时留在手牌里 */
@@ -131,13 +138,17 @@ export interface CardDef {
   freeIfSwordIntent?: boolean
   /** 无法打出（状态牌 / 诅咒牌） */
   unplayable?: boolean
+  /** 手牌中有此类牌时，只能打出同样带此标记的牌 */
+  mustPlayFirst?: boolean
   /** 回合结束时若在手牌中，玩家失去这么多生命 */
   endTurnLoseHp?: number
+  /** 回合结束时每张在手牌中的此牌，向弃牌堆生成一张自身（本次新生成的不触发） */
+  endTurnReplicate?: boolean
   effects: Effect[]
   /** 卡面文字；X 牌用 {x} 占位，显示时由 cardText 展开 */
   text: string
   /** 手写的升级版：火堆锻造时覆盖到原卡上；缺省则按通用规则自动加数值 */
-  upgraded?: Partial<Pick<CardDef, 'cost' | 'target' | 'kind' | 'exhaust' | 'retain' | 'retainGrow' | 'effects' | 'text'>>
+  upgraded?: Partial<Pick<CardDef, 'cost' | 'target' | 'kind' | 'exhaust' | 'oneShot' | 'retain' | 'retainGrow' | 'effects' | 'text'>>
   /** 增量：每打出一次，卡面数值 +grow（战斗实例各自累积） */
   grow?: number
   /** 固有：每场战斗第一回合必定抽上手，不改费用 */
@@ -153,14 +164,19 @@ export interface CardDef {
 /** 一个回合里的单个动作 */
 export type IntentAction =
   /** hits：多段攻击，每段独立结算伤害（缺省 1 段） */
-  | { type: 'attack'; damage: number; hits?: number; grow?: number; addCards?: { cardId: string; count: number } }
-  | { type: 'defend'; block: number }
+  | { type: 'attack'; damage: number; hits?: number; grow?: number; selfStun?: number; addCards?: { cardId: string; count: number } }
+  | { type: 'defend'; block: number; target?: 'self' | 'allAllies' }
+  | { type: 'heal'; amount: number; target?: 'self' | 'allAllies' }
+  | { type: 'shareLife' }
+  | { type: 'sacrificeExplosion' }
+  | { type: 'explode'; damage: number }
+  | { type: 'revive' }
   /** 给玩家上状态 */
   | { type: 'debuff'; status: string; stacks: number }
   /** 给自己上状态 */
   | { type: 'buff'; status: string; stacks: number }
-  /** 往玩家弃牌堆塞牌 */
-  | { type: 'addCards'; cardId: string; count: number }
+  /** 往玩家指定牌堆塞牌；缺省为弃牌堆，抽牌堆随机插入 */
+  | { type: 'addCards'; cardId: string; count: number; to?: 'discard' | 'draw' }
   /** 什么都不做（蓄力） */
   | { type: 'idle' }
   /** 召唤一只敌人，追加到敌人列表末尾；同时存活已满时落空 */
@@ -173,11 +189,33 @@ export type IntentAction =
 /** 敌人一回合的意图：主动作决定图标与预览，also 里的动作在主动作之后依次执行 */
 export type Intent = IntentAction & { also?: IntentAction[] }
 
+export interface EnemyStunPhase {
+  removeStatuses?: string[]
+  startStatuses?: Record<string, number>
+  intents: Intent[]
+  loopFrom?: number
+  evenTurnActions?: IntentAction[]
+}
+
+export interface EnemyHpPhase {
+  /** 剩余生命比例不高于此值时切换一次 */
+  threshold: number
+  name?: string
+  icon?: string
+  removeStatuses: string[]
+  startStatuses?: Record<string, number>
+  intents: Intent[]
+  loopFrom?: number
+  /** 本阶段偶数次行动，在主意图之后追加 */
+  evenTurnActions?: IntentAction[]
+}
+
 export interface EnemyDef {
   id: string
   name: string
   /** 模型图标（emoji 占位） */
   icon?: string
+  iconColor?: string
   maxHp: number
   /** 威胁值：普通战斗按楼层预算组怪时用，意图和数值不随楼层变，难度只靠"出哪些怪、出几只"；缺省不会被抽到 */
   threat?: number
@@ -186,6 +224,19 @@ export interface EnemyDef {
   loopFrom?: number
   /** 开战时自带的状态（被动机制） */
   startStatuses?: Record<string, number>
+  /** 玩家回合开始、旧状态衰减后，补到指定层数 */
+  playerTurnStatuses?: Record<string, number>
+  evenTurnActions?: IntentAction[]
+  hpPhase?: EnemyHpPhase
+  /** 第一次实际跳过眩晕行动后，永久切换意图 */
+  stunPhase?: EnemyStunPhase
+  /** 数值较大的敌人先行动，同优先级保持队列顺序 */
+  actionPriority?: number
+  nativeStage?: number
+  family?: string
+  deathHealFamily?: boolean
+  delayedExplosion?: boolean
+  revival?: { limit: number; hpRatio: number }
   /** 生命降到一半以下时分裂出的敌人，按顺序追加（需要配合 split 状态） */
   splitInto?: EnemyDef[]
   /** 死亡时分裂出的敌人（各带自己的满血，本体不留尸体）；见 effects 的 deathSplits */
@@ -194,6 +245,8 @@ export interface EnemyDef {
 
 /** 固定遭遇：楼层在 [minFloor, maxFloor] 内的普通战斗有一定概率直接出这一组 */
 export interface EncounterDef {
+  stage?: number
+  role?: 'monster' | 'elite' | 'boss'
   id: string
   name: string
   enemies: EnemyDef[]
@@ -203,7 +256,7 @@ export interface EncounterDef {
 
 /** 等待玩家做出的选择；期间只能 resolve */
 export type Pending =
-  | { kind: 'exhaust'; count: number }
+  | { kind: 'exhaust'; count: number; statusOnly?: boolean }
   | { kind: 'copy' }
   /** cards 为抽牌堆顶部的牌（自顶向下） */
   | { kind: 'scry'; cards: string[] }
@@ -226,6 +279,11 @@ export interface PlayerState {
 
 export interface EnemyState {
   def: EnemyDef
+  pendingExplosion?: { damage: number; dueTurn: number }
+  deathHandled?: boolean
+  deathOrder?: number
+  revivesUsed?: number
+  revivedTurn?: number
   hp: number
   block: number
   intentIndex: number
@@ -235,6 +293,9 @@ export interface EnemyState {
   vanishOnDeath?: boolean
   /** 已执行过死亡分裂，避免重复触发 */
   deathSplit?: boolean
+  /** 已切换生命阶段；不会因回血退回 */
+  phaseChanged?: boolean
+  stunPhaseChanged?: boolean
   /** 被偷取后的最大生命值；缺省取 def.maxHp */
   maxHpOverride?: number
   statuses: Record<string, number>
@@ -254,6 +315,17 @@ export interface BattleState {
   cards: Readonly<Record<string, CardDef>>
   /** 本场战斗各牌实例的进化累计次数（键为实例 id，含牌组原有进度） */
   evolveCounts?: Record<string, number>
+  /** 开战时的永久牌组；实例位置在本场战斗中保持不变 */
+  originalDeck?: string[]
+  deckOrigins?: Record<string, number>
+  removedDeckIndices?: number[]
+  pendingOneShotCards?: string[]
+  /** 重放保存首次出牌的 X 值，跨选牌暂停时不重新读取能量。 */
+  pendingReplays?: { card: CardDef; cardId: string; x: number; enemyIndex: number; statusPicked?: boolean }[]
+  /** 俱焚：等待选择结束后才消耗并抽牌的牌；exhaust 为 false 表示该牌已不在任何牌堆（一次性等），只抽牌 */
+  pendingBlazeCards?: { cardId: string; exhaust: boolean }[]
+  /** 永久最大生命变更（精神过载）：run.ts 在 battleAction 里即时同步到整局后清除，只记录一次变更不锁死之后的上限增长 */
+  permanentMaxHp?: number
   /** 本回合已打出的攻击牌数（剑心用；每回合开始清零，不跨战斗） */
   turnAttacks?: number
   /** 本回合已打出的技能牌数（剑鞘用；每回合开始清零） */
@@ -288,6 +360,8 @@ export interface BattleState {
   discoverPool?: string[]
   /** 本回合被「发现」置零费用的牌实例，回合结束时恢复 */
   discovered?: string[]
+  /** 本场由玩家卡牌、自身状态或遗物生成的状态牌累计张数，不含敌方塞牌 */
+  playerGeneratedStatuses?: number
   /** 战斗中生成的牌实例计数 */
   spawned?: number
   /** 本场战斗获得、尚未放进药水栏的药水 */
@@ -316,6 +390,7 @@ export type Action =
 export type Side = 'player' | 'enemy'
 
 export type GameEvent =
+  | { type: 'cardsEnchanted'; cards: { from: string; to: string }[] }
   | { type: 'cardsEvolved'; cards: { from: string; to: string }[] }
   /** 成长进度推进但还没成长：to 是带新进度的牌 id（火堆训练用，播裂痕加深的表现） */
   | { type: 'cardsTrained'; cards: { from: string; to: string }[] }
@@ -328,9 +403,10 @@ export type GameEvent =
   | { type: 'reshuffled' }
   | { type: 'energyGained'; amount: number }
   | { type: 'handDiscarded'; count: number }
-  /** 一张牌进入弃牌堆 / 消耗牌堆（仅用于演出；打出与回合结束两处会发） */
+  /** 非出牌导致的弃牌 / 消耗（仅用于演出） */
   | { type: 'cardDiscarded'; cardId: string }
   | { type: 'cardExhausted'; cardId: string }
+  | { type: 'cardRemoved'; cardId: string }
   | { type: 'perfectBlock' }
   | { type: 'statusApplied'; target: Side; status: string; stacks: number; enemyIndex?: number }
   | { type: 'statusRemoved'; target: Side; status: string; enemyIndex?: number }
@@ -349,8 +425,11 @@ export type GameEvent =
   | { type: 'cardsUpgraded'; cards: { from: string; to: string }[] }
   | { type: 'turnStarted'; turn: number }
   | { type: 'enemyActed'; intent: Intent; enemyIndex: number }
-  /** 往玩家弃牌堆置入牌（蜂巢等） */
-  | { type: 'cardAdded'; cardId: string; count: number }
+  | { type: 'enemyExplosionPending'; enemyIndex: number; damage: number }
+  | { type: 'enemyExploded'; enemyIndex: number; damage: number }
+  | { type: 'enemyRevived'; enemyIndex: number; amount: number }
+  /** 战斗中置入牌（默认弃牌堆）；战斗外为加入永久牌组 */
+  | { type: 'cardAdded'; cardId: string; count: number; to?: 'discard' | 'draw' | 'hand' }
   | { type: 'enemySpawned'; enemyIndex: number }
   | { type: 'enemySplit'; enemyIndex: number; spawned: number[] }
   | { type: 'goldStolen'; amount: number; enemyIndex: number }

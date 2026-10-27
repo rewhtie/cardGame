@@ -34,6 +34,12 @@ export const potions: Record<string, ItemDef> = {
 }
 
 export const relics: Record<string, ItemDef> = {
+  spiritJade: {
+    id: 'spiritJade',
+    name: '灵玉',
+    icon: '💠',
+    text: '每消耗一张牌，对全体敌人造成 1 点伤害',
+  },
   burningBlood: {
     id: 'burningBlood',
     name: '燃烧之血',
@@ -46,7 +52,7 @@ export const relics: Record<string, ItemDef> = {
     id: 'trainingGuide',
     name: '训练指南',
     icon: '📖',
-    text: '附魔一张牌「增量」：每场战斗中每打出一次，卡面数值 +1',
+    text: '附魔一张牌「增量」：每打出一次，卡面数值 +5，仅本场战斗生效',
   },
   roundShield: {
     id: 'roundShield',
@@ -202,7 +208,7 @@ export const relics: Record<string, ItemDef> = {
     id: 'legendVest',
     name: '传说背心',
     icon: '🦺',
-    text: '敌人受到的一切伤害（攻击、反伤、药水、中毒等）与你获得的格挡合并计数，每满 100 点获得 1 层完美防御（计数跨战斗累计）',
+    text: '敌人受到的一切伤害（攻击、反伤、药水、中毒等）与你获得的格挡合并计数，每满 100 点获得 1 层完美防御（最多 1 层，计数跨战斗累计）',
     lore: '补丁摞着补丁，早看不出原来的颜色。战士总说：打得够狠，就没人能碰到我。',
   },
   // 职业徽章

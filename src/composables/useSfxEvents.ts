@@ -38,6 +38,7 @@ export const isNewEnchant = (cards?: { from: string; to: string }[]) =>
 const SOUNDS: { [T in GameEvent['type']]?: (e: Extract<GameEvent, { type: T }>) => void } = {
   // 火堆锻造、事件升级共用
   cardsUpgraded: () => hammer(),
+  cardsEnchanted: () => void playSfx('run.enchant'),
   // 卡牌成长（火堆训练 / 战斗后进化）：蓄力裂开 + 爆发的合成音，时间轴与 RelicReveal 的成长动画对齐
   cardsEvolved: () => void playSfx('run.evolve'),
   // 成长未满：蓄力后裂痕加深，不爆发

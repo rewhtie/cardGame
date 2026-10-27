@@ -8,6 +8,7 @@ import type { Rarity } from '@/engine/types'
 import { upgradeCard } from '@/engine/enchant'
 import { useGodMode } from '@/composables/useGodMode'
 import { useRun } from '@/composables/useRun'
+import { useDevHotState } from '@/composables/useDevHotState'
 import CardPanel from './CardPanel.vue'
 import UpgradableCard from './UpgradableCard.vue'
 
@@ -27,6 +28,7 @@ const TABS: { value: Tab; label: string }[] = [
 const tab = ref<Tab>('gold')
 /** 左侧职业栏的筛选：null 为全部；状态牌 / 诅咒牌 / 药水不属于任何职业，不受影响 */
 const charId = ref<string | null>(null)
+useDevHotState(import.meta.hot, 'codex', { tab, charId })
 const character = computed(() => characters.find((c) => c.id === charId.value))
 const cardsOf = (t: Rarity) =>
   Object.values(cards).filter(

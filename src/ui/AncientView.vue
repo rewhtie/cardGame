@@ -20,9 +20,9 @@ defineEmits<{ choose: [id: string] }>()
         @click="$emit('choose', id)"
       >
         <span class="text-6xl"><Emoji :e="relics[id]?.icon" /></span>
-        <span class="text-xl font-bold">{{ relics[id]?.name }}</span>
-        <span class="text-sm text-slate-300 text-center">{{ relics[id]?.text }}</span>
-        <span v-if="relics[id]?.lore" class="text-xs italic text-slate-400 text-center">{{ relics[id]?.lore }}</span>
+        <span class="text-xl font-bold text-sky-200">{{ relics[id]?.name }}</span>
+        <span class="text-sm text-slate-100 text-center leading-relaxed">{{ relics[id]?.text }}</span>
+        <span v-if="relics[id]?.lore" class="text-xs italic text-slate-300 text-center leading-relaxed">{{ relics[id]?.lore }}</span>
       </button>
     </div>
   </div>

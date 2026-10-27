@@ -1,5 +1,6 @@
 import { createRng, deriveSeed, sample, type Rng } from './seed'
 import type { RunState } from './run'
+import { stageSeed } from './stage'
 
 /** 商店里的一件商品；buy 之后 sold 为 true，位置保留 */
 export interface ShopItem {
@@ -90,7 +91,7 @@ function priced(ids: string[], range: readonly [number, number], rng: Rng): Shop
 }
 
 export function generateShop(run: RunState): ShopState {
-  const rng = createRng(deriveSeed(run.seed, `shop:${run.current}`))
+  const rng = createRng(deriveSeed(stageSeed(run.seed, run.stage), `shop:${run.current}`))
   const defs = run.content.cards
   const colorlessPool = (run.content.colorlessCards ?? []).filter((id) => defs[id])
   // 角色卡位只从角色自己的卡里抽，无色卡留给后 2 个卡位
