@@ -620,6 +620,7 @@ function finishRewards(run: RunState): RunResult {
       state: {
         ...run,
         stage,
+        player: { ...run.player, hp: run.player.maxHp },
         map: generateMap(run.seed, stage),
         current: null,
         visited: [],
@@ -632,7 +633,7 @@ function finishRewards(run: RunState): RunResult {
         event: null,
         pendingRelic: null,
       },
-      events: [],
+      events: [{ type: 'healed', target: 'player', amount: run.player.maxHp - run.player.hp }],
     }
   }
   const screen: RunScreen = bossCleared ? 'victory' : 'map'

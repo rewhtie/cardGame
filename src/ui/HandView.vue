@@ -95,7 +95,7 @@ const items = computed(() =>
 
 <template>
   <!-- 占满两侧面板之间的空间；放不下时各牌槽等比收窄，卡面叠放，悬浮的牌置顶显示全貌 -->
-  <div ref="rootEl" data-hand-root class="flex-1 min-w-0 flex justify-center gap-3 min-h-56">
+  <div ref="rootEl" data-hand-root class="flex-1 min-w-0 flex justify-center gap-3 min-h-56 touch-none">
     <div
       v-for="item in items"
       :key="`${item.index}-${item.card.id}`"

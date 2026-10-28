@@ -19,7 +19,7 @@ const emit = defineEmits<{
   cheatEvent: [id?: string]
 }>()
 
-const { isDev, godMode } = useGodMode()
+const { cheatsEnabled, godMode } = useGodMode()
 
 // ---- 作弊：指定下场战斗的敌人（一次性，不动种子） ----
 const ROLE_LABELS = { boss: 'Boss', elite: '精英', monster: '普通', other: '其他' } as const
@@ -225,7 +225,7 @@ function onClick(id: string, canChoose: boolean) {
 <template>
   <div
     ref="viewport"
-    class="relative w-full h-full overflow-hidden theme-bg cursor-grab active:cursor-grabbing"
+    class="relative w-full h-full overflow-hidden theme-bg cursor-grab active:cursor-grabbing touch-none"
     @pointerdown="onPointerDown"
     @wheel.prevent="onWheel"
   >
@@ -327,7 +327,7 @@ function onClick(id: string, canChoose: boolean) {
     </div>
 
     <div
-      v-if="isDev && !readonly"
+      v-if="cheatsEnabled && !readonly"
       class="absolute left-3 z-50"
       :class="run.relics.length ? 'top-28' : 'top-16'"
       @pointerdown.stop

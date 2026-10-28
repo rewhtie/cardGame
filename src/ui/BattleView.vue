@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Emoji from '@/ui/Emoji.vue'
+import { cheatsEnabled } from '@/composables/useGodMode'
 import { willSplit } from '@/engine/effects'
 import AimArrow from './AimArrow.vue'
 import CardView from './CardView.vue'
@@ -58,8 +59,6 @@ const pileView = computed(() => {
       return null
   }
 })
-
-const isDev = import.meta.env.DEV
 
 /** 作弊加状态：target 为 'player' 或敌人下标 */
 const cheatOpen = ref(false)
@@ -772,7 +771,7 @@ onBeforeUnmount(() => {
       :total="item.total"
     />
     <div
-      v-if="isDev && !readonly"
+      v-if="cheatsEnabled && !readonly"
       class="absolute right-3 z-50 flex flex-col items-end gap-1.5"
       :class="hasRelics ? 'top-28' : 'top-16'"
     >
