@@ -42,7 +42,7 @@ import { cardPlayBlock, cardTypePlayBlock } from './cardRules'
 import { calcBlock, STATUSES, statusById } from './statuses'
 import { enemyAttack, hasDamage } from './blades'
 import { afterPlay, playCost, SWORD_MANUAL } from './swordSaint'
-import type { Action, BattleConfig, BattleState, DispatchResult, GameEvent, IntentAction, Side } from './types'
+import type { Action, BattleConfig, BattleState, CardDef, DispatchResult, GameEvent, IntentAction, Side } from './types'
 
 const DEFAULT_MAX_HP = 80
 const DEFAULT_MAX_ENERGY = 3

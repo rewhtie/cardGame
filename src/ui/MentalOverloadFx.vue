@@ -40,7 +40,14 @@ onMounted(() => {
       y: (y + (y > 0 && y < rows ? (Math.random() - 0.5) * 0.7 : 0)) * h / rows,
     })),
   )
-  const shards = []
+  const shards: {
+    vertices: { x: number; y: number }[]
+    cx: number
+    cy: number
+    spin: number
+    tint: number
+    speed: number
+  }[] = []
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const a = points[y]![x]!

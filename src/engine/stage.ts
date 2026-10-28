@@ -3,7 +3,7 @@ import type { EnemyDef, Intent, IntentAction } from './types'
 
 /** 第一阶段保留原有种子序列，后续阶段使用独立命名空间。 */
 export function stageSeed(seed: string, stage = 1): string {
-  return stage === 1 ? seed : deriveSeed(seed, `stage:${stage}`)
+  return stage === 1 ? seed : String(deriveSeed(seed, `stage:${stage}`))
 }
 
 export function stageEnemy(enemy: EnemyDef, stage = 1): EnemyDef {

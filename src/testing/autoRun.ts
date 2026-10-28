@@ -90,7 +90,18 @@ export function describeEvent(state: BattleState, e: GameEvent): string | null {
             ? `防御 ${i.block}`
             : i.type === 'debuff' || i.type === 'buff'
               ? `${i.type === 'debuff' ? '给玩家' : '给自己'} ${i.stacks} 层${statusName(i.status)}`
-              : { addCards: '塞牌', idle: '蓄力', summon: '召唤', steal: '偷金币', flee: '逃跑' }[i.type]
+              : {
+                  addCards: '塞牌',
+                  idle: '蓄力',
+                  summon: '召唤',
+                  steal: '偷金币',
+                  flee: '逃跑',
+                  heal: '治疗',
+                  shareLife: '共享生命',
+                  sacrificeExplosion: '牺牲引爆',
+                  explode: '自爆',
+                  revive: '复活',
+                }[i.type]
       return `${who(state, 'enemy', e.enemyIndex)} ${detail}`
     }
     case 'battleEnded':

@@ -418,8 +418,9 @@ function battleAction(run: RunState, action: Action): RunResult {
     : run.content
   // 永久最大生命变更（精神过载）：即时同步到整局，只同步这一次，之后的上限增长不受限
   let player = run.player
-  if (battle.permanentMaxHp !== undefined) {
-    const { permanentMaxHp: maxHp, ...rest } = settled
+  const maxHp = battle.permanentMaxHp
+  if (maxHp !== undefined) {
+    const { permanentMaxHp, ...rest } = settled
     settled = rest
     player = { ...player, maxHp, hp: Math.min(player.hp, maxHp, battle.player.hp) }
   }
