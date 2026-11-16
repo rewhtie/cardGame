@@ -52,14 +52,16 @@ export interface StatusDef {
   /** 被玩家打中（哪怕全被格挡）时往玩家弃牌堆置入牌 */
   onHit?: (stacks: number) => { cardId: string; count: number }
   /** 玩家打出一张牌、结算完之后：本回合削弱玩家的力量和敏捷 */
-  /** 玩家打出一张牌、结算完之后：给自己（所有者）加状态层 */
-  onPlayerCard?: (stacks: number) => { status: string; stacks: number }
+  /** 玩家打出一张牌、结算完之后：给自己（所有者）加状态层；unlessHit 表示这张牌期间被玩家攻击命中过就不触发 */
+  onPlayerCard?: (stacks: number) => { status: string; stacks: number; unlessHit?: boolean }
   afterPlayerCard?: (stacks: number) => { strength: number; dexterity: number }
   /** 每个敌方回合开始（敌人行动之前），所有者的该状态层数增加这么多 */
   turnStartGrow?: number
   /** 与存活队友的生命差达到阈值时，优先执行生命共享 */
   priorityLifeShare?: number
   cardPlayLimit?: { kind: 'attack' | 'skill'; max: number }
+  /** 敌人身上的这个状态在场时，指定状态被清空（扣光或被剥除）→ 敌人晕眩，最多 1 层 */
+  stunWhenCleared?: string
 }
 
 /** 声明顺序即结算顺序，不要随意调换 */
@@ -448,7 +450,7 @@ export const STATUSES: StatusDef[] = [
     id: 'eggshell',
     name: '蛋壳',
     icon: '🥚',
-    text: '每个玩家回合开始获得 1 层以牙还牙；生命降至上限的 50% 时破壳，失去以牙还牙，获得 1 层汲取并重置意图',
+    text: '每个玩家回合开始获得 1 层以牙还牙；生命降至上限的 50% 时破壳，失去以牙还牙，获得 1 层时机并重置意图',
     kind: 'buff',
     decay: 'none',
   },
@@ -460,6 +462,26 @@ export const STATUSES: StatusDef[] = [
     kind: 'buff',
     decay: 'none',
     afterPlayerCard: (n) => ({ strength: n, dexterity: n }),
+  },
+  {
+    id: 'timing',
+    display: 'count',
+    name: '时机',
+    icon: '⏳',
+    text: '玩家每打出一张牌，若这张牌没有攻击命中自己，获得 N 层飞行；飞行被清空时晕眩（跳过下次行动，最多 1 层）',
+    kind: 'buff',
+    decay: 'none',
+    onPlayerCard: (n) => ({ status: 'flight', stacks: n, unlessHit: true }),
+    stunWhenCleared: 'flight',
+  },
+  {
+    id: 'flight',
+    name: '飞行',
+    icon: '🪶',
+    text: '受到的伤害减少 50%（层数不叠加减伤）；每受到一段攻击失去 1 层',
+    kind: 'buff',
+    decay: 'none',
+    modifyDamageTaken: () => ({ mul: 0.5 }),
   },
   {
     id: 'drained',
@@ -487,6 +509,16 @@ export const STATUSES: StatusDef[] = [
     kind: 'debuff',
     decay: 'turnEnd',
     modifyDamageTaken: (n) => ({ mul: 1 + 0.2 * n, round: true }),
+  },
+  {
+    id: 'chitin',
+    name: '甲壳',
+    icon: '🦀',
+    text: '受到的攻击伤害 -5%×N（向下取整）',
+    kind: 'buff',
+    decay: 'playerTurnStart',
+    // 不设上限：20 层起完全免疫攻击伤害
+    modifyDamageTaken: (n) => ({ mul: Math.max(0, 1 - n / 20) }),
   },
   {
     id: 'parasite',

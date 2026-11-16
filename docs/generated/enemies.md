@@ -19,7 +19,7 @@
 | beetle | 甲壳虫 | 普通 | 3 | 45 | carapace×1 | 1. 防御 6<br>2. 攻击 11<br>3. 攻击 7 |  |
 | summoner | 召唤师 | 普通 | 3.5 | 40 |  | 1. 攻击 6<br>2. 召唤 small-slime<br>3. 防御 8 |  |
 | treant | 树精 | 普通 | 3.5 | 90 |  | 1. 往抽牌堆随机位置塞 1 张 curseReplicate；往弃牌堆塞 1 张 curseReplicate<br>2. 攻击 20<br>3. 自身 6 层 regen<br>4. 往抽牌堆随机位置塞 1 张 curseReplicate；往弃牌堆塞 1 张 curseReplicate<br>5. 攻击 20<br>（走完回到第 4 个） |  |
-| eggshell | 蛋壳 | 精英 |  | 250 | eggshell×1<br>每个玩家回合开始补到：tit4tat×1 | 1. 攻击 1<br>2. 攻击 1×2<br>3. 攻击 1×4<br>4. 攻击 1×8<br>5. 攻击 1×16<br>6. 攻击 1×32<br>7. 攻击 1×64<br>（走完回到第 6 个）<br>生命 ≤ 125 时破壳而出：移除 eggshell、tit4tat，获得 drain×1；重置意图，停止补充旧阶段状态<br>1. 攻击 1<br>2. 攻击 1×2<br>3. 攻击 1×4<br>4. 攻击 1×8<br>5. 攻击 1×16<br>6. 攻击 1×32<br>7. 攻击 1×64<br>（走完回到第 6 个）<br>偶数行动追加：往抽牌堆随机位置塞 1 张 eggLiquid；往弃牌堆塞 1 张 eggLiquid |  |
+| eggshell | 蛋壳 | 其他（第 2 大层原生数值） |  | 250 | eggshell×1<br>每个玩家回合开始补到：tit4tat×1 | 1. 攻击 1<br>2. 攻击 1×2<br>3. 攻击 1×4<br>4. 攻击 1×8<br>5. 攻击 1×16<br>6. 攻击 1×32<br>7. 攻击 1×64<br>（走完回到第 6 个）<br>生命 ≤ 125 时破壳而出：移除 eggshell、tit4tat，获得 timing×1；重置意图，停止补充旧阶段状态<br>1. 攻击 1<br>2. 攻击 1×2<br>3. 攻击 1×4<br>4. 攻击 1×8<br>5. 攻击 1×16<br>6. 攻击 1×32<br>7. 攻击 1×64<br>（走完回到第 6 个）<br>偶数行动追加：往抽牌堆随机位置塞 1 张 eggLiquid；往弃牌堆塞 1 张 eggLiquid |  |
 | drainer | 汲取者 | 精英 |  | 80 | drain×1 | 1. 攻击 8<br>2. 防御 12<br>3. 攻击 14 |  |
 | slime-boss | 史莱姆老大 | Boss |  | 140 | split×1 | 1. 往弃牌堆塞 3 张 slimed<br>2. 蓄力<br>3. 攻击 35 | 大尖刺史莱姆、大酸液史莱姆 |
 | large-spike-slime | 大尖刺史莱姆 | 其他 |  | 64 | split×1 | 1. 攻击 16，塞 2 张 slimed<br>2. 给你 2 层 frail | 中尖刺史莱姆、中尖刺史莱姆 |

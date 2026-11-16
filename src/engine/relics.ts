@@ -46,6 +46,8 @@ export interface PickSpec {
 export interface RelicRule extends Partial<BattleHooks> {
   /** 在遗物图标右下角显示 relicState 里的计数 */
   showCounter?: boolean
+  /** 已用完：遗物栏置灰，效果不再触发 */
+  spent?(relicState: Readonly<Record<string, number>>): boolean
   /** 最大能量加成 */
   maxEnergy?: number
   /** 药水栏位加成 */
@@ -97,6 +99,13 @@ function upgradeRandomCards(kind: CardDef['kind'], count: number): NonNullable<R
   }
 }
 const STRAWBERRY_HP = 7
+
+/** 树枝：relicState.branch 未用 → 休息后待发动 → 开战发动后用完 */
+export const BRANCH_ID = 'branch'
+export const BRANCH_ARMED = 1
+export const BRANCH_SPENT = 2
+export const BRANCH_REST_HEAL_RATIO = 0.05
+const BRANCH_ENERGY = 2
 const woundsIn = (pile: readonly string[]) => pile.filter((c) => c === WOUND).length
 
 const withGold = (amount: number) => (run: RunState) => ({
@@ -465,6 +474,15 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
   },
   // 计数与结算在 effects.ts 的 applyDamage / applyBlock 里（需要拿到实际伤害与格挡数值）
   legendVest: { showCounter: true },
+  // 树枝：休息时额外恢复（见 run.ts 的 rest），下一场战斗第一回合获得能量后用完；不进奖池
+  branch: {
+    spent: (st) => st[BRANCH_ID] === BRANCH_SPENT,
+    onTurnStart: (s, ev) => {
+      if (s.turn !== 1 || getState(s, BRANCH_ID) !== BRANCH_ARMED) return
+      gainEnergy(s, BRANCH_ENERGY, ev)
+      s.relicState = { ...s.relicState, [BRANCH_ID]: BRANCH_SPENT }
+    },
+  },
   trainingGuide: pickRelic({
     hint: '选择一张牌附魔「增量」：每打出一次，卡面数值 +5，仅本场战斗生效',
     count: 1,
@@ -514,6 +532,9 @@ export const relicMaxEnergy = (relics: readonly string[]) => sum(relics, 'maxEne
 export const relicKeepsWounds = (relics: readonly string[]) =>
   activeRules(relics).some((r) => r.keepWounds)
 export const relicPotionSlots = (relics: readonly string[]) => sum(relics, 'potionSlots')
+
+export const relicSpent = (id: string, relicState: Readonly<Record<string, number>>) =>
+  !!RELIC_RULES[id]?.spent?.(relicState)
 
 /** 遗物图标右下角的计数；不显示计数的遗物返回 undefined */
 export function relicCounter(id: string, relicState: Readonly<Record<string, number>>) {

@@ -14,6 +14,7 @@ import {
 } from '@/data/enemies'
 import { events as eventDefs } from '@/data/events'
 import { potions, relics } from '@/data/items'
+import { BRANCH_ID } from '@/engine/relics'
 import {
   ANCIENT_RELIC_IDS,
   createRun,
@@ -65,7 +66,8 @@ function content(characterId?: string): Omit<RunConfig, 'seed'> {
     events: eventDefs,
     relicIds: [
       ...Object.keys(relics).filter(
-        (id) => !ANCIENT_RELIC_IDS.includes(id) && !CHARACTER_RELIC_IDS.includes(id),
+        (id) =>
+          !ANCIENT_RELIC_IDS.includes(id) && !CHARACTER_RELIC_IDS.includes(id) && id !== BRANCH_ID,
       ),
       ...(character.exclusiveRelics ?? []),
     ],

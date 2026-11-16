@@ -234,4 +234,10 @@ export const relics: Record<string, ItemDef> = {
     text: '战斗开始时，所有敌人获得 3 层寄生种子',
     lore: '它没有恶意，也没有善意。它只是想活下去。',
   },
+  branch: {
+    id: 'branch',
+    name: '树枝',
+    icon: '🪵',
+    text: '在休息处休息时额外恢复 5% 最大生命；下一场战斗第一回合获得 2 点能量，之后用完',
+  },
 }

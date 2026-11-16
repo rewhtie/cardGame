@@ -3,7 +3,7 @@ import Emoji from '@/ui/Emoji.vue'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { potions as potionDefs, relics as relicDefs } from '@/data/items'
 import { POTION_RULES, fieldHeal } from '@/engine/potions'
-import { relicCounter } from '@/engine/relics'
+import { relicCounter, relicSpent } from '@/engine/relics'
 import { maxPotions } from '@/engine/run'
 import { playSfx } from '@/composables/useSfx'
 import AimArrow from './AimArrow.vue'
@@ -311,7 +311,7 @@ const hintOf = (id: string | undefined) => {
           tag="遗物"
           align="left"
         >
-          <span class="text-lg flex-none relic relative">
+          <span class="text-lg flex-none relic relative" :class="{ spent: relicSpent(id, relicState ?? {}) }">
             <Emoji :e="relicDefs[id]!.icon" />
             <span v-if="relicCounter(id, relicState ?? {}) !== undefined" class="relic-count">{{
               relicCounter(id, relicState ?? {})
@@ -504,6 +504,10 @@ const hintOf = (id: string | undefined) => {
   background: #0f172a;
   border: 1px solid #475569;
   border-radius: 999px;
+}
+.relic.spent {
+  filter: grayscale(1);
+  opacity: 0.45;
 }
 .relic {
   display: flex;

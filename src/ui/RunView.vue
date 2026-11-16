@@ -12,6 +12,7 @@ import {
   campfireSpecial,
   campfireSpecialBlocked,
   maxPotions,
+  restHealAmount,
   type RunAction,
   type RunState,
 } from '@/engine/run'
@@ -44,7 +45,6 @@ const emit = defineEmits<{ send: [action: RunAction]; menu: []; retry: [] }>()
 
 const progress = computed(() => runProgress(props.run))
 
-const REST_HEAL_RATIO = 0.3
 const PLACEHOLDERS: Partial<Record<NodeType, { icon: string; label: string }>> = {
   event: { icon: '❓', label: '事件' },
   treasure: { icon: '🎁', label: '宝箱' },
@@ -54,7 +54,7 @@ const placeholder = computed(() => {
   const node = props.run.current ? findNode(props.run.map, props.run.current) : undefined
   return (node && PLACEHOLDERS[node.type]) ?? { icon: '❔', label: '未知房间' }
 })
-const healAmount = computed(() => Math.floor(props.run.player.maxHp * REST_HEAL_RATIO))
+const healAmount = computed(() => restHealAmount(props.run))
 const canForge = computed(() =>
   props.run.content.deck.some((id) => isForgeable(props.run.content.cards, id)),
 )

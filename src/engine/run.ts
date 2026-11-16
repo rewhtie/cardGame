@@ -15,6 +15,9 @@ import { findNode, generateMap, type GameMap } from './map'
 import { fieldHeal } from './potions'
 import { generateShop, type ShopState } from './shop'
 import {
+  BRANCH_ARMED,
+  BRANCH_ID,
+  BRANCH_REST_HEAL_RATIO,
   RELIC_RULES,
   cardOnAdd,
   relicNeedsPick,
@@ -283,6 +286,7 @@ function chooseNode(run: RunState, id: string, god = false): RunResult {
 /** 以当前节点创建一场战斗（地图战斗节点与事件战斗共用） */
 function battleEnemies(run: RunState, nodeId: string): EnemyDef[] {
   if (run.cheatNextEnemies?.length) return run.cheatNextEnemies
+  if (run.eventBattle?.enemies?.length) return run.eventBattle.enemies
   const type = findNode(run.map, nodeId)?.type
   if (!run.eventBattle && type === 'boss') {
     const bosses = run.content.bosses?.length
@@ -640,12 +644,24 @@ function finishRewards(run: RunState): RunResult {
   return { state: { ...run, screen, rewards: [], eventBattle: null, event: null }, events: [] }
 }
 
+/** 未用过的树枝：休息时额外恢复，并在下一场战斗发动 */
+const branchReady = (run: RunState) =>
+  run.relics.includes(BRANCH_ID) && !run.relicState?.[BRANCH_ID]
+
+/** 火堆休息的恢复量（含树枝加成） */
+export const restHealAmount = (run: RunState) =>
+  Math.floor(run.player.maxHp * (REST_HEAL_RATIO + (branchReady(run) ? BRANCH_REST_HEAL_RATIO : 0)))
+
 function rest(run: RunState): RunResult {
   if (run.screen !== 'rest') return invalid(run, '当前不在休息点')
-  const heal = Math.floor(run.player.maxHp * REST_HEAL_RATIO)
-  const hp = Math.min(run.player.maxHp, run.player.hp + heal)
+  const hp = Math.min(run.player.maxHp, run.player.hp + restHealAmount(run))
   return {
-    state: { ...run, screen: 'map', player: { ...run.player, hp } },
+    state: {
+      ...run,
+      screen: 'map',
+      player: { ...run.player, hp },
+      ...(branchReady(run) && { relicState: { ...run.relicState, [BRANCH_ID]: BRANCH_ARMED } }),
+    },
     events: [{ type: 'healed', target: 'player', amount: hp - run.player.hp }],
   }
 }
