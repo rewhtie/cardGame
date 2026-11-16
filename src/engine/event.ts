@@ -1,7 +1,7 @@
 import { isForgeable, upgradedId } from './enchant'
 import type { RunResult, RunState } from './run'
 import { createRng, deriveSeed, sample, type Rng } from './seed'
-import type { GameEvent } from './types'
+import type { EnemyDef, GameEvent } from './types'
 import { stageSeed } from './stage'
 
 export type BattleKind = 'monster' | 'elite'
@@ -24,7 +24,7 @@ export type Outcome =
   | { type: 'upgradeCard' }
   | { type: 'enchantCard'; enchant: string }
   | { type: 'upgradeRandom'; count: number }
-  | { type: 'battle'; kind: BattleKind; bonus?: BattleBonus }
+  | { type: 'battle'; kind: BattleKind; bonus?: BattleBonus; enemies?: EnemyDef[] }
   | { type: 'chance'; p: number; win: Outcome[]; lose: Outcome[] }
 
 export interface EventOption {
@@ -44,6 +44,8 @@ export interface EventDef {
   enchantment?: boolean
   /** 事件是否可出现 */
   requires?(run: RunState): boolean
+  /** 【名字】悬浮说明的补充备注，键为【】里的名字 */
+  notes?: Record<string, string>
   options: EventOption[]
 }
 
@@ -63,6 +65,8 @@ export interface EventState {
 export interface EventBattle {
   kind: BattleKind
   bonus?: BattleBonus
+  /** 指定敌人；不填则按 kind 走对应敌人池 */
+  enemies?: EnemyDef[]
 }
 
 export const NO_OPTION_TEXT = '你转身离开了。'
@@ -229,7 +233,7 @@ export function resolveOutcomes(
           events,
         }
       case 'battle':
-        return { state: { ...state, eventBattle: { kind: o.kind, bonus: o.bonus } }, events }
+        return { state: { ...state, eventBattle: { kind: o.kind, bonus: o.bonus, ...(o.enemies && { enemies: o.enemies }) } }, events }
       case 'chance': {
         const next = rng.float() < o.p ? o.win : o.lose
         const r = resolveOutcomes(state, [...next, ...rest], rng, grant)

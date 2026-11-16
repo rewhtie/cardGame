@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { cards, starterDeck } from '@/data/cards'
 import { slime } from '@/data/enemies'
 import { createBattle, dispatch } from './battle'
-import { calcAttack, calcBlock, statusById, statusDescription, statusTip } from './statuses'
+import { calcAttack, calcBlock, decayTiming, statusById, statusDescription, statusTip } from './statuses'
 import type { BattleState, CardDef } from './types'
 
 function start(seed = 1): BattleState {
@@ -359,6 +359,31 @@ describe('受创（四舍五入的受伤加成）', () => {
   })
   it('与易伤同时存在', () => {
     expect(calcAttack(10, undefined, { vulnerable: 1, cracked: 1 })).toBe(18)
+  })
+})
+
+describe('甲壳（按比例减少受到的攻击伤害）', () => {
+  it('每层 -5%，向下取整', () => {
+    expect(calcAttack(10, undefined, { chitin: 1 })).toBe(9)
+    expect(calcAttack(20, undefined, { chitin: 2 })).toBe(18)
+    expect(calcAttack(10, undefined, { chitin: 10 })).toBe(5)
+  })
+  it('不设上限，20 层起完全免伤', () => {
+    expect(calcAttack(50, undefined, { chitin: 20 })).toBe(0)
+    expect(calcAttack(50, undefined, { chitin: 30 })).toBe(0)
+  })
+  it('与力量先加后乘', () => {
+    expect(calcAttack(6, { strength: 4 }, { chitin: 4 })).toBe(8)
+  })
+  it('与易伤同时存在', () => {
+    expect(calcAttack(10, undefined, { vulnerable: 1, chitin: 4 })).toBe(12)
+  })
+  it('撑到持有者自己的下个回合开始', () => {
+    expect(decayTiming(statusById.chitin!, 'player')).toBe('playerStart')
+    expect(decayTiming(statusById.chitin!, 'enemy')).toBe('enemyStart')
+  })
+  it('悬浮简写', () => {
+    expect(statusTip(statusById.chitin!, 4).total).toBe('-20%')
   })
 })
 

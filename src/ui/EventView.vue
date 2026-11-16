@@ -4,6 +4,8 @@ import { computed, ref } from 'vue'
 import { optionDisabled, type EventDef } from '@/engine/event'
 import type { RunState } from '@/engine/run'
 import type { CardDef } from '@/engine/types'
+import { relics } from '@/data/items'
+import { statusById } from '@/engine/statuses'
 import CardView from './CardView.vue'
 
 const props = defineProps<{ run: RunState; def: EventDef }>()
@@ -18,25 +20,57 @@ const cardByName = computed(() =>
   Object.fromEntries(Object.values(props.run.content.cards).map((c) => [c.name, c])),
 )
 
-/** 把选项文字里的【卡牌名】切出来；能对上卡牌定义的加下划线 + 悬浮牌面 */
+/** 悬浮说明：卡牌显示牌面；遗物、敌人显示文字框 */
+type Term = { card: CardDef } | { info: { icon?: string; name: string; lines: string[] } }
+
+const relicByName = Object.fromEntries(Object.values(relics).map((r) => [r.name, r]))
+
+/** 本事件战斗里出现的敌人 */
+const enemyByName = computed(() =>
+  Object.fromEntries(
+    props.def.options
+      .flatMap((o) => o.outcomes)
+      .flatMap((o) => (o.type === 'battle' ? (o.enemies ?? []) : []))
+      .map((e) => [e.name, e]),
+  ),
+)
+
+function term(name: string): Term | undefined {
+  const note = props.def.notes?.[name]
+  const card = cardByName.value[name]
+  if (card) return { card }
+  const relic = relicByName[name]
+  if (relic) return { info: { icon: relic.icon, name: relic.name, lines: [relic.text, ...(note ? [note] : [])] } }
+  const enemy = enemyByName.value[name]
+  if (enemy) {
+    const statuses = Object.keys(enemy.startStatuses ?? {})
+      .map((id) => statusById[id])
+      .filter((st) => st?.text)
+      .map((st) => `【${st.name}】${st.text}`)
+    return { info: { icon: enemy.icon, name: `${enemy.name}（生命 ${enemy.maxHp}）`, lines: [...statuses, ...(note ? [note] : [])] } }
+  }
+  if (note) return { info: { name, lines: [note] } }
+}
+
+/** 把文字里的【名字】切出来；能对上卡牌 / 遗物 / 敌人 / 备注的加下划线 + 悬浮说明 */
 function parts(label: string) {
   return label
     .split(/(【.+?】)/)
     .filter(Boolean)
     .map((text) => {
       const name = /^【(.+)】$/.exec(text)?.[1]
-      return { text, card: name ? cardByName.value[name] : undefined }
+      return { text, term: name ? term(name) : undefined }
     })
 }
 
-/** 悬浮中的卡牌预览（视口坐标，文字左侧垂直居中）；null 表示不显示 */
-const tip = ref<{ x: number; y: number; card: CardDef } | null>(null)
-function showTip(ev: MouseEvent, card: CardDef) {
+/** 悬浮中的预览（视口坐标，文字左侧垂直居中）；null 表示不显示 */
+const tip = ref<({ x: number; y: number } & Term) | null>(null)
+function showTip(ev: MouseEvent, t: Term) {
   const r = (ev.currentTarget as HTMLElement).getBoundingClientRect()
   // 牌高约 13rem，夹在视口内避免被上下边缘截掉
-  const half = 112
+  const half = 'card' in t ? 112 : 60
   const y = Math.min(Math.max(r.top + r.height / 2, half + 8), window.innerHeight - half - 8)
-  tip.value = { x: r.left - 12, y, card }
+  tip.value = { x: r.left - 12, y, ...t }
 }
 </script>
 
@@ -49,9 +83,9 @@ function showTip(ev: MouseEvent, card: CardDef) {
         <p class="desc">
           <template v-for="(p, j) in parts(def.text)" :key="j">
             <span
-              v-if="p.card"
+              v-if="p.term"
               class="term"
-              @mouseenter="showTip($event, p.card)"
+              @mouseenter="showTip($event, p.term)"
               @mouseleave="tip = null"
               >{{ p.text }}</span
             >
@@ -72,9 +106,9 @@ function showTip(ev: MouseEvent, card: CardDef) {
             <span>
               <template v-for="(p, j) in parts(opt.label)" :key="j">
                 <span
-                  v-if="p.card"
+                  v-if="p.term"
                   class="term"
-                  @mouseenter="showTip($event, p.card)"
+                  @mouseenter="showTip($event, p.term)"
                   @mouseleave="tip = null"
                   >{{ p.text }}</span
                 >
@@ -94,7 +128,13 @@ function showTip(ev: MouseEvent, card: CardDef) {
         class="card-tip"
         :style="{ left: tip.x + 'px', top: tip.y + 'px' }"
       >
-        <CardView :card="tip.card" :playable="true" />
+        <CardView v-if="'card' in tip" :card="tip.card" :playable="true" />
+        <div v-else class="info-tip">
+          <div class="font-bold mb-1">
+            <Emoji v-if="tip.info.icon" :e="tip.info.icon" /> {{ tip.info.name }}
+          </div>
+          <p v-for="(line, k) in tip.info.lines" :key="k">{{ line }}</p>
+        </div>
       </div>
     </Teleport>
   </div>
@@ -172,6 +212,17 @@ function showTip(ev: MouseEvent, card: CardDef) {
 .term {
   cursor: help;
   text-decoration: underline;
+}
+.info-tip {
+  width: 16rem;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #f1f5f9;
+  background: #1c120d;
+  border: 2px solid #d97706;
+  border-radius: 8px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
 }
 .card-tip {
   position: fixed;

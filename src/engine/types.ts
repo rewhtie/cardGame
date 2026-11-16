@@ -284,6 +284,8 @@ export interface EnemyState {
   deathOrder?: number
   revivesUsed?: number
   revivedTurn?: number
+  /** 本张牌结算期间被玩家攻击命中过（时机据此判断），出牌结算完清除 */
+  struck?: boolean
   hp: number
   block: number
   intentIndex: number

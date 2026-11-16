@@ -291,7 +291,8 @@
       "id": "eggshell",
       "name": "蛋壳",
       "icon": "🥚",
-      "role": "elite",
+      "role": "other",
+      "nativeStage": 2,
       "maxHp": 250,
       "startStatuses": {
         "eggshell": 1
@@ -346,7 +347,7 @@
           "tit4tat"
         ],
         "startStatuses": {
-          "drain": 1
+          "timing": 1
         },
         "loopFrom": 5,
         "intents": [

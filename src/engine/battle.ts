@@ -190,14 +190,17 @@ function drainPlayer(s: BattleState, events: GameEvent[]) {
   }
 }
 
-/** 出牌结算完后，存活敌人身上带 onPlayerCard 的被动给自己加层（如雕像的"受创"） */
-function crackEnemies(s: BattleState, events: GameEvent[]) {
+/** 出牌结算完后，存活敌人身上带 onPlayerCard 的被动给自己加层（如雕像的"受创"、蛋壳的"时机"） */
+function crackEnemies(s: BattleState, events: GameEvent[], onlyUnlessHit = false) {
   s.enemies.forEach((enemy, enemyIndex) => {
+    const struck = enemy.struck
+    delete enemy.struck
     if (!isAlive(enemy)) return
     for (const def of STATUSES) {
       const stacks = enemy.statuses[def.id] ?? 0
       if (stacks <= 0 || !def.onPlayerCard) continue
       const r = def.onPlayerCard(stacks)
+      if (r.unlessHit ? struck : onlyUnlessHit) continue
       addStatus(s, 'enemy', enemyIndex, r.status, r.stacks, events)
     }
   })
@@ -515,10 +518,15 @@ function playTopCard(s: BattleState, events: GameEvent[]) {
       s.enemies.forEach((e, i) => e.hp > 0 && stripEnemyBuff(s, i, events))
   }
   const x = def.cost === 'X' ? (def.xBonus ?? 0) : 0
+  // 自动打出的牌单独判断时机：先收起外层牌的命中记录，结算完再还回去
+  const outerStruck = s.enemies.map((e) => e.struck)
+  s.enemies.forEach((e) => delete e.struck)
   for (const effect of def.effects) {
     if (effect.type === 'exhaustStatusCard') continue
     resolveCardEffect(s, def, modifyEffect(s, def, effect), events, x, target, id)
   }
+  crackEnemies(s, events, true)
+  s.enemies.forEach((e, i) => { if (outerStruck[i]) e.struck = true })
   queueReplay(s, def, id, x, target)
   if (def.oneShot) finishOneShot(s, id)
   if (blaze) blazeAfterPlay(s, id, !def.oneShot, events)

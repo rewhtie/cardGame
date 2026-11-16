@@ -274,6 +274,9 @@ export function applyDamage(
     })
     titBack = amount * tit
   }
+  // 飞行：先按减伤结算这一段，再因受到攻击失去 1 层
+  if (opts.source && opts.source.side !== target) loseStatusStacks(s, target, enemyIndex, 'flight', 1, events)
+  if (target === 'enemy' && opts.source?.side === 'player') s.enemies[enemyIndex]!.struck = true
   if (target === 'enemy' && hpLost > 0) changeEnemyPhase(s, enemyIndex, events)
   if (target === 'enemy' && hpLost > 0 && t.hp <= 0) {
     // 斩杀：致命一击来自玩家自己的伤害（有来源），中毒 / 反伤 / 遗物等无来源伤害不算
@@ -450,7 +453,16 @@ export function spearStrip(
     status: id,
     ...(victim === 'enemy' ? { enemyIndex: vIdx } : {}),
   })
+  stunOnCleared(s, victim, vIdx, id, events)
   addTempStatus(s, holder, hIdx, 'bladeMaster', stacks, events)
+}
+
+/** 时机类被动：敌人身上被它挂钩的状态清空 → 晕眩，最多 1 层 */
+function stunOnCleared(s: BattleState, side: Side, enemyIndex: number, cleared: string, events: GameEvent[]) {
+  const enemy = side === 'enemy' ? s.enemies[enemyIndex] : undefined
+  if (!enemy || !isAlive(enemy) || (enemy.statuses.stunned ?? 0) > 0) return
+  const hooked = STATUSES.some((def) => def.stunWhenCleared === cleared && (enemy.statuses[def.id] ?? 0) > 0)
+  if (hooked) addStatus(s, 'enemy', enemyIndex, 'stunned', 1, events)
 }
 
 /** 临时状态在 statuses 里的记账键：值 = 本回合临时加的层数，玩家回合结束时扣回去 */
@@ -555,6 +567,7 @@ export function shiftStatus(
   if (next === 0) {
     delete owner.statuses[id]
     events.push({ type: 'statusRemoved', target: side, status: id, ...at })
+    stunOnCleared(s, side, enemyIndex, id, events)
     return
   }
   owner.statuses[id] = next

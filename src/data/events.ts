@@ -1,6 +1,7 @@
 import { canEnchantCard, isUpgraded } from '@/engine/enchant'
 import type { EventDef, EventOption } from '@/engine/event'
 import type { RunState } from '@/engine/run'
+import { eggshell } from './enemies'
 
 const NOT_UPGRADABLE = '没有可升级的牌'
 const NOT_REMOVABLE = '牌组为空'
@@ -333,6 +334,22 @@ export const events: EventDef[] = [
         outcomes: [{ type: 'battle', kind: 'elite', bonus: { relic: true } }],
       },
       leave(),
+    ],
+  },
+  {
+    id: 'birdNest',
+    title: '鸟巢',
+    icon: '🪺',
+    text: '树杈上架着一个大鸟巢，里面躺着一枚比你脑袋还大的蛋。蛋壳上布满尖刺般的纹路。',
+    weight: 0.7,
+    requires: (run) => (run.stage ?? 1) === 2,
+    notes: { 蛋壳: '敌人会 100% 反伤，注意携带荆棘类的反伤手段' },
+    options: [
+      {
+        label: '偷吃鸟蛋：最大生命 +10，然后与【蛋壳】战斗（精英奖励）',
+        outcomes: [{ type: 'maxHp', amount: 10 }, { type: 'battle', kind: 'elite', enemies: [eggshell] }],
+      },
+      { label: '捡走【树枝】', outcomes: [{ type: 'relic', id: 'branch' }] },
     ],
   },
   // ---- 诅咒增益卡 ----
