@@ -1,5 +1,5 @@
-import { createBattle, dispatch as dispatchBattle } from './battle'
-import { canEnchantCard, evolveDeck, isForgeable, progressOf, rawId, upgradedId, withEnchant } from './enchant'
+import { createBattle, dispatch as dispatchBattle, SAGE_CRYSTAL, SAGE_MULT } from './battle'
+import { canEnchantCard, canGrow, evolveDeck, isForgeable, progressOf, rawId, upgradedId, withEnchant } from './enchant'
 import { ENCHANTS } from './enchants'
 import {
   NO_OPTION_TEXT,
@@ -15,14 +15,17 @@ import { findNode, generateMap, type GameMap } from './map'
 import { fieldHeal } from './potions'
 import { generateShop, type ShopState } from './shop'
 import {
-  BRANCH_ARMED,
   BRANCH_ID,
-  BRANCH_REST_HEAL_RATIO,
+  BRANCH_MAX_HP,
+  BRANCH_SPENT,
   RELIC_RULES,
   cardOnAdd,
   relicNeedsPick,
   relicPotionSlots,
   resolveRelicPick,
+  rewardPickAvailable,
+  SCROLL_ID,
+  SCROLL_REWARDS,
 } from './relics'
 import { createRng, deriveSeed, sample } from './seed'
 import { stageEnemy, stageSeed } from './stage'
@@ -49,6 +52,8 @@ export type Reward =
   | { type: 'cards'; choices: string[] }
   | { type: 'potion'; id: string }
   | { type: 'relic'; id: string }
+  /** 武器库：从牌组选一张攻击牌升级 */
+  | { type: 'upgrade'; id: string }
 
 /** 由调用方注入的内容，引擎不依赖 data 目录 */
 export interface RunContent {
@@ -103,13 +108,16 @@ export interface RunState {
   ancientChoices: string[]
   screen: RunScreen
   /** 遗物需要选牌时，等待选牌的遗物及选完后回到的界面（由遗物决定，与房间无关） */
-  pendingRelic?: { id: string; back: RunScreen } | null
+  /** reward 为 true：战斗奖励里的选牌（武器库），不获得遗物 */
+  pendingRelic?: { id: string; back: RunScreen; reward?: boolean } | null
   /** 当前商店房间的商品 */
   shop?: ShopState | null
   /** 当前事件房间的进度 */
   event: EventState | null
   /** 本局已出现过的事件 id */
   seenEvents: string[]
+  /** 本大层普通战斗已出现过的怪 id：没见过的怪先各出一次，之后才重复与组合；进入下一大层清空 */
+  seenMonsters?: string[]
   /** 事件触发的战斗：胜利后奖励追加 bonus，领完奖励即清除 */
   eventBattle?: EventBattle | null
   battle: BattleState | null
@@ -182,8 +190,30 @@ const REST_HEAL_RATIO = 0.3
 export const MAX_POTIONS = 3
 /** 药水栏位数：基础栏位 + 遗物加成 */
 export const maxPotions = (relics: readonly string[]) => MAX_POTIONS + relicPotionSlots(relics)
-/** 先古房固定提供的三个遗物 */
-export const ANCIENT_RELIC_IDS = ['goldPouch', 'trainingGuide', 'roundShield']
+/**
+ * 先古：每个阶段有几位先古，先古房随机来一位，提供它的三件遗物三选一。
+ * 这些遗物只在先古房出现，不进普通掉落池。
+ */
+export const ANCIENTS: Readonly<Record<number, readonly (readonly string[])[]>> = {
+  1: [
+    ['toxicEgg', 'moltenEgg', 'frozenEgg'],
+    ['ancientCoin', 'trainingGuide', 'roundShield'],
+    ['enlightenScroll', 'ancestorHeart', 'soulForge'],
+  ],
+  2: [
+    ['multiTool', 'energyCrystal', 'luckyCharm'],
+    ['doubleSpear', 'featherDuster', 'torch'],
+    ['alchemyChest', 'armory', 'groceryStore'],
+  ],
+}
+export const ANCIENT_RELIC_IDS: string[] = Object.values(ANCIENTS).flat(2)
+
+/** 本阶段的先古房来哪一位（按种子固定，读档不变） */
+export function ancientChoicesFor(run: RunState): string[] {
+  const pool = ANCIENTS[run.stage ?? 1] ?? ANCIENTS[1]!
+  const rng = createRng(deriveSeed(stageSeed(run.seed, run.stage), 'ancient'))
+  return [...pool[Math.floor(rng.float() * pool.length)]!]
+}
 /** claimReward 的 pick 传此值表示放弃这组卡牌奖励 */
 export const SKIP_PICK = -1
 const CARD_CHOICES = 3
@@ -257,11 +287,13 @@ function chooseNode(run: RunState, id: string, god = false): RunResult {
       return { state: { ...next, screen: 'rest' }, events: [] }
     case 'ancient':
       return {
-        state: { ...next, screen: 'ancient', ancientChoices: ANCIENT_RELIC_IDS },
+        state: { ...next, screen: 'ancient', ancientChoices: ancientChoicesFor(next) },
         events: [],
       }
     case 'shop':
       return { state: { ...next, screen: 'shop', shop: generateShop(next) }, events: [] }
+    case 'treasure':
+      return { state: { ...next, screen: 'reward', rewards: treasureRewards(next) }, events: [] }
     case 'event': {
       if (!run.content.events?.length)
         return { state: { ...next, screen: 'placeholder' }, events: [] }
@@ -328,12 +360,24 @@ function battleEnemies(run: RunState, nodeId: string): EnemyDef[] {
       floor,
       normalGroups,
       createRng(deriveSeed(stageSeed(run.seed, run.stage), `enemy:${nodeId}`)),
+      new Set(run.seenMonsters),
     )
   }
   return run.content.enemies ?? [run.content.enemy]
 }
 
+/** 炼金箱：战斗开始时用随机药水把药水栏补满 */
+function fillPotions(run: RunState, nodeId: string): string[] {
+  const pool = run.content.potionIds ?? []
+  if (!run.relics.includes('alchemyChest') || !pool.length) return run.potions
+  const rng = createRng(deriveSeed(stageSeed(run.seed, run.stage), `alchemy:${nodeId}`))
+  const potions = [...run.potions]
+  while (potions.length < maxPotions(run.relics)) potions.push(pool[rng.int(pool.length)]!)
+  return potions
+}
+
 function startBattle(run: RunState, nodeId: string): RunResult {
+  const potions = fillPotions(run, nodeId)
   const { state: battle, events } = createBattle({
     seed: deriveSeed(stageSeed(run.seed, run.stage), `battle:${nodeId}`),
     deck: run.content.deck,
@@ -347,7 +391,11 @@ function startBattle(run: RunState, nodeId: string): RunResult {
     ...(run.content.rewardCards && { discoverPool: run.content.rewardCards }),
   })
   const { cheatNextEnemies: _used, ...rest } = run
-  return { state: { ...rest, screen: 'battle', battle }, events }
+  const normal = !run.cheatNextEnemies?.length && !run.eventBattle && findNode(run.map, nodeId)?.type === 'monster'
+  const seenMonsters = normal
+    ? [...new Set([...(run.seenMonsters ?? []), ...battle.enemies.map((e) => e.def.id)])]
+    : run.seenMonsters
+  return { state: { ...rest, potions, screen: 'battle', battle, ...(seenMonsters && { seenMonsters }) }, events }
 }
 
 function chooseAncient(run: RunState, id: string): RunResult {
@@ -385,8 +433,15 @@ export function grantRelic(run: RunState, id: string): RunResult {
 function pickCards(run: RunState, deckIndexes: number[]): RunResult {
   const pending = run.pendingRelic
   if (run.screen !== 'pick' || !pending) return invalid(run, '当前不在选牌界面')
-  const result = resolveRelicPick(run, pending.id, deckIndexes)
+  const result = resolveRelicPick(run, pending.id, deckIndexes, pending.reward)
   if (!result) return invalid(run, '选择的牌不合法')
+  // 战斗奖励里的选牌（武器库）：只升级，不再获得遗物
+  if (pending.reward) {
+    return {
+      state: { ...result.run, screen: pending.back, pendingRelic: null },
+      events: result.cards?.length ? [{ type: 'cardsUpgraded', cards: result.cards }] : [],
+    }
+  }
   const picked: RunResult = {
     state: {
       ...result.run,
@@ -440,7 +495,8 @@ function usePotion(run: RunState, index: number, target?: number): RunResult {
   const potionId = run.potions[index]
   if (potionId === undefined) return invalid(run, '药水不存在')
   if (run.screen !== 'battle' || !run.battle) {
-    const heal = fieldHeal(potionId)
+    const base = fieldHeal(potionId)
+    const heal = base === undefined ? undefined : base * (run.relics.includes(SAGE_CRYSTAL) ? SAGE_MULT : 1)
     if (heal === undefined || run.screen === 'victory' || run.screen === 'defeat')
       return invalid(run, '该药水只能在战斗中使用')
     const hp = Math.min(run.player.maxHp, run.player.hp + heal)
@@ -537,6 +593,16 @@ function continueRun(run: RunState): RunResult {
     { ...run, content },
     run.eventBattle?.kind ?? node?.type ?? 'monster',
   )
+  // 启蒙卷轴：接下来 SCROLL_REWARDS 组卡牌奖励全部升级，出现即计数（不管选没选）
+  let relicState = battle.relicState
+  const scrollUsed = relicState[SCROLL_ID] ?? 0
+  const cardReward = rewards.find((r) => r.type === 'cards')
+  if (run.relics.includes(SCROLL_ID) && scrollUsed < SCROLL_REWARDS && cardReward?.type === 'cards') {
+    cardReward.choices = cardReward.choices.map((id) =>
+      isForgeable(content.cards, id) ? upgradedId(id) : id,
+    )
+    relicState = { ...relicState, [SCROLL_ID]: scrollUsed + 1 }
+  }
   if (run.eventBattle?.bonus?.gold) {
     rewards.unshift({ type: 'gold', amount: run.eventBattle.bonus.gold })
   }
@@ -559,11 +625,24 @@ function continueRun(run: RunState): RunResult {
       battle: null,
       player,
       gold: battle.gold,
-      relicState: battle.relicState,
+      relicState,
       rewards,
     },
     events: evolvedEvents,
   }
+}
+
+const TREASURE_GOLD = { min: 50, max: 200 } as const
+
+function treasureRewards(run: RunState): Reward[] {
+  const rng = createRng(deriveSeed(stageSeed(run.seed, run.stage), `treasure:${run.current}`))
+  const amount = TREASURE_GOLD.min + rng.int(TREASURE_GOLD.max - TREASURE_GOLD.min + 1)
+  const rewards: Reward[] = [{ type: 'gold', amount }]
+  const unowned = (run.content.relicIds ?? []).filter((id) => !run.relics.includes(id))
+  // 万能工具：宝箱多开一件遗物
+  const count = run.relics.includes('multiTool') ? 2 : 1
+  for (const id of sample(unowned, count, rng)) rewards.push({ type: 'relic', id })
+  return rewards
 }
 
 function generateRewards(run: RunState, type: string): Reward[] {
@@ -585,6 +664,8 @@ function generateRewards(run: RunState, type: string): Reward[] {
 
   const choices = sample(run.content.rewardCards ?? [], CARD_CHOICES, rng)
   if (choices.length > 0) rewards.push({ type: 'cards', choices })
+  // 武器库：每场战斗结算可选一张攻击牌升级
+  if (run.relics.includes('armory') && rewardPickAvailable(run, 'armory')) rewards.push({ type: 'upgrade', id: 'armory' })
   return rewards
 }
 
@@ -599,12 +680,16 @@ function claimReward(run: RunState, index: number, pick?: number): RunResult {
     case 'gold':
       return { state: { ...next, gold: run.gold + reward.amount }, events: [] }
     case 'potion':
+      if (run.potions.length < maxPotions(run.relics))
+        return { state: { ...next, potions: [...run.potions, reward.id] }, events: [] }
       return {
         state: { ...next, potionOffer: [...(run.potionOffer ?? []), reward.id] },
         events: [],
       }
     case 'relic':
       return acquireRelic(next, reward.id)
+    case 'upgrade':
+      return { state: { ...next, screen: 'pick', pendingRelic: { id: reward.id, back: 'reward', reward: true } }, events: [] }
     case 'cards': {
       if (pick === SKIP_PICK) return { state: next, events: [] }
       const cardId = pick === undefined ? undefined : reward.choices[pick]
@@ -626,6 +711,7 @@ function finishRewards(run: RunState): RunResult {
         stage,
         player: { ...run.player, hp: run.player.maxHp },
         map: generateMap(run.seed, stage),
+        seenMonsters: [],
         current: null,
         visited: [],
         screen: 'map',
@@ -644,25 +730,30 @@ function finishRewards(run: RunState): RunResult {
   return { state: { ...run, screen, rewards: [], eventBattle: null, event: null }, events: [] }
 }
 
-/** 未用过的树枝：休息时额外恢复，并在下一场战斗发动 */
+/** 未用过的树枝：休息时最大生命提升 */
 const branchReady = (run: RunState) =>
   run.relics.includes(BRANCH_ID) && !run.relicState?.[BRANCH_ID]
 
-/** 火堆休息的恢复量（含树枝加成） */
-export const restHealAmount = (run: RunState) =>
-  Math.floor(run.player.maxHp * (REST_HEAL_RATIO + (branchReady(run) ? BRANCH_REST_HEAL_RATIO : 0)))
+/** 火堆休息的恢复量 */
+export const restHealAmount = (run: RunState) => Math.floor(run.player.maxHp * REST_HEAL_RATIO)
 
 function rest(run: RunState): RunResult {
   if (run.screen !== 'rest') return invalid(run, '当前不在休息点')
-  const hp = Math.min(run.player.maxHp, run.player.hp + restHealAmount(run))
+  const healed = Math.min(run.player.maxHp, run.player.hp + restHealAmount(run))
+  // 树枝：先按原上限恢复，再把上限和当前生命一起提升（同草莓）
+  const grow = branchReady(run) ? BRANCH_MAX_HP : 0
+  const player = { hp: healed + grow, maxHp: run.player.maxHp + grow }
   return {
     state: {
       ...run,
       screen: 'map',
-      player: { ...run.player, hp },
-      ...(branchReady(run) && { relicState: { ...run.relicState, [BRANCH_ID]: BRANCH_ARMED } }),
+      player,
+      ...(grow > 0 && { relicState: { ...run.relicState, [BRANCH_ID]: BRANCH_SPENT } }),
     },
-    events: [{ type: 'healed', target: 'player', amount: hp - run.player.hp }],
+    events: [
+      { type: 'healed', target: 'player', amount: player.hp - run.player.hp },
+      ...(grow ? [{ type: 'maxHpGained' as const, amount: grow }] : []),
+    ],
   }
 }
 
@@ -695,7 +786,7 @@ export const campfireSpecial = (run: RunState): CampfireSpecial | null =>
 export function campfireSpecialBlocked(run: RunState): string | null {
   switch (run.character) {
     case 'swordSaint':
-      return run.content.deck.some((c) => !!run.content.cards[rawId(c)]?.evolve)
+      return run.content.deck.some((c) => canGrow(run.content.cards, c))
         ? null
         : '没有可成长的牌'
     case 'plagueDoctor':
@@ -720,7 +811,7 @@ function campfireSpecialUse(run: RunState): RunResult {
     case 'swordSaint': {
       const counts: Record<string, number> = {}
       run.content.deck.forEach((id, i) => {
-        if (run.content.cards[rawId(id)]?.evolve)
+        if (canGrow(run.content.cards, id))
           counts[`${id}#${i}`] = progressOf(id) + TRAIN_PLAYS
       })
       const evo = evolveDeck(run.content.cards, run.content.deck, counts)

@@ -28,7 +28,7 @@ export const characters: CharacterDef[] = [
     allCards: [...new Set([...starterDeck, ...classAllIds.warrior!, ...colorlessAllIds])],
     rewardCards: [...classRewardIds.warrior!, ...colorlessRewardIds],
     relics: ['legendVest'],
-    exclusiveRelics: ['valiantHood'],
+    exclusiveRelics: ['valiantHood', 'heavyArmor', 'lightArmor', 'cloak', 'longSpear'],
   },
   {
     id: 'plagueDoctor',
@@ -39,7 +39,7 @@ export const characters: CharacterDef[] = [
     allCards: [...new Set(['strike', 'defend', ...classAllIds.doctor!, ...colorlessAllIds])],
     rewardCards: [...classRewardIds.doctor!, ...colorlessRewardIds],
     relics: ['bandaging'],
-    exclusiveRelics: ['abandonBadge', 'toxinSac', 'scalpel', 'caseFile', 'boneUrn', 'ravenMask', 'herbalSachet', 'vaccine', 'petriDish', 'plagueBell', 'surgicalKit', 'medicineChest', 'sickbedAmulet', 'shroud'],
+    exclusiveRelics: ['abandonBadge', 'scalpel', 'caseFile', 'boneUrn', 'ravenMask', 'herbalSachet', 'vaccine', 'petriDish', 'surgicalKit', 'shroud'],
   },
   {
     id: 'swordSaint',
@@ -50,7 +50,7 @@ export const characters: CharacterDef[] = [
     allCards: [...new Set(['defend', ...classAllIds.swordSaint!, ...colorlessAllIds])],
     rewardCards: [...classRewardIds.swordSaint!, ...colorlessRewardIds],
     relics: ['swordHeart'],
-    exclusiveRelics: ['braveBadge', 'bloodBlade', 'frostBlade', 'thunderBlade', 'flameBlade', 'venomBlade2', 'scabbard', 'bladeTomb', 'nothingBetween', 'swordManual', 'metamorphosis', 'kingdomSeal'],
+    exclusiveRelics: ['braveBadge', 'bloodBlade', 'frostBlade', 'thunderBlade', 'flameBlade', 'venomBlade2', 'scabbard', 'bladeTomb', 'nothingBetween', 'swordManual', 'metamorphosis'],
   },
   {
     id: 'ancientTree',
@@ -66,5 +66,10 @@ export const characters: CharacterDef[] = [
 
 export const characterById = (id?: string) => characters.find((c) => c.id === id) ?? characters[0]!
 
+/** 职业初始遗物里同时开放给所有职业的（仍是该职业的初始遗物，其他职业可在通用奖励池里获得） */
+export const SHARED_STARTER_RELIC_IDS = ['swordHeart']
+
 /** 职业遗物（初始 + 专属）：不进通用奖励池，也不在调试开局时发放 */
-export const CHARACTER_RELIC_IDS = characters.flatMap((c) => [...c.relics, ...(c.exclusiveRelics ?? [])])
+export const CHARACTER_RELIC_IDS = characters
+  .flatMap((c) => [...c.relics, ...(c.exclusiveRelics ?? [])])
+  .filter((id) => !SHARED_STARTER_RELIC_IDS.includes(id))

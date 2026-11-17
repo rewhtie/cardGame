@@ -188,7 +188,8 @@ function enemyUnder(clientX: number, clientY: number): number | null {
   if (!hit) return null
   const i = Number(hit.getAttribute('data-enemy-index'))
   const enemy = props.state.enemies[i]
-  return enemy && enemy.hp > 0 ? i : null
+  // 被保护的敌人不能被单体牌选中
+  return enemy && enemy.hp > 0 && !((enemy.statuses.guarded ?? 0) > 0) ? i : null
 }
 
 function onPress(index: number, e: PointerEvent) {
@@ -844,6 +845,7 @@ onBeforeUnmount(() => {
         v-show="!(enemy.vanishOnDeath && enemy.hp <= 0)"
         :key="i"
         :data-enemy-index="i"
+        :data-untargetable="(enemy.statuses.guarded ?? 0) > 0 || undefined"
         :style="{ order: -(enemy.def.actionPriority ?? 0) }"
       >
         <EnemyView

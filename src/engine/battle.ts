@@ -14,6 +14,8 @@ import {
   exhaustCard,
   drawCards,
   firstLivingEnemy,
+  firstTargetableEnemy,
+  isTargetable,
   resolveCardEffect,
   isAlive,
   loseHp,
@@ -23,6 +25,7 @@ import {
   livingCount,
   splitEnemies,
   deathSplits,
+  regroupSplit,
   willSplit,
   runTiming,
   shiftStatus,
@@ -32,17 +35,19 @@ import {
   beginExplosion,
   onEnemyDeath,
   isCombatRemaining,
+  releaseHolds,
+  HOLD_PREFIX,
 } from './effects'
-import { growCard, progressOf, rawId, resolveCards, toInstanceIds } from './enchant'
+import { growCard, growthPlays, progressOf, rawId, resolveCards, toInstanceIds } from './enchant'
 import { POTION_RULES } from './potions'
 import { fireRelics, modifyEffect, relicMaxEnergy } from './relics'
 import { shuffle } from './rng'
-import { attackBonusAt, currentIntent, intentIndexAt, lifeShareTarget, priorityLifeShare, revivalTarget } from './intents'
+import { adjacentAlly, attackBonusAt, currentIntent, intentIndexAt, lifeShareTarget, priorityLifeShare, revivalTarget } from './intents'
 import { cardPlayBlock, cardTypePlayBlock } from './cardRules'
 import { calcBlock, STATUSES, statusById } from './statuses'
 import { enemyAttack, hasDamage } from './blades'
-import { afterPlay, playCost, SWORD_MANUAL } from './swordSaint'
-import type { Action, BattleConfig, BattleState, CardDef, DispatchResult, GameEvent, IntentAction, Side } from './types'
+import { afterPlay, baseCost, playCost, SWORD_MANUAL } from './swordSaint'
+import type { Action, BattleConfig, BattleState, CardDef, DispatchResult, Effect, GameEvent, IntentAction, Side } from './types'
 
 const DEFAULT_MAX_HP = 80
 const DEFAULT_MAX_ENERGY = 3
@@ -59,9 +64,14 @@ function startPlayerTurn(s: BattleState, events: GameEvent[]) {
   if ((s.player.statuses.steady ?? 0) <= 0) s.player.block = 0
   const energyDown = s.player.statuses.energyDown ?? 0
   const drawDown = s.player.statuses.drawDown ?? 0
-  s.player.energy = Math.max(0, s.player.maxEnergy - energyDown)
+  // 蓄能 / 备牌（松弛）：与能量不足 / 抽牌受限相抵
+  const energyUp = s.player.statuses.energyUp ?? 0
+  const drawUp = s.player.statuses.drawUp ?? 0
+  s.player.energy = Math.max(0, s.player.maxEnergy - energyDown + energyUp)
   if (energyDown) shiftStatus(s, 'player', 0, 'energyDown', -energyDown, events)
   if (drawDown) shiftStatus(s, 'player', 0, 'drawDown', -drawDown, events)
+  if (energyUp) shiftStatus(s, 'player', 0, 'energyUp', -energyUp, events)
+  if (drawUp) shiftStatus(s, 'player', 0, 'drawUp', -drawUp, events)
   events.push({ type: 'turnStarted', turn: s.turn })
   runTiming(s, 'playerStart', events)
   s.enemies.forEach((enemy, enemyIndex) => {
@@ -82,7 +92,7 @@ function startPlayerTurn(s: BattleState, events: GameEvent[]) {
   }
   turnStartPassives(s, 'player', 0, events)
   fireRelics(s, 'onTurnStart', events)
-  drawCards(s, Math.max(0, s.handSize - drawDown), events)
+  drawCards(s, Math.max(0, s.handSize - drawDown + drawUp), events)
 }
 
 /** 回合开始的被动：瘟疫之喙（弃牌堆伤口 → 力量）、古树之躯（全场寄生 → 荆棘）。玩家、敌人带着都生效 */
@@ -125,7 +135,11 @@ function endBattleIfOver(s: BattleState, events: GameEvent[]): boolean {
 }
 
 export function createBattle(config: BattleConfig): DispatchResult {
-  const deck = toInstanceIds(config.deck, config.cards)
+  // 武器库：攻击牌按实例编号，打出时只升级这一张
+  const armory = config.relics?.includes('armory')
+  const deck = toInstanceIds(config.deck, config.cards).map((id, i) =>
+    armory && !id.includes('#') && config.cards[rawId(id)]?.kind === 'attack' ? `${id}#${i}` : id,
+  )
   const [shuffled, rngState] = shuffle(deck, config.seed >>> 0)
   // 固有：开局先抽到手里（洗牌之后把固有牌挪到抽牌堆顶）
   const cards = resolveCards(config.cards, deck)
@@ -270,6 +284,19 @@ function triggerPossession(s: BattleState, events: GameEvent[]) {
   }
 }
 
+/** 羽毛扫：X 牌的 X 额外 +FEATHER_X_BONUS */
+export const FEATHER_X_BONUS = 3
+const relicXBonus = (s: BattleState) => (s.relics.includes('featherDuster') ? FEATHER_X_BONUS : 0)
+/** 二重长矛：本场第一张攻击牌重放的次数 */
+export const SPEAR_REPLAYS = 2
+
+/** 二重长矛：本场第一张攻击牌 → 标记已用并返回 true（重放 SPEAR_REPLAYS 次并消耗；标记在战斗开始时清掉） */
+function takeDoubleSpear(s: BattleState, card: CardDef): boolean {
+  if (card.kind !== 'attack' || !s.relics.includes('doubleSpear') || s.relicState.doubleSpear) return false
+  s.relicState = { ...s.relicState, doubleSpear: 1 }
+  return true
+}
+
 function queueReplay(s: BattleState, card: CardDef, cardId: string, x: number, enemyIndex: number) {
   if (!card.replay) return
   s.pendingReplays = [...(s.pendingReplays ?? []), { card: { ...card, replay: false }, cardId, x, enemyIndex }]
@@ -310,10 +337,7 @@ function drainReplays(s: BattleState, events: GameEvent[]) {
     events.push({ type: 'cardTriggered', cardId })
     triggerPossession(s, events)
     if (s.player.hp <= 0) continue
-    if (card.evolve) {
-      const counts = (s.evolveCounts ??= {})
-      counts[cardId] = (counts[cardId] ?? progressOf(cardId)) + 1
-    }
+    countGrowth(s, card, cardId, events)
     if (card.kind === 'skill') s.turnSkills = (s.turnSkills ?? 0) + 1
     if (card.kind === 'attack') {
       s.turnAttacks = (s.turnAttacks ?? 0) + 1
@@ -330,7 +354,7 @@ function drainReplays(s: BattleState, events: GameEvent[]) {
         resolveCardEffect(s, card, modifyEffect(s, card, effect), events, x, enemyIndex, cardId)
       }
     }
-    if (card.evolve && card.kind === 'attack' && s.cardKill && s.relics.includes('metamorphosis')) {
+    if (growthPlays(card) && card.kind === 'attack' && s.cardKill && s.relics.includes('metamorphosis')) {
       const counts = (s.evolveCounts ??= {})
       counts[cardId] = (counts[cardId] ?? progressOf(cardId)) + 2
     }
@@ -360,7 +384,8 @@ function playCard(state: BattleState, handIndex: number, target?: number, pick?:
   if (priorityBlock) return invalid(state, priorityBlock)
   if (state.pending) return invalid(state, '请先完成当前的选择')
   const paid = playCost(state, card)
-  if (!paid.free && card.cost !== 'X' && card.cost > state.player.energy) return invalid(state, '能量不足')
+  const cost = baseCost(state, card)
+  if (!paid.free && cost !== 'X' && cost > state.player.energy) return invalid(state, '能量不足')
 
   // 单体攻击牌：未指定目标时打第一只存活的敌人；群体牌不选目标，非目标类的检查 / 效果按第一只存活敌人算
   let enemyIndex = 0
@@ -368,17 +393,23 @@ function playCard(state: BattleState, handIndex: number, target?: number, pick?:
     enemyIndex = firstLivingEnemy(state)
     if (enemyIndex < 0) return invalid(state, '没有可攻击的敌人')
   } else if (card.target === 'enemy') {
-    enemyIndex = target ?? firstLivingEnemy(state)
+    enemyIndex = target ?? firstTargetableEnemy(state)
     const t = state.enemies[enemyIndex]
     if (!Number.isInteger(enemyIndex) || !t || !isAlive(t)) return invalid(state, '目标无效')
+    if (!isTargetable(t)) return invalid(state, '它正被保护，无法选中')
   }
 
   for (const effect of card.effects) {
     if (effect.type === 'convertCorpse') {
       const why = convertCorpseBlock(state, enemyIndex)
       if (why) return invalid(state, why)
-    } else if (effect.type === 'devourParasite') {
-      if ((state.enemies[enemyIndex]?.statuses.parasite ?? 0) <= 0) return invalid(state, '目标没有寄生层数')
+    } else if (effect.type === 'devourParasite' || (effect.type === 'parasiteBurst' && card.target === 'allEnemies')) {
+      // 群体牌：任一存活敌人有寄生即可；单体牌看目标（单体催熟没有层数时照旧可以空打）
+      const has =
+        card.target === 'allEnemies'
+          ? state.enemies.some((e) => isAlive(e) && (e.statuses.parasite ?? 0) > 0)
+          : (state.enemies[enemyIndex]?.statuses.parasite ?? 0) > 0
+      if (!has) return invalid(state, card.target === 'allEnemies' ? '敌人都没有寄生层数' : '目标没有寄生层数')
     } else if (effect.type === 'purgeSelfBuff') {
       const has = Object.entries(state.player.statuses).some(([id, n]) => statusById[id] && n > 0)
       if (!has) return invalid(state, '自身没有可移除的状态')
@@ -402,8 +433,8 @@ function playCard(state: BattleState, handIndex: number, target?: number, pick?:
   const blaze = (s.player.statuses.blaze ?? 0) > 0
   // X 牌：花掉全部剩余能量，X = 花掉的能量 + 附魔加成
   // 被剑意 / 剑流免费时不花能量；免费的 X 牌 X = 0，只剩附魔加成
-  const x = card.cost === 'X' ? (paid.free ? 0 : s.player.energy) + (card.xBonus ?? 0) : 0
-  if (!paid.free) s.player.energy = card.cost === 'X' ? 0 : s.player.energy - card.cost
+  const x = card.cost === 'X' ? (paid.free ? 0 : s.player.energy) + (card.xBonus ?? 0) + relicXBonus(s) : 0
+  if (!paid.free) s.player.energy = cost === 'X' ? 0 : s.player.energy - cost
   // 先消耗 1 层再结算效果：效果里再给层数，就能一张接一张连下去
   for (const id of paid.viaStatuses) shiftStatus(s, 'player', 0, id, -1, events)
   if (paid.viaIntent) shiftStatus(s, 'player', 0, 'swordIntent', -1, events)
@@ -412,10 +443,13 @@ function playCard(state: BattleState, handIndex: number, target?: number, pick?:
     const flow = s.player.statuses.swordFlow ?? 0
     shiftStatus(s, 'player', 0, 'swordFlow', -(s.relics.includes(SWORD_MANUAL) ? 1 : flow), events)
   }
-  if (card.evolve) {
-    const counts = (s.evolveCounts ??= {})
-    counts[cardId] = (counts[cardId] ?? progressOf(cardId)) + 1
+  // 杂货店塞的牌：首次打出免费，打出后恢复原费用
+  if (s.freeOnce?.includes(cardId)) {
+    s.freeOnce = s.freeOnce.filter((id) => id !== cardId)
+    const base = s.cards[rawId(cardId)]
+    if (base) s.cards = { ...s.cards, [cardId]: { ...s.cards[cardId]!, cost: base.cost } }
   }
+  countGrowth(s, card, cardId, events)
   triggerPossession(s, events)
   if (s.player.hp <= 0) {
     s.hand.splice(handIndex, 1)
@@ -429,8 +463,9 @@ function playCard(state: BattleState, handIndex: number, target?: number, pick?:
     s.hand.splice(pick > handIndex ? pick - 1 : pick, 1)
     exhaustCard(s, pickedId, events)
   }
+  const spear = takeDoubleSpear(s, card)
   if (!blaze && !card.oneShot && card.kind !== 'power') {
-    if (card.exhaust) {
+    if (card.exhaust || spear) {
       exhaustCard(s, restoreId(cardId), events, false)
     } else s.discardPile.push(restoreId(cardId)) // 打出的牌入弃牌堆不播飞牌动画
   }
@@ -449,7 +484,7 @@ function playCard(state: BattleState, handIndex: number, target?: number, pick?:
     resolveCardEffect(s, card, modifyEffect(s, card, effect), events, x, enemyIndex, cardId)
   }
   // 蜕变：带成长的攻击牌斩杀（这张牌的伤害打死了敌人），该牌成长层数额外 +2
-  if (card.evolve && card.kind === 'attack' && s.cardKill && s.relics.includes('metamorphosis')) {
+  if (growthPlays(card) && card.kind === 'attack' && s.cardKill && s.relics.includes('metamorphosis')) {
     const counts = (s.evolveCounts ??= {})
     counts[cardId] = (counts[cardId] ?? progressOf(cardId)) + 2
   }
@@ -461,10 +496,13 @@ function playCard(state: BattleState, handIndex: number, target?: number, pick?:
   drainPlayer(s, events)
   crackEnemies(s, events)
   if (card.grow) {
-    s.cards = { ...s.cards, [cardId]: growCard(card) }
+    s.cards = { ...s.cards, [cardId]: growCard(s.cards[cardId] ?? card) }
     events.push({ type: 'cardEnchantGrew', cardId })
   }
   queueReplay(s, s.cards[cardId] ?? card, cardId, x, enemyIndex)
+  if (spear)
+    for (let k = 0; k < SPEAR_REPLAYS; k++)
+      queueReplay(s, { ...(s.cards[cardId] ?? card), replay: true }, cardId, x, enemyIndex)
   drainReplays(s, events)
   if (card.oneShot) finishOneShot(s, cardId)
   // 俱焚结算：开始时就有 → 这张牌消耗（一次性已被永久移除，不进消耗堆）并抽 1；精神过载自己给了俱焚也抽 1
@@ -484,6 +522,18 @@ function flushDiscards(s: BattleState, events: GameEvent[]) {
 }
 
 /** 天命：无视费用打出抽牌堆顶的一张牌并将其消耗；不可打出的牌直接弃掉 */
+/** 成长计数：每打出一次 +1；登峰造极每层再 +1，打出 MAX（已熟练）牌时每层获得 1 点能量 */
+function countGrowth(s: BattleState, card: CardDef, cardId: string, events: GameEvent[]) {
+  const peak = s.player.statuses.pinnacle ?? 0
+  if (growthPlays(card)) {
+    const counts = (s.evolveCounts ??= {})
+    counts[cardId] = (counts[cardId] ?? progressOf(cardId)) + 1 + peak
+  } else if (card.mastered && peak > 0) {
+    s.player.energy += peak
+    events.push({ type: 'energyGained', amount: peak })
+  }
+}
+
 function playTopCard(s: BattleState, events: GameEvent[]) {
   if (s.drawPile.length === 0 && s.discardPile.length > 0) {
     const [pile, rngState] = shuffle(s.discardPile, s.rngState)
@@ -495,7 +545,7 @@ function playTopCard(s: BattleState, events: GameEvent[]) {
   const id = s.drawPile.shift()
   if (id === undefined) return
   const def = s.cards[id]
-  const target = firstLivingEnemy(s)
+  const target = firstTargetableEnemy(s)
   if (!def || def.unplayable || cardTypePlayBlock(s, def) || target < 0 || (def.target === 'enemy' && !s.enemies[target])) {
     s.discardPile.push(id)
     events.push({ type: 'cardDiscarded', cardId: id })
@@ -517,7 +567,8 @@ function playTopCard(s: BattleState, events: GameEvent[]) {
     else if (def.target === 'allEnemies')
       s.enemies.forEach((e, i) => e.hp > 0 && stripEnemyBuff(s, i, events))
   }
-  const x = def.cost === 'X' ? (def.xBonus ?? 0) : 0
+  const spear = takeDoubleSpear(s, def)
+  const x = def.cost === 'X' ? (def.xBonus ?? 0) + relicXBonus(s) : 0
   // 自动打出的牌单独判断时机：先收起外层牌的命中记录，结算完再还回去
   const outerStruck = s.enemies.map((e) => e.struck)
   s.enemies.forEach((e) => delete e.struck)
@@ -528,6 +579,7 @@ function playTopCard(s: BattleState, events: GameEvent[]) {
   crackEnemies(s, events, true)
   s.enemies.forEach((e, i) => { if (outerStruck[i]) e.struck = true })
   queueReplay(s, def, id, x, target)
+  if (spear) for (let k = 0; k < SPEAR_REPLAYS; k++) queueReplay(s, { ...def, replay: true }, id, x, target)
   if (def.oneShot) finishOneShot(s, id)
   if (blaze) blazeAfterPlay(s, id, !def.oneShot, events)
   else if (def.effects.some((e) => e.type === 'mentalOverload') && (s.player.statuses.blaze ?? 0) > 0)
@@ -643,7 +695,7 @@ function command(state: BattleState, index: number, choice: 'block' | 'attack' |
   s.commanded = [...(s.commanded ?? []), index]
   if (choice === 'block') applyBlock(s, 'player', calcBlock(COMMAND_AMOUNT, s.player.statuses), events)
   else if (choice === 'attack') {
-    const target = firstLivingEnemy(s)
+    const target = firstTargetableEnemy(s)
     if (target >= 0)
       applyDamage(s, 'enemy', COMMAND_AMOUNT, events, target, { source: { side: 'player' } })
   } else {
@@ -767,6 +819,8 @@ function endTurn(state: BattleState): DispatchResult {
     .sort((a, b) => (b.enemy.def.actionPriority ?? 0) - (a.enemy.def.actionPriority ?? 0))
   actionOrder.forEach(({ enemy, enemyIndex }) => {
     if (!actionEligible.has(enemy) || !isAlive(enemy) || enemy.revivedTurn === s.turn || s.player.hp <= 0 || splitting.has(enemyIndex)) return
+    // 临时荆棘、保护等「到下次行动前」的效果在这里结束（晕眩跳过行动也算）
+    releaseHolds(s, enemyIndex, events)
     // 敌人在意图之前结算并衰减：圆盾在意图里加的易伤才能撑过下一个玩家回合
     runTiming(s, 'enemyStart', events, enemyIndex)
     if (!isAlive(enemy)) return
@@ -840,12 +894,29 @@ function endTurn(state: BattleState): DispatchResult {
         break
       }
       case 'defend':
-      case 'heal':
+      case 'heal': {
+        const pair = intent.target === 'selfAndAlly' ? adjacentAlly(s.enemies, enemyIndex) : -1
         s.enemies.forEach((ally, index) => {
-          if (!isAlive(ally) || (intent.target !== 'allAllies' && index !== enemyIndex)) return
+          if (!isAlive(ally) || (intent.target !== 'allAllies' && index !== enemyIndex && index !== pair)) return
           if (intent.type === 'defend') applyBlock(s, 'enemy', intent.block, events, index)
           else heal(s, 'enemy', index, intent.amount, events)
         })
+        break
+      }
+      case 'protect': {
+        const ally = adjacentAlly(s.enemies, enemyIndex)
+        if (ally < 0) break
+        enemy.guarding = ally
+        addStatus(s, 'enemy', ally, 'guarded', 1, events)
+        break
+      }
+      case 'deathStrike':
+        runIntentAction({ type: 'attack', damage: intent.damage })
+        if (!isAlive(enemy)) break
+        events.push({ type: 'damageDealt', target: 'enemy', enemyIndex, amount: enemy.hp, blocked: 0 })
+        enemy.hp = 0
+        enemy.block = 0
+        onEnemyDeath(s, enemyIndex, events)
         break
       case 'shareLife': {
         const ally = lifeShareTarget(enemy, s.enemies)
@@ -874,6 +945,9 @@ function endTurn(state: BattleState): DispatchResult {
         onEnemyDeath(s, enemyIndex, events, true)
         events.push({ type: 'enemyExploded', enemyIndex, damage: intent.damage })
         break
+      case 'regroup':
+        if (enemy.splitParent !== undefined) regroupSplit(s, enemy.splitParent, intent.ratio, events)
+        break
       case 'revive': {
         const target = revivalTarget(enemy, s.enemies)
         const rule = enemy.def.revival
@@ -894,7 +968,12 @@ function endTurn(state: BattleState): DispatchResult {
         addStatus(s, 'player', 0, intent.status, intent.stacks, events)
         break
       case 'buff':
-        addStatus(s, 'enemy', enemyIndex, intent.status, intent.stacks, events)
+        for (const index of [enemyIndex, intent.target === 'selfAndAlly' ? adjacentAlly(s.enemies, enemyIndex) : -1]) {
+          const owner = s.enemies[index]
+          if (!owner || !isAlive(owner)) continue
+          addStatus(s, 'enemy', index, intent.status, intent.stacks, events)
+          if (intent.untilNextAction) owner.statuses[HOLD_PREFIX + intent.status] = (owner.statuses[HOLD_PREFIX + intent.status] ?? 0) + intent.stacks
+        }
         break
       case 'addCards':
         addCardsToPile(s, intent.cardId, intent.count, events, intent.to)
@@ -937,6 +1016,28 @@ function endTurn(state: BattleState): DispatchResult {
   return { state: s, events }
 }
 
+/** 贤者水晶：药水数值翻倍（上限 999） */
+export const SAGE_CRYSTAL = 'sageCrystal'
+export const SAGE_MULT = 3
+function scalePotionEffect(effect: Effect, mult: number): Effect {
+  if (mult === 1) return effect
+  const x = (n: number) => Math.min(999, n * mult)
+  switch (effect.type) {
+    case 'damage':
+    case 'block':
+    case 'heal':
+    case 'gainEnergy':
+      return { ...effect, amount: x(effect.amount) }
+    case 'applyStatus':
+      return { ...effect, stacks: x(effect.stacks) }
+    case 'draw':
+    case 'fetch':
+      return { ...effect, count: x(effect.count) }
+    default:
+      return effect
+  }
+}
+
 function usePotion(state: BattleState, potionId: string, target?: number): DispatchResult {
   if (state.phase !== 'player') return invalid(state, '当前不是玩家回合')
   if (state.pending) return invalid(state, '请先完成当前的选择')
@@ -945,16 +1046,18 @@ function usePotion(state: BattleState, potionId: string, target?: number): Dispa
 
   let enemyIndex = 0
   if (rule.target === 'enemy') {
-    enemyIndex = target ?? firstLivingEnemy(state)
+    enemyIndex = target ?? firstTargetableEnemy(state)
     const t = state.enemies[enemyIndex]
     if (!Number.isInteger(enemyIndex) || !t || !isAlive(t)) return invalid(state, '目标无效')
+    if (!isTargetable(t)) return invalid(state, '它正被保护，无法选中')
   }
 
   const s = draft(state)
   const events: GameEvent[] = [
     { type: 'potionUsed', potionId, ...(rule.target === 'enemy' && { enemyIndex }) },
   ]
-  for (const effect of rule.effects) resolveEffect(s, effect, events, 0, enemyIndex)
+  const mult = s.relics.includes(SAGE_CRYSTAL) ? SAGE_MULT : 1
+  for (const effect of rule.effects) resolveEffect(s, scalePotionEffect(effect, mult), events, 0, enemyIndex)
   endBattleIfOver(s, events)
   return { state: s, events }
 }

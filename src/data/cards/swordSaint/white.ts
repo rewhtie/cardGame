@@ -49,7 +49,7 @@ export const swordSaintWhite: Card[] = [
     .reward()
     .upgrade((u) => u.damage(8).applyStatus('frost', 3, 'target')),
   Card.white('thunderClap', '雷剑')
-    .icon('⚡')
+    .icon('blade-thunder')
     .cost(1)
     .targetEnemy()
     .damage(4)
@@ -57,7 +57,7 @@ export const swordSaintWhite: Card[] = [
     .reward()
     .upgrade((u) => u.damage(6).applyStatus('shock', 2)),
   Card.white('flameTongue', '炎剑')
-    .icon('🔥')
+    .icon('blade-flame')
     .cost(1)
     .targetEnemy()
     .damage(4)
@@ -71,4 +71,27 @@ export const swordSaintWhite: Card[] = [
     .damageIfTargetBlock(7, 4)
     .reward()
     .upgrade((u) => u.damageIfTargetBlock(10, 6)),
+  Card.white('sweepingSlash', '横斩')
+    .icon('🗡️')
+    .cost(1)
+    .targetAllEnemies()
+    .damage(5)
+    .reward()
+    .upgrade((u) => u.damage(8)),
+  Card.white('frostGale', '霜风')
+    .icon('🌬️')
+    .cost(1)
+    .targetAllEnemies()
+    .damage(4)
+    .applyStatus('frost', 1, 'target')
+    .reward()
+    .upgrade((u) => u.damage(6).applyStatus('frost', 2, 'target')),
+  Card.white('flameRing', '火环')
+    .icon('🔥')
+    .cost(1)
+    .targetAllEnemies()
+    .damage(3)
+    .applyStatus('burn', 3, 'target')
+    .reward()
+    .upgrade((u) => u.damage(4).applyStatus('burn', 5, 'target')),
 ]

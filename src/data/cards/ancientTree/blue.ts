@@ -61,4 +61,19 @@ export const ancientTreeBlue: Card[] = [
     .applyStatus('regen', 4)
     .reward()
     .upgrade((u) => u.applyStatus('regen', 6)),
+  Card.blue('rootDevour', '噬根')
+    .icon('🪱')
+    .cost(1)
+    .targetAllEnemies()
+    .asSkill()
+    .devourParasite(3, 2)
+    .reward()
+    .upgrade((u) => u.devourParasite(3, 3)),
+  Card.blue('timberCrush', '倾轧')
+    .icon('🪵')
+    .cost(2)
+    .targetAllEnemies()
+    .damageMaxHpPercent(15)
+    .reward()
+    .upgrade((u) => u.damageMaxHpPercent(20)),
 ]

@@ -119,7 +119,7 @@ const kindChoice = computed<KindChoice>({
   },
 })
 /** 可选数字特性：0 / 空 = 删除字段，保存出的代码里就不带这个调用 */
-function optionalNumber(key: 'retainGrow' | 'grow' | 'freeIfParasiteTotal') {
+function optionalNumber(key: 'retainGrow' | 'grow' | 'freeIfParasiteTotal' | 'swordIntentDiscount') {
   return computed({
     get: () => current.value?.spec[key] ?? 0,
     set: (v: number) => {
@@ -133,6 +133,7 @@ function optionalNumber(key: 'retainGrow' | 'grow' | 'freeIfParasiteTotal') {
 const retainGrow = optionalNumber('retainGrow')
 const grow = optionalNumber('grow')
 const freeParasite = optionalNumber('freeIfParasiteTotal')
+const intentDiscount = optionalNumber('swordIntentDiscount')
 /** 有剑意时免费：关闭 = 删除字段 */
 const freeIntent = computed({
   get: () => !!current.value?.spec.freeIfSwordIntent,
@@ -459,6 +460,10 @@ function revert(e: Entry) {
             <label class="inline">
               全场寄生合计 ≥ N 时免费
               <input v-model.number="freeParasite" type="number" min="0" class="ed-ctl ed-mini" />
+            </label>
+            <label class="inline">
+              每层剑意费用 -
+              <input v-model.number="intentDiscount" type="number" min="0" class="ed-ctl ed-mini" />
             </label>
             <label><input v-model="freeIntent" type="checkbox" /> 有剑意时免费打出（要消耗剑意请再加一条「失去 1 层剑意」）</label>
             <label class="inline">

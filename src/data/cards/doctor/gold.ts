@@ -117,4 +117,12 @@ export const doctorGold: Card[] = [
     .exhaust()
     .effect({ type: 'sensoryOverload', per: 2 })
     .upgrade((u) => u.retain()),
+  Card.gold('poisonBurst', '毒发')
+    .icon('☠️')
+    .cost(2)
+    .targetAllEnemies()
+    .damagePerTargetStatus(0, 'poison', 1, 'keep')
+    .exhaust()
+    .reward()
+    .upgrade((u) => u.damagePerTargetStatus(0, 'poison', 1, 'keep').noExhaust()),
 ]

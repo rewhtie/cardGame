@@ -193,6 +193,11 @@ export function traceCard(cardId: string, opts: AutoRunOptions = {}): Trace {
     cards,
   })
   let state = created.state
+  // 剑意减费的高费牌（剑葬）：预置刚好够 3 点能量打出的剑意层数，否则自动跑永远打不出
+  if (def.swordIntentDiscount && typeof def.cost === 'number' && def.cost > state.player.energy) {
+    const need = Math.ceil((def.cost - state.player.energy) / def.swordIntentDiscount)
+    state = { ...state, player: { ...state.player, statuses: { ...state.player.statuses, swordIntent: need } } }
+  }
   const steps: TraceStep[] = []
   let played = 0
 

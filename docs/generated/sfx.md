@@ -2,7 +2,7 @@
 
 # 音效槽位
 
-共 46 个槽位。槽位清单来自 `src/data/sfxSlots.ts`，配置来自 `src/data/sfxMap.ts`。
+共 47 个槽位。槽位清单来自 `src/data/sfxSlots.ts`，配置来自 `src/data/sfxMap.ts`。
 
 ## 战斗·出牌
 
@@ -103,4 +103,5 @@
 | run.evolve | 卡牌成长（蓄力裂开 + 爆发） | （未配置） |
 | run.train | 卡牌训练（成长未满，裂痕加深） | （未配置） |
 | run.relic.gained | 获得遗物 | （未配置） |
+| run.treasure.open | 宝箱开启 | （未配置） |
 | run.hpLost | 战斗外失血 | （未配置） |

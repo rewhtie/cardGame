@@ -143,4 +143,27 @@ export const warriorWhite: Card[] = [
     .applyStatus('weak', 2, 'target')
     .reward()
     .upgrade((u) => u.damage(14).applyStatus('weak', 3, 'target')),
+  Card.white('cleave', '横扫')
+    .icon('🪓')
+    .cost(1)
+    .targetAllEnemies()
+    .damage(7)
+    .reward()
+    .upgrade((u) => u.damage(10)),
+  Card.white('quakeStomp', '震地')
+    .icon('🦶')
+    .cost(2)
+    .targetAllEnemies()
+    .damage(8)
+    .applyStatus('vulnerable', 1, 'target')
+    .reward()
+    .upgrade((u) => u.damage(11).applyStatus('vulnerable', 2, 'target')),
+  Card.white('shieldRush', '盾冲')
+    .icon('🛡️')
+    .cost(1)
+    .targetAllEnemies()
+    .damage(4)
+    .block(5)
+    .reward()
+    .upgrade((u) => u.damage(6).block(7)),
 ]

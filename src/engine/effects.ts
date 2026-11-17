@@ -79,13 +79,42 @@ export function deathSplits(s: BattleState, events: GameEvent[]) {
   const count = s.enemies.length
   for (let enemyIndex = 0; enemyIndex < count; enemyIndex++) {
     const e = s.enemies[enemyIndex]!
-    const targets = e.def.splitOnDeath ?? []
+    const regroup = e.def.regroup
+    // 合体机制：每分裂一次少一只，分不出来时本体真正死亡
+    const targets = (e.def.splitOnDeath ?? []).slice(0, regroup ? Math.max(0, (e.def.splitOnDeath?.length ?? 0) - (e.splitsDone ?? 0)) : undefined)
     if (isAlive(e) || e.pendingExplosion || e.fled || e.deathSplit || targets.length === 0) continue
     e.deathSplit = true
     e.vanishOnDeath = true
-    const spawned = targets.map((def) => spawnEnemy(s, def, events)).filter((i) => i >= 0)
+    const spawned = targets.map((def) => spawnEnemy(s, def, events, undefined, !!regroup)).filter((i) => i >= 0)
+    if (regroup) {
+      e.splitsDone = (e.splitsDone ?? 0) + 1
+      for (const i of spawned) s.enemies[i]!.splitParent = enemyIndex
+    }
     events.push({ type: 'enemySplit', enemyIndex, spawned })
   }
+}
+
+/** 执行合体意图：本体的分身全部消失，本体按意图给出的比例复活并从第一个意图重来（本回合不再行动） */
+export function regroupSplit(s: BattleState, parentIndex: number, ratio: number, events: GameEvent[]) {
+  const parent = s.enemies[parentIndex]
+  if (!parent || !parent.def.regroup || isAlive(parent)) return
+  for (const k of s.enemies) {
+    if (k.splitParent !== parentIndex) continue
+    k.hp = 0
+    k.deathHandled = true
+    delete k.splitParent
+  }
+  parent.hp = Math.max(1, Math.ceil((parent.maxHpOverride ?? parent.def.maxHp) * ratio))
+  parent.block = 0
+  parent.statuses = { ...parent.def.startStatuses }
+  parent.turns = 0
+  parent.intentIndex = 0
+  parent.deathHandled = false
+  parent.deathSplit = false
+  parent.revivedTurn = s.turn
+  delete parent.vanishOnDeath
+  delete parent.deathOrder
+  events.push({ type: 'enemyRevived', enemyIndex: parentIndex, amount: parent.hp })
 }
 
 /** 同时存活的敌人上限 */
@@ -93,14 +122,15 @@ export const MAX_ENEMIES = 4
 
 export const livingCount = (s: BattleState) => s.enemies.filter(isAlive).length
 
-/** 战斗中追加一只敌人；已达上限返回 -1，否则返回新敌人的下标 */
+/** 战斗中追加一只敌人；已达上限返回 -1（ignoreCap 时不受上限限制），否则返回新敌人的下标 */
 export function spawnEnemy(
   s: BattleState,
   def: EnemyDef,
   events: GameEvent[],
   hp?: number,
+  ignoreCap = false,
 ): number {
-  if (livingCount(s) >= MAX_ENEMIES) return -1
+  if (!ignoreCap && livingCount(s) >= MAX_ENEMIES) return -1
   s.enemies.push({
     def,
     hp: hp ?? def.maxHp,
@@ -202,7 +232,14 @@ export function onEnemyDeath(s: BattleState, enemyIndex: number, events: GameEve
   }
   e.deathHandled = true
   e.deathOrder = Math.max(0, ...s.enemies.map((enemy) => enemy.deathOrder ?? 0)) + 1
+  releaseHolds(s, enemyIndex, events)
+  delete e.strikePending
   if (e.def.family) {
+    // 遗志重击：存活同族在本次意图后追加重击，然后碎裂
+    s.enemies.forEach((ally) => {
+      if (ally !== e && isAlive(ally) && ally.def.family === e.def.family && ally.def.deathStrike !== undefined)
+        ally.strikePending = true
+    })
     e.statuses = {}
     e.block = 0
     e.turns = 0
@@ -221,9 +258,37 @@ export function onEnemyDeath(s: BattleState, enemyIndex: number, events: GameEve
   }
 }
 
+/** 「到下次行动前」的记账键：值 = 下次行动前要扣掉的层数 */
+export const HOLD_PREFIX = 'hold:'
+
+/** 敌人下次行动前（或死亡时）：扣掉持续到此刻的层数，并解除它对队友的保护 */
+export function releaseHolds(s: BattleState, enemyIndex: number, events: GameEvent[]) {
+  const e = s.enemies[enemyIndex]
+  if (!e) return
+  for (const key of Object.keys(e.statuses)) {
+    if (!key.startsWith(HOLD_PREFIX)) continue
+    const n = e.statuses[key]!
+    delete e.statuses[key]
+    loseStatusStacks(s, 'enemy', enemyIndex, key.slice(HOLD_PREFIX.length), n, events)
+  }
+  if (e.guarding !== undefined) {
+    loseStatusStacks(s, 'enemy', e.guarding, 'guarded', 1, events)
+    delete e.guarding
+  }
+}
+
 /** 第一只存活敌人的下标；全部死亡返回 -1 */
 export function firstLivingEnemy(s: BattleState): number {
   return s.enemies.findIndex(isAlive)
+}
+
+/** 能被单体效果选中：存活且没有被保护 */
+export const isTargetable = (e: EnemyState) => isAlive(e) && (e.statuses.guarded ?? 0) <= 0
+
+/** 未指定目标的单体效果（自动打出、随从攻击、缺省目标）打哪只：跳过被保护的；都被保护时退回第一只存活的 */
+export function firstTargetableEnemy(s: BattleState): number {
+  const i = s.enemies.findIndex(isTargetable)
+  return i >= 0 ? i : firstLivingEnemy(s)
 }
 
 export interface DamageOpts {
@@ -941,6 +1006,8 @@ const hitsTarget = (e: Effect) =>
   e.type === 'meltBlock' ||
   e.type === 'sapStrength' ||
   e.type === 'multiplyStatus' ||
+  e.type === 'parasiteBurst' ||
+  e.type === 'devourParasite' ||
   (e.type === 'applyStatus' && e.to === 'target') ||
   (e.type === 'woundStatus' && e.to === 'target')
 
@@ -1049,6 +1116,9 @@ export function resolveEffect(
       if (e) e.block = 0
       break
     }
+    case 'loseBlock':
+      s.player.block = 0
+      break
     case 'sapStrength': {
       const e = s.enemies[enemyIndex]
       if (!e || effect.amount <= 0) break

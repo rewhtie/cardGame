@@ -34,7 +34,7 @@ export const swordSaintGold: Card[] = [
     .reward()
     .upgrade((u) => u.applyStatus('frost', 10, 'allEnemies')),
   Card.gold('thunderGodPower', '雷剑')
-    .icon('🌩️')
+    .icon('blade-thunder')
     .cost(1)
     .power()
     .applyStatus('thunderGod', 1)
@@ -79,4 +79,22 @@ export const swordSaintGold: Card[] = [
     .applyStatus('extreme', 1)
     .applyStatus('blaze', 1)
     .upgrade((u) => u),
+  Card.gold('swordBurial', '剑葬')
+    .icon('⚔️')
+    .cost(5)
+    .swordIntentDiscount(2)
+    .targetAllEnemies()
+    .damageHits(8, 3)
+    .exhaust()
+    .reward()
+    .upgrade((u) => u.damageHits(10, 3)),
+  Card.gold('pinnacle', '登峰造极')
+    .icon('card-pinnacle')
+    .cost(6)
+    .swordIntentDiscount(2)
+    .power()
+    .ethereal()
+    .applyStatus('pinnacle', 1)
+    .reward()
+    .upgrade((u) => u.noEthereal()),
 ]

@@ -2,6 +2,7 @@ import { attackMods } from './blades'
 import { damageBase } from './effects'
 import { modifyEffect } from './relics'
 import { calcAttack } from './statuses'
+import { playCost } from './swordSaint'
 import type { BattleState, CardDef, Effect } from './types'
 
 /**
@@ -18,14 +19,18 @@ import type { BattleState, CardDef, Effect } from './types'
 export function previewDamage(s: BattleState, card: CardDef, enemyIndex?: number, x = 0): number[] {
   // 这张牌打出时「本回合攻击数」已含自己
   let ctx: BattleState = card.kind === 'attack' ? { ...s, turnAttacks: (s.turnAttacks ?? 0) + 1 } : s
-  const from = { hp: s.player.hp, maxHp: s.player.maxHp, statuses: s.player.statuses }
+  // 剑意让技能牌免费时，打出前先扣 1 层再结算：带伤害的技能牌按扣完的剑意算
+  const pStatuses = playCost(s, card).viaIntent
+    ? { ...s.player.statuses, swordIntent: (s.player.statuses.swordIntent ?? 0) - 1 }
+    : s.player.statuses
+  const from = { hp: s.player.hp, maxHp: s.player.maxHp, statuses: pStatuses }
   // 复制一份：牌里排在伤害前面的「给予目标状态」（如死亡标记先上裂伤）要先叠上去再算伤害
   const tStatuses: Record<string, number> = { ...((enemyIndex === undefined ? undefined : s.enemies[enemyIndex])?.statuses ?? {}) }
   // 目标格挡随效果顺序变化（如长矛先融化格挡再造成伤害），每次算伤害时现读
   const finalOf = (base: number) => {
     const block = (enemyIndex === undefined ? undefined : ctx.enemies[enemyIndex])?.block ?? 0
     const { mods } = attackMods(from, block, tStatuses)
-    return calcAttack(base, s.player.statuses, tStatuses, mods)
+    return calcAttack(base, pStatuses, tStatuses, mods)
   }
 
   const out: number[] = []

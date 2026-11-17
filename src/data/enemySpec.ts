@@ -6,7 +6,7 @@ export type EnemyRole = (typeof ROLES)[number]
 
 /** 与引擎的 Intent 相同，只是 summon 里的敌人改为按 id 引用，方便存成 JSON */
 export type ActionSpec =
-  Exclude<IntentAction, { type: 'summon' }> | { type: 'summon'; enemy: string }
+  Exclude<IntentAction, { type: 'summon' } | { type: 'deathStrike' } | { type: 'regroup' }> | { type: 'summon'; enemy: string }
 export type IntentSpec = ActionSpec & { also?: ActionSpec[] }
 
 export interface EnemyHpPhaseSpec {
@@ -36,8 +36,11 @@ export interface EnemySpec {
   stunPhase?: { removeStatuses?: string[]; startStatuses?: Record<string, number>; intents: IntentSpec[]; loopFrom?: number; evenTurnActions?: ActionSpec[] }
   actionPriority?: number
   nativeStage?: number
+  solo?: boolean
   family?: string
   deathHealFamily?: boolean
+  /** 同族死亡后追加的遗志重击伤害（打完自身碎裂），需要族群 */
+  deathStrike?: number
   delayedExplosion?: boolean
   revival?: { limit: number; hpRatio: number }
   intents: IntentSpec[]
@@ -47,11 +50,14 @@ export interface EnemySpec {
   splitInto?: string[]
   /** 死亡时分裂出的敌人 id（各自满血，本体消失） */
   splitOnDeath?: string[]
+  /** 死亡分裂的合体：分身有同伴阵亡后改为合体意图，本体按基础比例 + 每只存活分身的加成复活，每次分裂少一只 */
+  regroup?: { hpRatio: number; perClone?: number }
 }
 
 /** 固定遭遇：指定楼层范围内，普通战斗有一定概率直接出这一组 */
 export interface EncounterSpec {
   stage?: number
+  chance?: number
   id: string
   name: string
   enemies: string[]
@@ -80,6 +86,7 @@ const INTENT_TYPES = [
   'summon',
   'steal',
   'flee',
+  'protect',
 ]
 const isInt = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n)
 
@@ -111,8 +118,12 @@ export function validateEnemyData(data: EnemyData): string[] {
     if (e.nativeStage !== undefined && (!isInt(e.nativeStage) || e.nativeStage < 1)) errors.push(`${at}：原生大层必须是正整数`)
     if (e.family !== undefined && typeof e.family !== 'string') errors.push(`${at}：族群必须是文字`)
     if (e.deathHealFamily && !e.family) errors.push(`${at}：死亡恢复队友需要族群`)
+    if (e.deathStrike !== undefined && (!isInt(e.deathStrike) || e.deathStrike < 0 || !e.family)) errors.push(`${at}：遗志重击需要族群，伤害为非负整数`)
     if (e.revival && (!e.family || !isInt(e.revival.limit) || e.revival.limit < 1 ||
       !(e.revival.hpRatio > 0 && e.revival.hpRatio <= 1))) errors.push(`${at}：复活需要族群、正整数次数和 0–1 生命比例`)
+    if (e.regroup && (!e.splitOnDeath?.length || !(e.regroup.hpRatio > 0 && e.regroup.hpRatio <= 1) ||
+      (e.regroup.perClone !== undefined && !(e.regroup.perClone >= 0 && e.regroup.perClone <= 1))))
+      errors.push(`${at}：合体需要死亡分裂和 0–1 生命比例`)
     if (e.delayedExplosion !== undefined && typeof e.delayedExplosion !== 'boolean') errors.push(`${at}：延迟爆炸必须是布尔值`)
     if (e.deathHealFamily !== undefined && typeof e.deathHealFamily !== 'boolean') errors.push(`${at}：死亡恢复必须是布尔值`)
     if (e.stunPhase) {
@@ -169,8 +180,10 @@ export function validateEnemyData(data: EnemyData): string[] {
         if (it.type === 'defend') nums['格挡'] = it.block
         if (it.type === 'heal') nums['治疗'] = it.amount
         if (it.type === 'attack' && it.selfStun !== undefined) nums['自晕'] = it.selfStun
-        if ((it.type === 'defend' || it.type === 'heal') && it.target !== undefined && !['self', 'allAllies'].includes(it.target))
+        if ((it.type === 'defend' || it.type === 'heal') && it.target !== undefined && !['self', 'allAllies', 'selfAndAlly'].includes(it.target))
           errors.push(`${at}：队友目标不合法`)
+        if (it.type === 'buff' && it.target !== undefined && !['self', 'selfAndAlly'].includes(it.target))
+          errors.push(`${at}：增益目标不合法`)
         if (it.type === 'steal') nums['金币'] = it.amount
         if (it.type === 'debuff' || it.type === 'buff') nums['层数'] = it.stacks
         if (it.type === 'addCards') nums['张数'] = it.count
@@ -238,6 +251,7 @@ export function validateEnemyData(data: EnemyData): string[] {
     eids.add(c.id)
     if (c.role !== undefined && c.role !== 'monster' && c.role !== 'elite' && c.role !== 'boss') errors.push(`遭遇 ${c.name || c.id}：定位不合法`)
     if (c.stage !== undefined && (!isInt(c.stage) || c.stage < 1)) errors.push(`遭遇 ${c.name || c.id}：大层必须是正整数`)
+    if (c.chance !== undefined && !(c.chance > 0 && c.chance <= 1)) errors.push(`遭遇 ${c.name || c.id}：出现概率必须在 0 到 1 之间`)
     if (c.enemies.length === 0) errors.push(`遭遇 ${c.name || c.id}：至少一只敌人`)
     if (c.enemies.some((id) => !has(id))) errors.push(`遭遇 ${c.name || c.id}：包含不存在的敌人`)
     if (!isInt(c.minFloor) || !isInt(c.maxFloor) || c.minFloor < 1 || c.minFloor > c.maxFloor)
@@ -270,8 +284,10 @@ export function buildEnemies(data: EnemyData) {
       ...(s.loopFrom !== undefined && { loopFrom: s.loopFrom }),
       ...(s.actionPriority !== undefined && { actionPriority: s.actionPriority }),
       ...(s.nativeStage !== undefined && { nativeStage: s.nativeStage }),
+      ...(s.solo && { solo: true }),
       ...(s.family && { family: s.family }),
       ...(s.deathHealFamily && { deathHealFamily: true }),
+      ...(s.deathStrike !== undefined && { deathStrike: s.deathStrike }),
       ...(s.delayedExplosion && { delayedExplosion: true }),
       ...(s.revival && { revival: { ...s.revival } }),
       ...(s.stunPhase && { stunPhase: {
@@ -301,6 +317,7 @@ export function buildEnemies(data: EnemyData) {
       })),
       ...(s.splitInto?.length && { splitInto: s.splitInto.map(build) }),
       ...(s.splitOnDeath?.length && { splitOnDeath: s.splitOnDeath.map(build) }),
+      ...(s.regroup && { regroup: { ...s.regroup } }),
     }
     cache.set(id, def)
     return def
@@ -317,6 +334,7 @@ export function buildEnemies(data: EnemyData) {
     maxFloor: c.maxFloor,
     ...(c.role && { role: c.role }),
     ...(c.stage !== undefined && { stage: c.stage }),
+    ...(c.chance !== undefined && { chance: c.chance }),
   }))
   return { byId, pool, encounters }
 }

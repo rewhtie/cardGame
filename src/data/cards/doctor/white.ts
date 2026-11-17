@@ -99,4 +99,27 @@ export const doctorWhite: Card[] = [
     .applyStatus('poison', 3, 'target')
     .reward()
     .upgrade((u) => u.damage(7).applyStatus('poison', 4, 'target')),
+  Card.white('bloodMist', '血雾')
+    .icon('🩸')
+    .cost(1)
+    .targetAllEnemies()
+    .damage(4)
+    .applyStatus('poison', 2, 'target')
+    .reward()
+    .upgrade((u) => u.damage(6).applyStatus('poison', 3, 'target')),
+  Card.white('scatterBlades', '散刃')
+    .icon('🔪')
+    .cost(1)
+    .targetAllEnemies()
+    .damageHits(3, 2)
+    .reward()
+    .upgrade((u) => u.damageHits(4, 2)),
+  Card.white('miasma', '腐气')
+    .icon('🌫️')
+    .cost(0)
+    .targetAllEnemies()
+    .damage(3)
+    .addWound(1)
+    .reward()
+    .upgrade((u) => u.damage(5).addWound(1)),
 ]

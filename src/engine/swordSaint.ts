@@ -18,10 +18,13 @@ export function playCost(
   // 极限：所有牌费用为零，不消耗任何免费来源
   if (has('extreme')) return { free: true, viaIntent: false, viaFlow: false, viaStatuses: [] }
   const plain = card.rarity !== 'status' && card.rarity !== 'curse'
-  const viaStatuses = plain && card.cost !== 0 ? freeStatusesFor(card).filter(has) : []
+  const cost = baseCost(s, card)
+  const viaStatuses = plain && cost !== 0 ? freeStatusesFor(card).filter(has) : []
   const native =
     (card.freeIfParasiteTotal !== undefined && parasiteTotal(s) >= card.freeIfParasiteTotal) ||
-    (!!card.freeIfSwordIntent && has('swordIntent'))
+    (!!card.freeIfSwordIntent && has('swordIntent')) ||
+    // 剑意减费减到 0：本身就不花能量，不额外消耗免费来源
+    (!!card.swordIntentDiscount && cost === 0)
   // 牌自带条件免费时什么都不额外消耗（伤害随剑意的牌自己会清空剑意，先扣 1 层会少算一层）
   if (native) return { free: true, viaIntent: false, viaFlow: false, viaStatuses: [] }
   const viaIntent = card.kind === 'skill' && plain && has('swordIntent')
@@ -42,9 +45,16 @@ const freeStatusesFor = (card: CardDef): string[] => [
   ...(card.ethereal ? ['freeEthereal'] : []),
 ]
 
+/** 不算免费来源时的费用：剑意减费（每层 -N，最低 0）已扣除 */
+export function baseCost(s: BattleState, card: CardDef): number | 'X' {
+  if (card.cost === 'X' || !card.swordIntentDiscount) return card.cost
+  const stacks = Math.max(0, s.player.statuses.swordIntent ?? 0)
+  return Math.max(0, card.cost - stacks * card.swordIntentDiscount)
+}
+
 /** 界面显示用的费用：免费时为 0 */
 export function displayCost(s: BattleState, card: CardDef): number | 'X' {
-  return playCost(s, card).free ? 0 : card.cost
+  return playCost(s, card).free ? 0 : baseCost(s, card)
 }
 
 /**

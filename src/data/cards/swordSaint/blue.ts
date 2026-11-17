@@ -93,4 +93,18 @@ export const swordSaintBlue: Card[] = [
     .damage(10)
     .text('造成 10 点伤害，下一张剑击费用变为零')
     .upgrade((u) => u.damage(14).text('造成 14 点伤害，下一张剑击费用变为零')),
+  Card.blue('swordQi', '剑气')
+    .icon('💨')
+    .cost(1)
+    .targetAllEnemies()
+    .damagePerAttackPlayed(3, 2)
+    .reward()
+    .upgrade((u) => u.damagePerAttackPlayed(3, 3)),
+  Card.blue('bladeRain', '剑雨')
+    .icon('🌧️')
+    .cost(1)
+    .targetAllEnemies()
+    .damageHits(4, 3)
+    .reward()
+    .upgrade((u) => u.damageHits(5, 3)),
 ]

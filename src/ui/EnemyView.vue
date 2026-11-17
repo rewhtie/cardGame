@@ -7,6 +7,7 @@ import type { CardDef, EnemyState, Intent } from '@/engine/types'
 import { computed, ref, watch } from 'vue'
 import HoverTip from './HoverTip.vue'
 import StatusIcons from './StatusIcons.vue'
+import { enemySprite, enemySpriteScale } from './enemySprites'
 
 const props = defineProps<{
   enemy: EnemyState
@@ -38,11 +39,16 @@ const TIP_ICON: Record<Intent['type'], string> = {
   summon: '📣',
   steal: '🪙',
   flee: '💨',
+  protect: '🛡',
+  deathStrike: '💥',
 }
 const stunned = computed(() => (props.enemy.statuses.stunned ?? 0) > 0)
 
 /** 只有「这一场里刚死」才播倒地动画；进场时就已是尸体的直接显示倒地姿态 */
 const dying = ref(false)
+/** 手绘立绘；没有的敌人回退到表情图标 */
+const sprite = computed(() => enemySprite(props.enemy.def.id, props.enemy.phaseChanged))
+const spriteScale = computed(() => enemySpriteScale(props.enemy.def.id))
 watch(
   () => props.enemy.hp > 0,
   (alive, wasAlive) => {
@@ -59,6 +65,14 @@ const dmg = computed(() =>
       ).damage
     : 0,
 )
+
+/** 遗志重击的最终伤害：同普通攻击走 enemyAttack；主攻击是攻击时活力已被它消耗，这里不重复计入 */
+const strikeDmg = (base: number) =>
+  enemyAttack(
+    base,
+    props.intent?.type === 'attack' ? { ...props.enemy, statuses: { ...props.enemy.statuses, vigor: 0 } } : props.enemy,
+    { block: props.playerBlock ?? 0, statuses: props.playerStatuses },
+  ).damage
 
 /** 意图悬浮说明：一句话讲清下一步要干什么 */
 const mainIntentTip = computed(() => {
@@ -78,9 +92,9 @@ const mainIntentTip = computed(() => {
         color: '#f87171',
       }
     case 'defend':
-      return { name: '防御', text: `${i.target === 'allAllies' ? '自身与存活队友各' : ''}获得 ${i.block} 点格挡`, color: '#7dd3fc' }
+      return { name: '防御', text: `${i.target === 'allAllies' ? '自身与存活队友各' : i.target === 'selfAndAlly' ? '自身与相邻队友各' : ''}获得 ${i.block} 点格挡`, color: '#7dd3fc' }
     case 'heal':
-      return { name: '恢复', text: `${i.target === 'allAllies' ? '自身与存活队友各' : '自身'}恢复 ${i.amount} 点生命`, color: '#86efac' }
+      return { name: '恢复', text: `${i.target === 'allAllies' ? '自身与存活队友各' : i.target === 'selfAndAlly' ? '自身与相邻队友各' : '自身'}恢复 ${i.amount} 点生命`, color: '#86efac' }
     case 'sacrificeExplosion':
       return { name: '支付生命', text: `支付全部 ${props.enemy.hp} 生命，进入不可选择的待爆炸状态；下一回合优先爆炸，基础伤害等于支付量，不受自身力量影响`, color: '#fbbf24' }
     case 'explode':
@@ -103,12 +117,18 @@ const mainIntentTip = computed(() => {
       return { name: '偷窃', text: `偷走你最多 ${i.amount} 金币，击败它可夺回`, color: '#c4b5fd' }
     case 'flee':
       return { name: '逃跑', text: '带着偷来的金币逃离战斗', color: '#c4b5fd' }
+    case 'protect':
+      return { name: '保护', text: '保护相邻队友（右侧优先）：它无法被单体攻击和单体技能选中，自动打出、随机目标也会跳过它；全体攻击照常命中。持续到自身下次行动前，自身死亡时提前解除', color: '#7dd3fc' }
+    case 'deathStrike':
+      return { name: '遗志重击', text: `造成 ${strikeDmg(i.damage)} 点伤害，然后碎裂死亡`, color: '#f87171' }
+    case 'regroup':
+      return { name: '合体', text: `有分身已阵亡：轮到它行动时所有分身消失，本体恢复 ${Math.round(i.ratio * 100)}% 生命并从第一个意图重来（存活分身越多恢复越多）`, color: '#c084fc' }
     case 'debuff':
     case 'buff': {
       const st = statusById[i.status]
       return {
         name: i.type === 'debuff' ? '减益' : '增益',
-        text: `${i.type === 'debuff' ? '给你' : '自身'}添加 ${i.stacks} 层【${st?.name ?? i.status}】：${(st?.text ?? '').replaceAll('N', String(i.stacks))}`,
+        text: `${i.type === 'debuff' ? '给你' : i.target === 'selfAndAlly' ? '自身与相邻队友各' : '自身'}添加 ${i.stacks} 层【${st?.name ?? i.status}】：${(st?.text ?? '').replaceAll('N', String(i.stacks))}`,
         color: '#c4b5fd',
       }
     }
@@ -124,11 +144,11 @@ const intentTip = computed(() => {
       case 'debuff':
         return `给你添加 ${a.stacks} 层【${statusById[a.status]?.name ?? a.status}】`
       case 'buff':
-        return `自身添加 ${a.stacks} 层【${statusById[a.status]?.name ?? a.status}】`
+        return `${a.target === 'selfAndAlly' ? '自身与相邻队友各' : '自身'}添加 ${a.stacks} 层【${statusById[a.status]?.name ?? a.status}】${a.untilNextAction ? '（到下次行动前）' : ''}`
       case 'defend':
-        return `${a.target === 'allAllies' ? '自身与存活队友各' : ''}获得 ${a.block} 点格挡`
+        return `${a.target === 'allAllies' ? '自身与存活队友各' : a.target === 'selfAndAlly' ? '自身与相邻队友各' : ''}获得 ${a.block} 点格挡`
       case 'heal':
-        return `${a.target === 'allAllies' ? '自身与存活队友各' : '自身'}恢复 ${a.amount} 点生命`
+        return `${a.target === 'allAllies' ? '自身与存活队友各' : a.target === 'selfAndAlly' ? '自身与相邻队友各' : '自身'}恢复 ${a.amount} 点生命`
       case 'shareLife':
         return '与存活队友共享生命并获得转移量的格挡'
       case 'sacrificeExplosion':
@@ -147,6 +167,12 @@ const intentTip = computed(() => {
         return '逃跑'
       case 'idle':
         return '蓄力'
+      case 'protect':
+        return '保护相邻队友（无法被单体选中，全体攻击可破）到下次行动前'
+      case 'deathStrike':
+        return `遗志重击 ${strikeDmg(a.damage)}，然后碎裂`
+      case 'regroup':
+        return `合体，本体恢复 ${Math.round(a.ratio * 100)}% 生命`
     }
   })
   return { ...main, text: [main.text, ...extra].join('；') }
@@ -218,6 +244,9 @@ const intentTip = computed(() => {
           ><Emoji e="🪙" /> 偷 {{ intent.amount }}</template
         >
         <template v-else-if="intent.type === 'flee'"><Emoji e="💨" /> 逃跑</template>
+        <template v-else-if="intent.type === 'protect'"><Emoji e="🛡" /> 保护</template>
+        <template v-else-if="intent.type === 'deathStrike'"><Emoji e="💥" /> {{ strikeDmg(intent.damage) }}</template>
+        <template v-else-if="intent.type === 'regroup'"><Emoji e="👻" /> 合体 {{ Math.round(intent.ratio * 100) }}%</template>
         <template v-else>
           <Emoji :e="intent.type === 'debuff' ? '🔻' : '🔺'" />
           <Emoji :e="statusById[intent.status]?.icon" />
@@ -225,30 +254,40 @@ const intentTip = computed(() => {
         </template>
         <span v-for="(a, k) in intent.also ?? []" :key="k" class="ml-1 text-base"
           >+<Emoji :e="TIP_ICON[a.type]"
-        /></span>
+        /><template v-if="a.type === 'deathStrike'">{{ strikeDmg(a.damage) }}</template></span>
       </HoverTip>
     </div>
     <div
       data-fx="sprite"
-      class="w-40 h-40 rounded-full bg-transparent flex items-center justify-center text-5xl transition-all duration-150"
-      :class="
+      class="w-40 h-40 bg-transparent flex items-center justify-center text-5xl transition-all duration-150"
+      :class="[
+        sprite ? 'sprite-art' : 'rounded-full',
         enemy.pendingExplosion
-          ? 'ring-4 ring-amber-400 animate-pulse'
+          ? sprite ? 'glow-amber animate-pulse' : 'ring-4 ring-amber-400 animate-pulse'
           : enemy.hp <= 0
           ? dying
             ? 'sprite-dying'
             : 'sprite-corpse'
           : hovered
-            ? 'scale-110 ring-4 ring-amber-300 shadow-[0_0_32px_8px_rgba(251,191,36,0.6)] brightness-125'
+            ? sprite ? 'scale-110 glow-hover' : 'scale-110 ring-4 ring-amber-300 shadow-[0_0_32px_8px_rgba(251,191,36,0.6)] brightness-125'
             : enemy.block > 0
-              ? 'ring-4 ring-sky-300 shadow-[0_0_28px_6px_rgba(56,189,248,0.6)]'
-              : ''
-      "
+              ? sprite ? 'glow-block' : 'ring-4 ring-sky-300 shadow-[0_0_28px_6px_rgba(56,189,248,0.6)]'
+              : '',
+      ]"
     >
-      <span :style="enemy.def.iconColor ? { color: enemy.def.iconColor, textShadow: '0 0 2px #e2e8f0, 0 0 16px currentColor', fontFamily: 'serif', fontWeight: '900', fontSize: '1.6em' } : undefined"><Emoji :e="enemy.def.icon ?? '🟢'" /></span>
+      <img
+        v-if="sprite"
+        :src="sprite"
+        :alt="enemy.def.name"
+        draggable="false"
+        class="sprite-img"
+        :style="{ transform: `scale(${spriteScale})` }"
+      />
+      <span v-else :style="enemy.def.iconColor ? { color: enemy.def.iconColor, textShadow: '0 0 2px #e2e8f0, 0 0 16px currentColor', fontFamily: 'serif', fontWeight: '900', fontSize: '1.6em' } : undefined"><Emoji :e="enemy.def.icon ?? '🟢'" /></span>
     </div>
     <div class="font-bold">{{ enemy.def.name }}</div>
     <div v-if="enemy.pendingExplosion" class="text-xs text-amber-300">待爆炸 · 不可选择</div>
+    <HoverTip v-else-if="(enemy.statuses.guarded ?? 0) > 0 && enemy.hp > 0" icon="🛡" name="被保护" text="无法被单体攻击和单体技能选中，自动打出、随机目标也会跳过它；全体攻击照常命中。先打倒或等保护者行动后即可选中" color="#7dd3fc"><span class="text-xs text-sky-300">被保护 · 单体无法选中</span></HoverTip>
     <HoverTip v-else-if="enemy.def.deathHealFamily" icon="💚" name="同族恢复" text="死亡时将其他存活同族恢复至满血；不复活尸体，不影响待爆炸单位" color="#86efac"><span class="text-xs text-green-300">死亡恢复存活同族</span></HoverTip>
     <HoverTip v-else-if="enemy.def.delayedExplosion" icon="💣" name="延迟爆炸" text="支付多少生命，下一回合就以该值为基础伤害爆炸；直接被击杀时爆炸基础伤害为 0。待爆炸不算尸体，不能受到任何作用" color="#fbbf24"><span class="text-xs text-amber-300">延迟爆炸</span></HoverTip>
     <span v-else-if="enemy.def.revival" class="text-xs text-purple-300">复活剩余 {{ Math.max(0, enemy.def.revival.limit - (enemy.revivesUsed ?? 0)) }} 次</span>
@@ -286,6 +325,28 @@ const intentTip = computed(() => {
 </template>
 
 <style scoped>
+/* 手绘立绘：用 drop-shadow 沿轮廓发光，替代圆形 ring */
+.sprite-art {
+  width: 11rem;
+  height: 11rem;
+  filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.65));
+}
+.sprite-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+}
+.sprite-art.glow-hover {
+  filter: drop-shadow(0 0 3px #f5e6c8) drop-shadow(0 0 14px rgba(220, 38, 38, 0.85)) brightness(1.12);
+}
+.sprite-art.glow-block {
+  filter: drop-shadow(0 0 3px #e0f2fe) drop-shadow(0 0 14px rgba(56, 189, 248, 0.8));
+}
+.sprite-art.glow-amber {
+  filter: drop-shadow(0 0 4px #fde68a) drop-shadow(0 0 16px rgba(251, 191, 36, 0.9));
+}
 /* 死亡：被击中的闪白 + 左右抖动，随后向一侧倒下、压扁、褪色，最后停在尸体姿态 */
 .sprite-dying {
   animation: enemy-die 0.95s cubic-bezier(0.4, 0, 0.7, 1) forwards;

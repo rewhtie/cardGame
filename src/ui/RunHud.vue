@@ -116,7 +116,8 @@ function toStage(clientX: number, clientY: number) {
 
 function enemyUnder(clientX: number, clientY: number): number | null {
   const hit = document.elementFromPoint(clientX, clientY)?.closest('[data-enemy-index]')
-  return hit ? Number(hit.getAttribute('data-enemy-index')) : null
+  // 被保护的敌人不能被单体药水选中
+  return hit && !hit.hasAttribute('data-untargetable') ? Number(hit.getAttribute('data-enemy-index')) : null
 }
 
 function onPress(index: number, e: PointerEvent) {
@@ -232,7 +233,7 @@ const hintOf = (id: string | undefined) => {
             :suppress="menu === i - 1"
           >
             <span
-              class="w-7 h-7 flex items-center justify-center rounded-full text-base border-2 border-sky-300 bg-slate-900 touch-none"
+              class="w-7 h-7 flex items-center justify-center rounded-full text-xl leading-none border-2 border-sky-300 bg-slate-900 touch-none"
               :class="[
                 canUse ? 'cursor-grab' : 'cursor-pointer',
                 drag?.active && drag.index === i - 1 ? 'opacity-40' : '',

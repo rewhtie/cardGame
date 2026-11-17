@@ -68,7 +68,7 @@ function isCurrent(width: number, height: number) {
         <button v-if="page !== 'main'" class="back" @click="page = 'main'">‹ 返回设置</button>
 
         <template v-if="page === 'main'">
-          <button class="row" @click="showCodex = true">
+          <button v-if="run" class="row" @click="showCodex = true">
             <span class="badge"><Emoji e="📖" /></span>
             <span class="row-text">
               <span class="row-title">图鉴</span>

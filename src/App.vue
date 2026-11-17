@@ -5,6 +5,7 @@ import { useRun } from '@/composables/useRun'
 import { useDevHotState } from '@/composables/useDevHotState'
 import { useSettings } from '@/composables/useSettings'
 import CharacterSelectView from '@/ui/CharacterSelectView.vue'
+import CodexView from '@/ui/CodexView.vue'
 import RunView from '@/ui/RunView.vue'
 import SettingsPanel from '@/ui/SettingsPanel.vue'
 import StageFrame from '@/ui/StageFrame.vue'
@@ -34,13 +35,14 @@ const StatusEditorView = import.meta.env.DEV
 const showStatusEditor = ref(false)
 const showEnemyEditor = ref(false)
 const showSettings = ref(false)
+const showCodex = ref(false)
 const showEditor = ref(false)
 const showSfxEditor = ref(false)
 const showSelect = ref(false)
 const showDevTest = ref(false)
 
 useDevHotState(import.meta.hot, 'dev-panels', {
-  showStatusEditor, showEnemyEditor, showEditor, showSfxEditor, showDevTest, showSettings, showSelect,
+  showStatusEditor, showEnemyEditor, showEditor, showSfxEditor, showDevTest, showSettings, showCodex, showSelect,
 })
 const { init } = useSettings()
 const { run, savedGame, start, continueGame, send, retry, quit } = useRun()
@@ -68,8 +70,10 @@ watch(
       :save="savedGame"
       @start="showSelect = true"
       @continue="continueGame()"
+      @codex="showCodex = true"
       @settings="showSettings = true"
     />
+    <CodexView v-if="showCodex && !run" @close="showCodex = false" />
     <CharacterSelectView
       v-if="showSelect && !run"
       @choose="(id) => { showSelect = false; start(id) }"
@@ -144,14 +148,14 @@ watch(
   box-sizing: border-box;
 }
 
-/* 游戏统一背景：暖棕炭黑 + 底部篝火余温 + 顶部淡青月光 + 柔和暗角 */
+/* 游戏统一背景：墨黑底 + 纸张颗粒 + 底部暗红血光 + 四角深暗角，衬托粗墨线手绘立绘 */
 .theme-bg {
   background:
-    radial-gradient(ellipse 90% 55% at 50% 112%, rgba(234, 120, 20, 0.42), transparent 70%),
-    radial-gradient(ellipse 55% 40% at 50% -5%, rgba(120, 170, 160, 0.14), transparent 70%),
-    radial-gradient(ellipse at center, transparent 60%, rgba(10, 4, 2, 0.45) 100%),
-    repeating-linear-gradient(135deg, rgba(255, 220, 170, 0.03) 0 2px, transparent 2px 14px),
-    linear-gradient(180deg, #1c1411 0%, #2a1c16 55%, #3a2217 100%);
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.95 0 0 0 0 0.88 0 0 0 0 0.75 0 0 0 0.07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 85% 50% at 50% 115%, rgba(200, 32, 42, 0.32), transparent 70%),
+    radial-gradient(ellipse 60% 40% at 50% -8%, rgba(242, 230, 204, 0.08), transparent 70%),
+    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.7) 100%),
+    linear-gradient(180deg, #120e0b 0%, #1b1511 55%, #24120f 100%);
 }
 
 /* 主菜单左侧的开发模式入口：竖排文字小标签，颜色由各按钮自带 */
@@ -166,10 +170,10 @@ watch(
   writing-mode: vertical-rl;
 }
 
-/* 滚动条：细窄的暗色轨道 + 金色滑块，与卡面金属边框呼应 */
+/* 滚动条：墨色轨道 + 血红滑块，与立绘的红色符文呼应 */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #b45309 rgba(24, 16, 12, 0.5);
+  scrollbar-color: #a3161f rgba(13, 10, 8, 0.6);
 }
 ::-webkit-scrollbar {
   width: 10px;
@@ -180,12 +184,12 @@ watch(
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #fcd34d, #b45309);
-  border: 2px solid rgba(24, 16, 12, 0.85);
+  background: linear-gradient(180deg, #e04848, #7c1018);
+  border: 2px solid #0d0a08;
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #fde68a, #d97706);
+  background: linear-gradient(180deg, #f08a8a, #a3161f);
 }
 ::-webkit-scrollbar-corner {
   background: transparent;

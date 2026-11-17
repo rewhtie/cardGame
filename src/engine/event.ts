@@ -85,9 +85,16 @@ function weightedEvent(pool: EventDef[], rng: Rng): EventDef | undefined {
   return pool[pool.length - 1]
 }
 
+const outcomesFight = (outcomes: readonly Outcome[]): boolean =>
+  outcomes.some((o) => o.type === 'battle' || (o.type === 'chance' && (outcomesFight(o.win) || outcomesFight(o.lose))))
+
+/** 事件里有任何选项可能进入战斗 */
+const eventHasBattle = (e: EventDef) => e.options.some((o) => outcomesFight(o.outcomes))
+
 /** 所有事件共用不放回池；附魔权重按完整事件池的初始占比换算，不随已见事件重新归一化。 */
 export function pickEvent(run: RunState, nodeId: string): EventDef | undefined {
   const all = run.content.events ?? []
+  const lucky = run.relics.includes('luckyCharm')
   const ordinaryWeight = all.filter((e) => !e.enchantment).reduce((sum, e) => sum + (e.weight ?? 1), 0)
   const enchantWeight = all.filter((e) => e.enchantment).reduce((sum, e) => sum + (e.weight ?? 1), 0)
   const enchantScale = ordinaryWeight > 0 && enchantWeight > 0
@@ -95,6 +102,8 @@ export function pickEvent(run: RunState, nodeId: string): EventDef | undefined {
     : 1
   const pool = all
     .filter((e) => !run.seenEvents.includes(e.id) && e.requires?.(run) !== false)
+    // 幸运护符：不抽含战斗的事件
+    .filter((e) => !lucky || !eventHasBattle(e))
     .map((e) => ({ ...e, weight: (e.weight ?? 1) * (e.enchantment ? enchantScale : 1) }))
   return weightedEvent(pool, createRng(deriveSeed(stageSeed(run.seed, run.stage), `event:${nodeId}`)))
 }

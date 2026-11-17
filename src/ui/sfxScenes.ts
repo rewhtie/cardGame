@@ -15,7 +15,7 @@ export interface BattlePlan {
   events: GameEvent[]
 }
 
-export type RunComponent = 'hud-gold' | 'relic-reveal' | 'card-add' | 'hurt' | 'shop'
+export type RunComponent = 'hud-gold' | 'relic-reveal' | 'card-add' | 'hurt' | 'shop' | 'treasure'
 
 export type Scene =
   | { kind: 'battle'; build: () => BattlePlan }
@@ -123,7 +123,19 @@ function runScene(
         relicIds: Object.keys(relics),
       })
       const run: RunState = { ...base, gold: extra.gold ?? 0, screen: extra.screen ?? 'rest' }
-      return component === 'shop' ? { ...run, screen: 'shop', shop: generateShop(run) } : run
+      if (component === 'shop') return { ...run, screen: 'shop', shop: generateShop(run) }
+      if (component === 'treasure') {
+        const node = run.map.floors.flat().find((n) => n.floor > 0)!
+        node.type = 'treasure'
+        return {
+          ...run,
+          screen: 'reward',
+          current: node.id,
+          visited: [node.id],
+          rewards: [{ type: 'relic', id: 'ancientCoin' }, { type: 'gold', amount: 120 }],
+        }
+      }
+      return run
     },
   }
 }
@@ -235,6 +247,7 @@ const SCENES: Record<string, () => Scene> = {
     }),
   'run.relic.gained': () =>
     runScene('relic-reveal', { events: [{ type: 'relicGained', id: 'ancientCoin' }] }),
+  'run.treasure.open': () => runScene('treasure'),
   'run.hpLost': () => runScene('hurt', { events: [{ type: 'hpLost', amount: 8 }] }),
 }
 

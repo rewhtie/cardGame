@@ -221,4 +221,12 @@ export const warriorGold: Card[] = [
     .oneShot()
     .effect({ type: 'lifeOverload' })
     .upgrade((u) => u.retain()),
+  Card.gold('skyfall', '天崩')
+    .icon('☄️')
+    .cost(3)
+    .targetAllEnemies()
+    .damage(20)
+    .sapStrength(3)
+    .reward()
+    .upgrade((u) => u.damage(26).sapStrength(6)),
 ]

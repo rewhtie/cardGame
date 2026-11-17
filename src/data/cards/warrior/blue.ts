@@ -116,4 +116,30 @@ export const warriorBlue: Card[] = [
     .draw(1)
     .reward()
     .upgrade((u) => u.damage(10).draw(2)),
+  Card.blue('breakFormation', '破阵')
+    .icon('🔨')
+    .cost(1)
+    .targetAllEnemies()
+    .damageIfTargetBlock(5, 5)
+    .reward()
+    .upgrade((u) => u.damageIfTargetBlock(7, 7)),
+  Card.blue('crushingWeight', '千钧')
+    .icon('🏋️')
+    .cost(2)
+    .targetAllEnemies()
+    .damagePerTargetStatus(8, 'vulnerable', 2, 'keep')
+    .reward()
+    .upgrade((u) => u.damagePerTargetStatus(10, 'vulnerable', 3, 'keep')),
+  Card.blue('slacken', '松弛')
+    .icon('💤')
+    .cost(1)
+    .targetSelf()
+    .loseBlock()
+    .applyStatus('energyUp', 2)
+    .applyStatus('drawUp', 2)
+    .text('失去所有格挡。下个回合开始时，额外获得 2 点能量，多抽 2 张牌。')
+    .reward()
+    .upgrade((u) =>
+      u.retain().text('保留\n失去所有格挡。下个回合开始时，额外获得 2 点能量，多抽 2 张牌。'),
+    ),
 ]

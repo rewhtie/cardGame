@@ -73,6 +73,7 @@ export const SFX_SLOTS: SlotDef[] = [
     ['run.evolve', '卡牌成长（蓄力裂开 + 爆发）'],
     ['run.train', '卡牌训练（成长未满，裂痕加深）'],
     ['run.relic.gained', '获得遗物'],
+    ['run.treasure.open', '宝箱开启'],
     ['run.hpLost', '战斗外失血'],
   ]),
 ]

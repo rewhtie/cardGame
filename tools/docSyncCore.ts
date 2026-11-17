@@ -90,9 +90,9 @@ function actionText(a: ActionSpec): string {
     case 'attack':
       return `攻击 ${a.damage}${a.hits && a.hits > 1 ? `×${a.hits}` : ''}${a.grow ? `（每次 +${a.grow}）` : ''}${a.addCards ? `，塞 ${a.addCards.count} 张 ${a.addCards.cardId}` : ''}${a.selfStun ? `，攻击后自身晕眩 ${a.selfStun} 回合` : ''}`
     case 'defend':
-      return `${a.target === 'allAllies' ? '自身与存活队友各' : ''}防御 ${a.block}`
+      return `${a.target === 'allAllies' ? '自身与存活队友各' : a.target === 'selfAndAlly' ? '自身与相邻队友各' : ''}防御 ${a.block}`
     case 'heal':
-      return `${a.target === 'allAllies' ? '自身与存活队友各' : '自身'}恢复 ${a.amount} 生命`
+      return `${a.target === 'allAllies' ? '自身与存活队友各' : a.target === 'selfAndAlly' ? '自身与相邻队友各' : '自身'}恢复 ${a.amount} 生命`
     case 'shareLife':
       return '与生命差最大的存活队友均分生命，双方获得转移量的格挡（非治疗／伤害）'
     case 'sacrificeExplosion':
@@ -104,7 +104,7 @@ function actionText(a: ActionSpec): string {
     case 'debuff':
       return `给你 ${a.stacks} 层 ${a.status}`
     case 'buff':
-      return `自身 ${a.stacks} 层 ${a.status}`
+      return `${a.target === 'selfAndAlly' ? '自身与相邻队友各' : '自身'} ${a.stacks} 层 ${a.status}${a.untilNextAction ? '（到下次行动前）' : ''}`
     case 'addCards':
       return `${a.to === 'draw' ? '往抽牌堆随机位置' : '往弃牌堆'}塞 ${a.count} 张 ${a.cardId}`
     case 'idle':
@@ -115,6 +115,8 @@ function actionText(a: ActionSpec): string {
       return `偷 ${a.amount} 金币`
     case 'flee':
       return '逃跑'
+    case 'protect':
+      return '保护相邻队友（右侧优先）：它无法被单体攻击和单体技能选中，自动打出、随机目标也会跳过它；全体攻击照常命中；到下次行动前'
   }
 }
 
@@ -150,14 +152,16 @@ export function renderEnemiesDoc(data: EnemyData): string {
       data.enemies.map((e) => [
         e.id,
         e.name,
-        (ENEMY_ROLE[e.role] ?? e.role) + (e.nativeStage ? `（第 ${e.nativeStage} 大层原生数值）` : ''),
+        (ENEMY_ROLE[e.role] ?? e.role) + (e.nativeStage ? `（第 ${e.nativeStage} 大层原生数值）` : '') + (e.solo ? '（只单独出场）' : ''),
         e.threat ?? '',
         e.maxHp,
         statusesText(e.startStatuses) +
           (e.family ? `<br>族群：${e.family}；死亡／进入待爆炸时重置力量和意图` : '') +
           (e.deathHealFamily ? '<br>死亡时其他存活同族恢复至满血；不复活尸体或待爆炸单位' : '') +
+          (e.deathStrike !== undefined ? `<br>同族死亡后追加 ${e.deathStrike} 点遗志重击，打完自身碎裂` : '') +
           (e.delayedExplosion ? '<br>生命归零进入待爆炸：下一回合强制爆炸后真正死亡；直接击杀时基础伤害为 0；期间免疫所有作用、不算尸体、不提前结算胜利' : '') +
           (e.revival ? `<br>同族尸体存在时可逆地优先复活：恢复 ${e.revival.hpRatio * 100}% 生命，每场最多成功 ${e.revival.limit} 次；排除复活者及待爆炸单位，复活后下回合才行动` : '') +
+          (e.regroup ? `<br>合体：死亡分裂的分身有同伴阵亡后，存活分身的意图改为合体；轮到它行动（结算完回合开始状态仍存活）时分身全部消失，本体恢复 ${Math.round(e.regroup.hpRatio * 100)}% + 每只存活分身 ${Math.round((e.regroup.perClone ?? 0) * 100)}% 生命并从第一个意图重来，本回合不行动；每次分裂少一只（与打死几只无关），分不出来时真正死亡；分身全部阵亡直接胜利` : '') +
           (e.playerTurnStatuses
             ? `<br>每个玩家回合开始补到：${statusesText(e.playerTurnStatuses)}`
             : ''),
@@ -180,7 +184,7 @@ export function renderEnemiesDoc(data: EnemyData): string {
             e.name,
             ENEMY_ROLE[e.role ?? 'monster'],
             e.enemies.map(name).join(' + '),
-            `${e.minFloor}–${e.maxFloor}${e.stage ? `（仅第 ${e.stage} 大层，整组出场）` : ''}`,
+            `${e.minFloor}–${e.maxFloor}${e.stage ? `（仅第 ${e.stage} 大层，整组出场）` : ''}${e.chance !== undefined ? `，命中概率 ${Math.round(e.chance * 100)}%` : ''}`,
           ]),
         )
       : '（无）',

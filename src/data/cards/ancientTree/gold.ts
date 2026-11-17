@@ -40,4 +40,13 @@ export const ancientTreeGold: Card[] = [
     .exhaust()
     .reward()
     .upgrade((u) => u.damageMaxHpPercent(65).exhaust()),
+  Card.gold('witherBloom', '枯荣')
+    .icon('🥀')
+    .cost(3)
+    .targetAllEnemies()
+    .asSkill()
+    .parasiteBurst()
+    .exhaust()
+    .reward()
+    .upgrade((u) => u.parasiteBurst().noExhaust()),
 ]

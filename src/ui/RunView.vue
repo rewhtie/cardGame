@@ -36,6 +36,7 @@ import RelicReveal from './RelicReveal.vue'
 import RestView from './RestView.vue'
 import RewardView from './RewardView.vue'
 import ShopView from './ShopView.vue'
+import TreasureView from './TreasureView.vue'
 import RunHud from './RunHud.vue'
 import RunProgress from './RunProgress.vue'
 import { runProgress } from '@/engine/progress'
@@ -72,7 +73,7 @@ const livingEnemies = computed(() => props.run.battle?.enemies.filter((e) => e.h
 /** 拖拽药水时瞄准的敌人，交给战斗界面高亮 */
 const aimEnemy = ref<number | null>(null)
 const pickSpec = computed(() =>
-  props.run.pendingRelic ? relicPickSpec(props.run.pendingRelic.id) : undefined,
+  props.run.pendingRelic ? relicPickSpec(props.run.pendingRelic.id, props.run.pendingRelic.reward) : undefined,
 )
 const showDeck = ref(false)
 /** 非地图界面从状态栏打开的地图预览 */
@@ -226,6 +227,12 @@ watch(fxBatch, (b) => {
       :has-relics="run.relics.length > 0"
       @action="(action) => emit('send', { type: 'battle', action })"
       @continue="emit('send', { type: 'continue' })"
+    />
+    <TreasureView
+      v-else-if="run.screen === 'reward' && findNode(run.map, run.current ?? '')?.type === 'treasure'"
+      :run="run"
+      @claim="(index) => emit('send', { type: 'claimReward', index })"
+      @finish="emit('send', { type: 'finishRewards' })"
     />
     <RewardView
       v-else-if="run.screen === 'reward'"

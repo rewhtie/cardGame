@@ -29,7 +29,7 @@ describe('剑圣卡牌与职业', () => {
     expect(characterById('swordSaint').name).toBe('剑圣')
     expect(c!.deck).toEqual([...Array(4).fill('swordStrike0'), ...Array(4).fill('defend')])
     expect(c!.relics).toEqual(['swordHeart'])
-    expect(CHARACTER_RELIC_IDS).toContain('swordHeart')
+    expect(CHARACTER_RELIC_IDS).not.toContain('swordHeart')
   })
 
   it('附魔成长：无瑕的伤害 +1', () => {

@@ -9,7 +9,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { fxBatch } from '@/composables/useFx'
 import { relics as relicDefs } from '@/data/items'
 import { isNewEnchant } from '@/composables/useSfxEvents'
-import { progressOf, resolveCards } from '@/engine/enchant'
+import { growthPlays, progressOf, resolveCards } from '@/engine/enchant'
 import type { CardDef } from '@/engine/types'
 import CardView from './CardView.vue'
 import HealFx from './HealFx.vue'
@@ -102,7 +102,7 @@ const pairs = computed(() => {
     const to = defs[c.to]
     if (!from || !to) return []
     // 成长进度占比 -> 裂痕条数：至少 1 条，未满最多 CRACKS.length - 1 条，留出最后的“冲破”
-    const plays = from.evolve?.plays ?? 1
+    const plays = growthPlays(from) || 1
     const progress = progressOf(c.to)
     const cracks = Math.max(1, Math.min(CRACKS.length - 1, Math.round((CRACKS.length * progress) / plays)))
     return [{ from, to, progress, plays, cracks }]

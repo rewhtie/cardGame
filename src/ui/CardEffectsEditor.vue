@@ -27,6 +27,7 @@ const EFFECT_TYPES: { value: Effect['type']; label: string }[] = [
   { value: 'drawIfParasite', label: '🌱 寄生够数时抽牌' },
   { value: 'blockFromDamage', label: '🛡️ 按造成的伤害获得格挡' },
   { value: 'meltBlock', label: '🔥 熔化目标格挡' },
+  { value: 'loseBlock', label: '🛡️ 自己失去所有格挡' },
   { value: 'spreadParasite', label: '🌱 传播目标寄生' },
   { value: 'purgeSelfBuff', label: '🧹 随机移除自身一个状态并获得等量格挡' },
   { value: 'drawIfAttacks', label: '🃏 攻击够数时抽牌' },
@@ -106,6 +107,7 @@ function newEffect(type: Effect['type']): Effect {
     case 'convertCorpse':
     case 'parasiteBurst':
     case 'meltBlock':
+    case 'loseBlock':
     case 'blockFromDamage':
     case 'spreadParasite':
     case 'purgeSelfBuff':
@@ -490,7 +492,7 @@ const move = (i: number, d: -1 | 1) => {
         <input v-model.number="eff.gold" type="number" min="0" class="fx-ctl fx-num" />
       </label>
 
-      <span v-else-if="eff.type === 'reshuffle' || eff.type === 'blockByIntent' || eff.type === 'lifeOverload' || eff.type === 'mentalOverload' || eff.type === 'gainPotion' || eff.type === 'playTop' || eff.type === 'convertCorpse' || eff.type === 'exhaustStatusCard' || eff.type === 'parasiteBurst' || eff.type === 'spreadParasite' || eff.type === 'purgeSelfBuff' || eff.type === 'meltBlock' || eff.type === 'blockFromDamage'" class="fx-empty">无参数</span>
+      <span v-else-if="eff.type === 'reshuffle' || eff.type === 'blockByIntent' || eff.type === 'lifeOverload' || eff.type === 'mentalOverload' || eff.type === 'gainPotion' || eff.type === 'playTop' || eff.type === 'convertCorpse' || eff.type === 'exhaustStatusCard' || eff.type === 'parasiteBurst' || eff.type === 'spreadParasite' || eff.type === 'purgeSelfBuff' || eff.type === 'meltBlock' || eff.type === 'loseBlock' || eff.type === 'blockFromDamage'" class="fx-empty">无参数</span>
 
       <template v-else-if="eff.type === 'devourParasite'">
         <label class="fx-field">

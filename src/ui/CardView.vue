@@ -1,8 +1,19 @@
 <script setup lang="ts">
 import Emoji from '@/ui/Emoji.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { cards as allCards } from '@/data/cards'
-import { cardText, evolvedId, progressOf, resolveCards } from '@/engine/enchant'
+import { cards as allCards, colorlessAllIds } from '@/data/cards'
+import {
+  cardText,
+  evolvedId,
+  growthPlays,
+  MASTER_BONUS,
+  MASTER_PLAYS,
+  masterStat,
+  progressOf,
+  rawId,
+  resolveCards,
+  withProgress,
+} from '@/engine/enchant'
 import { ENCHANTS } from '@/engine/enchants'
 import {
   calcAttack,
@@ -31,24 +42,32 @@ const props = defineProps<{
   progress?: number
 }>()
 
-/** 进化进度 n/总次数：只有声明了 evolve 的牌才显示 */
-const evolveProgress = computed(() =>
-  props.card.evolve
-    ? `${Math.min(props.progress ?? progressOf(props.card.id), props.card.evolve.plays)}/${props.card.evolve.plays}`
-    : '',
-)
+/** 成长进度 n/总次数：进化牌与尚未成长满的牌都显示（含 0/10）；满了显示 MAX */
+const growPlays = computed(() => growthPlays(props.card))
+const evolveProgress = computed(() => {
+  const plays = growPlays.value
+  if (!plays) return ''
+  return `${Math.min(props.progress ?? progressOf(props.card.id), plays)}/${plays}`
+})
 
-/** 进化后的牌（保留升级 / 附魔标记）；悬浮在进化进度上时展示，让玩家知道会变成什么 */
+/** 成长后的牌（保留升级 / 附魔标记）；悬浮在进度上时展示，让玩家知道会变成什么 */
 const evolveTarget = computed(() => {
+  if (!growPlays.value) return null
   const into = props.card.evolve?.into
-  if (!into) return null
-  const id = evolvedId(props.card.id, into)
+  const id = into ? evolvedId(props.card.id, into) : withProgress(props.card.id, MASTER_PLAYS)
   return resolveCards(allCards, [id])[id] ?? null
 })
+/** 成长满的加成文案：攻击牌「攻击 +2」，其余「格挡 +2」 */
+const masterLabel = computed(
+  () => `${masterStat(props.card) === 'damage' ? '攻击' : '格挡'} +${MASTER_BONUS}`,
+)
 const evolveTip = ref<{ x: number; y: number } | null>(null)
 function showEvolveTip(ev: MouseEvent) {
   const r = (ev.currentTarget as HTMLElement).getBoundingClientRect()
-  evolveTip.value = { x: r.left + r.width / 2, y: r.top }
+  // 提示框宽约 13rem、以 x 居中：贴近屏幕边缘时往里收，避免被裁掉
+  const half = 112
+  const x = Math.min(Math.max(r.left + r.width / 2, half + 8), window.innerWidth - half - 8)
+  evolveTip.value = { x, y: r.top }
 }
 
 /** 卡面文字拆成片段；伤害 / 格挡数字按当前状态换算，并标出相对原值的升降 */
@@ -145,7 +164,15 @@ const TYPES = {
   },
 }
 
-const rarity = computed(() => RARITY[props.card.rarity])
+/** 无色牌：不分金蓝白，统一用珠光边框 */
+const COLORLESS = {
+  frame: 'linear-gradient(145deg, #fdf4ff, #c4b5fd 25%, #99f6e4 50%, #fde68a 75%, #f5d0fe)',
+  banner: 'linear-gradient(180deg, #5b4b8a, #2a2347)',
+  glow: 'rgba(216, 180, 254, 0.65)',
+  label: '无色',
+}
+const colorlessSet = new Set(colorlessAllIds)
+const rarity = computed(() => (colorlessSet.has(rawId(props.card.id)) ? COLORLESS : RARITY[props.card.rarity]))
 const type = computed(() => TYPES[props.card.kind])
 const vars = computed(() => ({
   '--frame': rarity.value.frame,
@@ -233,22 +260,40 @@ const tag = computed(() => {
     >
       {{ evolveProgress }}
     </div>
+    <div
+      v-else-if="card.mastered"
+      class="evolve-progress mastered"
+      @mouseenter="showEvolveTip"
+      @mouseleave="evolveTip = null"
+    >
+      MAX
+    </div>
     <span v-if="card.enchant" class="enchant" :class="{ innate: card.enchant === 'innate' }" :title="ENCHANTS[card.enchant]?.name ?? '已附魔'" />
 
     <!-- 状态说明：传送到 body，避免被卡面 overflow 裁掉 -->
     <Teleport to="body">
       <div
-        v-if="evolveTip && evolveTarget"
-        class="info-tip"
+        v-if="evolveTip && (evolveTarget || card.mastered)"
+        class="info-tip grow"
         :style="{ left: evolveTip.x + 'px', top: evolveTip.y + 'px' }"
       >
-        <div class="info-name">
-          <Emoji :e="evolveTarget.icon ?? ''" /> 成长为：{{ evolveTarget.name }}
-        </div>
-        <div class="info-text">{{ cardText(evolveTarget) }}</div>
-        <div class="info-duration">
-          累计打出 {{ card.evolve!.plays }} 次后，战斗胜利时成长
-        </div>
+        <template v-if="evolveTarget">
+          <div class="info-name">
+            <Emoji :e="evolveTarget.icon ?? ''" />
+            <span>成长为：{{ evolveTarget.name }}</span>
+          </div>
+          <div class="info-text">{{ cardText(evolveTarget) }}</div>
+          <div class="info-duration">
+            累计打出 {{ growPlays }} 次后，战斗胜利时成长{{ card.evolve ? '' : `，${masterLabel}` }}
+          </div>
+        </template>
+        <template v-else>
+          <div class="info-name">
+            <span>成长已满</span>
+            <span class="info-kind">MAX</span>
+          </div>
+          <div class="info-text">{{ masterLabel }}</div>
+        </template>
       </div>
       <div
         v-if="tip && tipText"
@@ -454,6 +499,12 @@ const tag = computed(() => {
   border-radius: 999px;
 }
 
+.evolve-progress.mastered {
+  color: #fde68a;
+  border-color: #facc15;
+  box-shadow: 0 0 6px rgba(250, 204, 21, 0.7);
+}
+
 /* 费用球 */
 .cost {
   position: absolute;
@@ -506,6 +557,11 @@ const tag = computed(() => {
 .info-tip.debuff {
   --tip-color: #f87171;
 }
+/* 成长提示：与进度角标同色 */
+.info-tip.grow {
+  --tip-color: #fbbf24;
+  max-width: 13rem;
+}
 .info-name {
   display: flex;
   align-items: center;
@@ -531,6 +587,7 @@ const tag = computed(() => {
 .info-text {
   font-size: 0.75rem;
   line-height: 1.4;
+  white-space: pre-line;
   color: #f1e6d4;
 }
 

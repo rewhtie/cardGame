@@ -107,6 +107,41 @@ async function playBurnSfx(volume = 1) {
   }
 }
 
+/** 宝箱开启：锁扣咔哒、箱盖沉闷弹开，随后一串上行的闪光叮声。 */
+async function playChestSfx(volume = 1) {
+  if (sfxVolume.value <= 0) return
+  try {
+    ctx ??= new AudioContext()
+    if (ctx.state === 'suspended') await ctx.resume()
+    const c = ctx
+    const t0 = c.currentTime
+    const out = c.createGain()
+    out.gain.value = sfxVolume.value * volume * 0.5
+    out.connect(c.destination)
+    noiseBurst(c, out, t0, 0.03, 0.5, 'bandpass', 3200)
+    noiseBurst(c, out, t0 + 0.09, 0.04, 0.4, 'bandpass', 2600)
+    noiseBurst(c, out, t0 + 0.3, 0.22, 0.7, 'lowpass', 900, 220)
+    const notes = [784, 988, 1175, 1568]
+    notes.forEach((freq, i) => {
+      const at = t0 + 0.42 + i * 0.07
+      const osc = c.createOscillator()
+      const gain = c.createGain()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(freq, at)
+      gain.gain.setValueAtTime(0.0001, at)
+      gain.gain.linearRampToValueAtTime(0.22, at + 0.01)
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.6)
+      osc.connect(gain).connect(out)
+      osc.start(at)
+      osc.stop(at + 0.62)
+    })
+    noiseBurst(c, out, t0 + 0.42, 0.5, 0.12, 'highpass', 6000)
+    setTimeout(() => out.disconnect(), 1400)
+  } catch {
+    // 音效失败不能影响游戏
+  }
+}
+
 export async function playMentalOverloadSfx(signal: AbortSignal) {
   if (sfxVolume.value <= 0 || signal.aborted) return
   try {
@@ -614,7 +649,7 @@ export async function playSfx(slot: string, opts?: { volume?: number; maxSeconds
   lastPlayed.set(slot, now)
   const volume = (config.volume ?? 1) * (opts?.volume ?? 1)
   if (!url) {
-    const synths = { evolve: playEvolveSfx, train: playTrainSfx, split: playSplitSfx, burn: playBurnSfx }
+    const synths = { evolve: playEvolveSfx, train: playTrainSfx, split: playSplitSfx, burn: playBurnSfx, chest: playChestSfx }
     if (config.synth) await synths[config.synth](volume)
     return
   }

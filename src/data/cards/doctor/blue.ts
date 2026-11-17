@@ -163,4 +163,18 @@ export const doctorBlue: Card[] = [
     .draw(1)
     .reward()
     .upgrade((u) => u.addWound(1).draw(2)),
+  Card.blue('toxicBlood', '毒血')
+    .icon('🧪')
+    .cost(2)
+    .targetAllEnemies()
+    .damagePerTargetStatus(5, 'poison', 1, 'keep')
+    .reward()
+    .upgrade((u) => u.damagePerTargetStatus(5, 'poison', 2, 'keep')),
+  Card.blue('plagueTide', '疫潮')
+    .icon('🌊')
+    .cost(2)
+    .targetAllEnemies()
+    .damageByWounds(3, 1)
+    .reward()
+    .upgrade((u) => u.damageByWounds(3, 2)),
 ]

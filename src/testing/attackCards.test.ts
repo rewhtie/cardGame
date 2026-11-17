@@ -84,7 +84,9 @@ describe('攻击牌：伤害修正', () => {
     // 条件伤害（断水、一闪、按最大生命的伤害）在 connectEffects.test.ts 单独测；决胜一击（按场上增益层数）在 ancientTree.test.ts 测
     // 先给目标上裂伤再打（死亡标记）：每段伤害要加裂伤层数，不适用固定伤害公式
     !cards[id]!.effects.some((e) => e.type === 'applyStatus' && e.status === 'gash' && e.to !== 'self') &&
-    !cards[id]!.effects.some((e) => e.type === 'damage' && (e.ifTargetBlock || e.perAttackPlayed || e.maxHpPct || e.buffTotal)),
+    !cards[id]!.effects.some((e) => e.type === 'damage' && (e.ifTargetBlock || e.perAttackPlayed || e.maxHpPct || e.buffTotal)) &&
+    // 按目标易伤层数加伤（千钧）：易伤用例里基数也会变，不适用固定伤害公式
+    !cards[id]!.effects.some((e) => e.type === 'damage' && e.perTargetStatus?.status === 'vulnerable'),
   )
 
   for (const id of fixed) {

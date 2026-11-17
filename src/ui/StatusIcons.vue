@@ -6,12 +6,16 @@ import { STATUSES, statusTip } from '@/engine/statuses'
 const props = defineProps<{ statuses: Record<string, number>; vertical?: boolean }>()
 
 /**
- * 临时层数记账：temp:xxx（玩家，回合结束失去，层数为正）、restore:xxx（敌人被临时削减，回合结束恢复）。
+ * 临时层数记账：temp:xxx（玩家，回合结束失去，层数为正）、restore:xxx（敌人被临时削减，回合结束恢复）、
+ * hold:xxx（敌人持续到下次行动前，层数为正）。
  * 返回该状态临时部分的带符号数值：temp 为 +n，restore 为 -n。
  */
-const tempOf = (id: string) => (props.statuses['temp:' + id] ?? 0) - (props.statuses['restore:' + id] ?? 0)
-const tempText = (signed: number) =>
-  signed > 0 ? `回合结束时失去这 ${signed} 层` : `敌人回合结束时恢复这 ${-signed} 点`
+const tempOf = (id: string) =>
+  (props.statuses['temp:' + id] ?? 0) + (props.statuses['hold:' + id] ?? 0) - (props.statuses['restore:' + id] ?? 0)
+const tempText = (signed: number, id: string) =>
+  props.statuses['hold:' + id]
+    ? `下次行动前失去这 ${signed} 层`
+    : signed > 0 ? `回合结束时失去这 ${signed} 层` : `敌人回合结束时恢复这 ${-signed} 点`
 
 /** 按注册表顺序显示，层数为 0 的不显示；整层都是临时的，直接在悬浮说明里写清空时点 */
 const items = computed(() =>
@@ -22,7 +26,7 @@ const items = computed(() =>
       def: d,
       stacks,
       tip: statusTip(d, stacks),
-      tempNote: temp !== 0 && stacks === temp ? tempText(temp) : undefined,
+      tempNote: temp !== 0 && stacks === temp ? tempText(temp, d.id) : undefined,
     }
   }),
 )
@@ -142,7 +146,7 @@ function placeTip(e: MouseEvent) {
           <span>临时层数</span>
           <span class="tip-kind">增益</span>
         </div>
-        <div v-for="t in temps" :key="t.key" class="tip-text"><Emoji :e="t.icon" /> {{ t.name }}：永久 {{ t.perm }}，临时 {{ t.temp }}（{{ tempText(t.temp) }}）</div>
+        <div v-for="t in temps" :key="t.key" class="tip-text"><Emoji :e="t.icon" /> {{ t.name }}：永久 {{ t.perm }}，临时 {{ t.temp }}（{{ tempText(t.temp, t.key) }}）</div>
         <div class="tip-duration">永久和临时层数同时存在的状态</div>
       </div>
     </div>

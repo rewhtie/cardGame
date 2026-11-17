@@ -6,9 +6,14 @@ export function stageSeed(seed: string, stage = 1): string {
   return stage === 1 ? seed : String(deriveSeed(seed, `stage:${stage}`))
 }
 
+/** 后续大层非原生敌人的强化倍率：生命与攻击/格挡/回血分开算，两者都 ×1.5 时难度叠加过高 */
+export const STAGE_HP_SCALE = 1.3
+export const STAGE_POWER_SCALE = 1.1
+
 export function stageEnemy(enemy: EnemyDef, stage = 1): EnemyDef {
   if (stage <= 1 || enemy.nativeStage === stage) return enemy
-  const scale = (value: number) => Math.min(999, Math.ceil(value * 1.5))
+  const scale = (value: number) => Math.min(999, Math.ceil(value * STAGE_POWER_SCALE))
+  const hpScale = (value: number) => Math.min(999, Math.ceil(value * STAGE_HP_SCALE))
   const action = (value: IntentAction): IntentAction => {
     switch (value.type) {
       case 'attack':
@@ -29,7 +34,7 @@ export function stageEnemy(enemy: EnemyDef, stage = 1): EnemyDef {
   })
   return {
     ...enemy,
-    maxHp: scale(enemy.maxHp),
+    maxHp: hpScale(enemy.maxHp),
     intents: enemy.intents.map(intent),
     ...(enemy.evenTurnActions && { evenTurnActions: enemy.evenTurnActions.map(action) }),
     ...(enemy.hpPhase && { hpPhase: {

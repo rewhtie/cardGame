@@ -5,7 +5,7 @@ import type { RunSave } from '@/engine/save'
 import { runProgress } from '@/engine/progress'
 
 const props = defineProps<{ save: RunSave | null }>()
-const emit = defineEmits<{ start: []; continue: []; settings: [] }>()
+const emit = defineEmits<{ start: []; continue: []; codex: []; settings: [] }>()
 
 /** 存档摘要包含重新进入的节点，避免战斗存档显示上一层。 */
 const summary = computed(() => {
@@ -70,6 +70,9 @@ const EMBERS = Array.from({ length: 18 }, (_, i) => ({
         <span class="entry-title">{{ armed ? '再点一次，覆盖存档' : '新游戏' }}</span>
         <span v-if="save && !armed" class="entry-sub">会覆盖当前存档</span>
       </button>
+      <button class="entry" @click="emit('codex')">
+        <span class="entry-title">图鉴</span>
+      </button>
       <button class="entry" @click="emit('settings')">
         <span class="entry-title">设置</span>
       </button>
@@ -98,7 +101,7 @@ const EMBERS = Array.from({ length: 18 }, (_, i) => ({
 }
 .flame {
   font-size: 3rem;
-  filter: drop-shadow(0 0 18px rgba(251, 146, 60, 0.9));
+  filter: drop-shadow(0 0 16px rgba(200, 32, 42, 0.75));
   animation: flicker 2.4s ease-in-out infinite;
 }
 .logo {
@@ -107,11 +110,14 @@ const EMBERS = Array.from({ length: 18 }, (_, i) => ({
   font-weight: 900;
   letter-spacing: 0.08em;
   line-height: 1.1;
-  background: linear-gradient(180deg, #fef3c7 10%, #fbbf24 45%, #b45309 90%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.6)) drop-shadow(0 0 28px rgba(217, 119, 6, 0.45));
+  /* 骨白字 + 粗墨描边 + 血红投影：与手绘立绘的粗墨线一致 */
+  color: #f2e6cc;
+  -webkit-text-stroke: 3px #0d0a08;
+  paint-order: stroke fill;
+  text-shadow:
+    0 5px 0 #7c1018,
+    0 8px 0 #0d0a08,
+    0 0 36px rgba(200, 32, 42, 0.45);
 }
 .tagline {
   display: flex;
@@ -121,18 +127,18 @@ const EMBERS = Array.from({ length: 18 }, (_, i) => ({
   margin-top: 0.6rem;
   font-size: 0.95rem;
   letter-spacing: 0.4em;
-  color: #b09c86;
+  color: #a38f70;
 }
 .tagline span {
   width: 4rem;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.7));
+  background: linear-gradient(90deg, transparent, rgba(200, 32, 42, 0.8));
 }
 .tagline span:last-child {
   transform: scaleX(-1);
 }
 
-/* 按钮：与弹框同源的金属渐变外框 */
+/* 按钮：墨底 + 粗黑描边 + 骨白内线，像插画里的墨线勾边 */
 .buttons {
   position: relative;
   z-index: 1;
@@ -148,13 +154,14 @@ const EMBERS = Array.from({ length: 18 }, (_, i) => ({
   gap: 0.15rem;
   padding: 0.85rem 1rem;
   cursor: pointer;
-  color: #f1e6d4;
-  background:
-    linear-gradient(180deg, rgba(45, 34, 28, 0.95), rgba(24, 16, 12, 0.95)) padding-box,
-    linear-gradient(145deg, #fef3c7, #d97706 40%, #78350f 70%, #fcd34d) border-box;
-  border: 2px solid transparent;
-  border-radius: 12px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+  color: #f2e6cc;
+  background: linear-gradient(180deg, #2a221c, #15100d);
+  border: 3px solid #0d0a08;
+  border-radius: 10px;
+  box-shadow:
+    inset 0 0 0 2px rgba(201, 180, 143, 0.55),
+    0 4px 0 #0d0a08,
+    0 8px 18px rgba(0, 0, 0, 0.55);
   transition:
     transform 0.15s,
     box-shadow 0.15s,
@@ -163,8 +170,9 @@ const EMBERS = Array.from({ length: 18 }, (_, i) => ({
 .entry:hover {
   transform: translateY(-2px);
   box-shadow:
-    0 10px 24px rgba(0, 0, 0, 0.6),
-    0 0 22px rgba(251, 191, 36, 0.35);
+    inset 0 0 0 2px rgba(242, 230, 204, 0.8),
+    0 6px 0 #0d0a08,
+    0 0 22px rgba(200, 32, 42, 0.45);
   filter: brightness(1.12);
 }
 .entry:active {
@@ -178,24 +186,25 @@ const EMBERS = Array.from({ length: 18 }, (_, i) => ({
 }
 .entry-sub {
   font-size: 0.78rem;
-  color: #b09c86;
+  color: #a38f70;
 }
-/* 主操作：金色填充 */
+/* 主操作：血红填充 */
 .entry.primary {
-  color: #1c1917;
-  background:
-    linear-gradient(180deg, #fcd34d, #d97706) padding-box,
-    linear-gradient(145deg, #fef3c7, #d97706 40%, #78350f 70%, #fcd34d) border-box;
+  color: #fbf5e8;
+  background: linear-gradient(180deg, #d42a33, #8f121b);
+  text-shadow: 0 2px 0 #0d0a08;
 }
 .entry.primary .entry-sub {
-  color: rgba(28, 25, 23, 0.75);
+  color: rgba(251, 245, 232, 0.8);
 }
-/* 二次确认：红色警示 */
+/* 二次确认：墨底血字 + 红色内线警示 */
 .entry.danger {
-  color: #fee2e2;
-  background:
-    linear-gradient(180deg, #b91c1c, #7f1d1d) padding-box,
-    linear-gradient(145deg, #fecaca, #dc2626 40%, #7f1d1d 70%, #fca5a5) border-box;
+  color: #f08a8a;
+  background: linear-gradient(180deg, #3a0f12, #1a0708);
+  box-shadow:
+    inset 0 0 0 2px #c8202a,
+    0 4px 0 #0d0a08,
+    0 8px 18px rgba(0, 0, 0, 0.55);
 }
 
 /* 火星 */
@@ -203,8 +212,8 @@ const EMBERS = Array.from({ length: 18 }, (_, i) => ({
   position: absolute;
   bottom: -10px;
   border-radius: 50%;
-  background: #fbbf24;
-  box-shadow: 0 0 8px 2px rgba(251, 146, 60, 0.8);
+  background: #f08a5a;
+  box-shadow: 0 0 8px 2px rgba(200, 32, 42, 0.8);
   opacity: 0;
   animation: rise linear infinite;
 }

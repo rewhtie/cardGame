@@ -4,18 +4,18 @@ import { computed } from 'vue'
 /**
  * 用固定的 SVG（Twemoji）渲染表情，避免各平台系统字体外观不一致。
  * e 可以是单个表情、夹着文字的字符串（'💰 12'），或 src/assets/emoji 下的文件名（如 potion-yellow）。
- * 没有对应 SVG 的字符（如 ✎）按原文显示。
+ * 没有对应文件的字符（如 ✎）按原文显示。
  */
 const props = defineProps<{ e?: string }>()
 
-const files = import.meta.glob('@/assets/emoji/*.svg', {
+const files = import.meta.glob('@/assets/emoji/*.{svg,webp}', {
   eager: true,
   query: '?url',
   import: 'default',
 }) as Record<string, string>
 
 const urls = new Map<string, string>(
-  Object.entries(files).map(([path, url]) => [path.slice(path.lastIndexOf('/') + 1, -4), url]),
+  Object.entries(files).map(([path, url]) => [path.slice(path.lastIndexOf('/') + 1, path.lastIndexOf('.')), url]),
 )
 
 /** 表情字符 → Twemoji 文件名：不含 ZWJ 的序列去掉 FE0F，码点小写并以 - 连接 */

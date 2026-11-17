@@ -8,6 +8,8 @@ export interface UpgradeSpec {
   /** 升级后是否消耗（仅在与原卡不同时记录） */
   exhaust?: boolean
   oneShot?: boolean
+  /** 升级后是否虚无（仅在与原卡不同时记录） */
+  ethereal?: boolean
   /** 升级后是否保留（仅在与原卡不同时记录） */
   retain?: boolean
   /** 整体替换原效果；缺省沿用原效果 */
@@ -53,4 +55,6 @@ export interface CardSpec {
   freeIfParasiteTotal?: number
   /** 有剑意时免费 */
   freeIfSwordIntent?: boolean
+  /** 每层剑意费用 -N */
+  swordIntentDiscount?: number
 }

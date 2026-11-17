@@ -99,11 +99,12 @@ function onNumber(field: 'volume' | 'maxSeconds', e: Event) {
 }
 const toggleSilent = () => patch({ silent: !config.value.silent })
 /** 有内置合成音的槽位 */
-const SYNTH_SLOTS: Record<string, 'split' | 'evolve' | 'train' | 'burn'> = {
+const SYNTH_SLOTS: Record<string, 'split' | 'evolve' | 'train' | 'burn' | 'chest'> = {
   'battle.enemy.split': 'split',
   'run.evolve': 'evolve',
   'run.train': 'train',
   'run.cardRemoved': 'burn',
+  'run.treasure.open': 'chest',
 }
 const restoreSynth = () => patch({ files: undefined, synth: SYNTH_SLOTS[selected.value], silent: undefined })
 

@@ -77,6 +77,8 @@ function effectCall(e: Effect): string {
       return `.overdraft(${e.amount})`
     case 'meltBlock':
       return '.meltBlock()'
+    case 'loseBlock':
+      return '.loseBlock()'
     case 'sapStrength':
       return `.sapStrength(${e.amount})`
     case 'purgeSelfBuff':
@@ -148,6 +150,7 @@ export function cardToCode(spec: CardSpec): string {
   if (spec.evolve) add(`.evolve(${spec.evolve.plays}, ${q(spec.evolve.into)})`)
   if (spec.freeIfParasiteTotal) add(`.freeIfParasiteTotal(${spec.freeIfParasiteTotal})`)
   if (spec.freeIfSwordIntent) add('.freeIfSwordIntent()')
+  if (spec.swordIntentDiscount) add(`.swordIntentDiscount(${spec.swordIntentDiscount})`)
   const up = spec.upgrade
   if (up) {
     const calls: string[] = []
@@ -156,6 +159,8 @@ export function cardToCode(spec: CardSpec): string {
     else if (up.exhaust === false) calls.push('.noExhaust()')
     if (up.oneShot === true) calls.push('.oneShot()')
     else if (up.oneShot === false) calls.push('.noOneShot()')
+    if (up.ethereal === true) calls.push('.ethereal()')
+    else if (up.ethereal === false) calls.push('.noEthereal()')
     if (up.retain === true) calls.push('.retain()')
     else if (up.retain === false) calls.push('.noRetain()')
     up.effects?.forEach((e) => calls.push(effectCall(e)))

@@ -38,10 +38,11 @@ export const colorlessGold: Card[] = [
     .upgrade((u) => u.cost(0)),
   Card.gold('seeThrough', '识破')
     .icon('👁️')
-    .cost(2)
+    .cost(1)
     .targetEnemy()
     .asSkill()
     .blockByIntent()
+    .exhaust()
     .reward()
-    .upgrade((u) => u.cost(1)),
+    .upgrade((u) => u.noExhaust()),
 ]

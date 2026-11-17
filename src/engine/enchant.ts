@@ -91,18 +91,64 @@ export function isForgeable(cards: Readonly<Record<string, CardDef>>, id: string
   return !!def && def.rarity !== 'curse' && def.rarity !== 'status'
 }
 
+/** 成长满：没有 evolve 的牌累计打出这么多次后，攻击牌伤害 / 其余格挡 +MASTER_BONUS */
+export const MASTER_PLAYS = 10
+export const MASTER_BONUS = 2
+
+/** 这张牌（已解析的定义）能否熟练：有伤害或格挡、不是诅咒 / 状态、不是进化牌、还没熟练 */
+export const canMaster = (def: CardDef | undefined): boolean =>
+  !!def &&
+  !def.evolve &&
+  !def.mastered &&
+  def.rarity !== 'curse' &&
+  def.rarity !== 'status' &&
+  def.effects.some((e) => e.type === 'damage' || e.type === 'block')
+
+/** 成长所需打出次数：进化牌取 evolve.plays，可熟练的牌取 MASTER_PLAYS，否则 0（不计数） */
+export const growthPlays = (def: CardDef | undefined): number =>
+  def?.evolve?.plays ?? (canMaster(def) ? MASTER_PLAYS : 0)
+
+/** 牌组里的这张牌是否还在成长（进化牌，或尚未熟练的牌） */
+export function canGrow(cards: Readonly<Record<string, CardDef>>, id: string): boolean {
+  const base = cards[rawId(id)]
+  return !!base?.evolve || (canMaster(base) && progressOf(id) < MASTER_PLAYS)
+}
+
+/**
+ * 成长满后加哪一项：攻击牌加伤害，其余加格挡；牌上没有这一项时改加另一项。
+ * 只加一项，与附魔「锋利」「稳固」各自的 +2 对应。
+ */
+export function masterStat(def: CardDef): 'damage' | 'block' {
+  const has = (t: 'damage' | 'block') => def.effects.some((e) => e.type === t)
+  if (def.kind === 'attack') return has('damage') ? 'damage' : 'block'
+  return has('block') ? 'block' : 'damage'
+}
+
+/** 成长满后的卡：伤害或格挡 +MASTER_BONUS（见 masterStat），卡面数字同步，打上标记 */
+export function masterCard(def: CardDef): CardDef {
+  const add = (n: number) => Math.min(999, n + MASTER_BONUS)
+  const stat = masterStat(def)
+  const re = stat === 'damage' ? /(造成\s*)(\d+)(\s*点伤害)/g : /(获得\s*)(\d+)(\s*点格挡)/g
+  return {
+    ...def,
+    mastered: true,
+    effects: def.effects.map((e) => (e.type === stat ? { ...e, amount: add(e.amount) } : e)),
+    text: def.text.replace(re, (_, a, n, b) => `${a}${add(Number(n))}${b}`),
+  }
+}
+
 /** 牌组 -> 战斗用的牌实例 id：附魔牌和可进化的牌按牌组位置编号（各自计数） */
 export const toInstanceIds = (
   deck: readonly string[],
   cards?: Readonly<Record<string, CardDef>>,
 ) =>
   deck.map((id, i) =>
-    enchantOf(id) || cards?.[rawId(id)]?.evolve || cards?.[rawId(id)]?.oneShot ||
+    enchantOf(id) || (cards && canGrow(cards, id)) || cards?.[rawId(id)]?.oneShot ||
     (isUpgraded(id) && cards?.[rawId(id)]?.upgraded?.oneShot) ? `${id}#${i}` : id,
   )
 
 /**
- * 战斗胜利后结算进化。counts 以战斗实例 id（`${牌组里的id}#${下标}`）为键，
+ * 战斗胜利后结算进化 / 熟练。counts 以战斗实例 id（`${牌组里的id}#${下标}`）为键，
  * 值是累计后的总次数；达标换成目标牌，未达标把进度写回 id 后缀。
  */
 export function evolveDeck(
@@ -116,11 +162,13 @@ export function evolveDeck(
   const trained: { from: string; to: string }[] = []
   const next = deck.map((id, i) => {
     if (removed.has(i)) return id
+    if (!canGrow(cards, id)) return id
     const evolve = cards[rawId(id)]?.evolve
-    if (!evolve) return id
+    const plays = evolve?.plays ?? MASTER_PLAYS
     const total = counts[`${id}#${i}`] ?? progressOf(id)
-    if (total >= evolve.plays) {
-      const to = evolvedId(id, evolve.into)
+    if (total >= plays) {
+      // 进化牌换成目标牌；其余牌进度停在 MASTER_PLAYS，即熟练
+      const to = evolve ? evolvedId(id, evolve.into) : withProgress(id, MASTER_PLAYS)
       evolved.push({ from: id, to })
       return to
     }
@@ -190,6 +238,7 @@ function bumpEffect(e: Effect, growth: number): Effect {
     case 'spreadParasite':
     case 'purgeSelfBuff':
     case 'meltBlock':
+    case 'loseBlock':
     case 'blockFromDamage':
     case 'overdraft':
       return e
@@ -264,6 +313,7 @@ function upgradeEffect(e: Effect): Effect {
     case 'spreadParasite':
     case 'purgeSelfBuff':
     case 'meltBlock':
+    case 'loseBlock':
     case 'blockFromDamage':
     case 'overdraft':
       return e
@@ -283,7 +333,7 @@ const effectNumber = (e: Effect) =>
           ? e.per
           : e.type === 'multiplyStatus'
             ? e.factor
-            : e.type === 'convertCorpse' || e.type === 'exhaustStatusCard' || e.type === 'choose' || e.type === 'redraw' || e.type === 'reshuffle' || e.type === 'exhaustCards' || e.type === 'blockByIntent' || e.type === 'lifeOverload' || e.type === 'mentalOverload' || e.type === 'goldIfKill' || e.type === 'gainPotion' || e.type === 'playTop' || e.type === 'parasiteBurst' || e.type === 'spreadParasite' || e.type === 'meltBlock' || e.type === 'blockFromDamage' || e.type === 'overdraft' || e.type === 'addCard' || e.type === 'penalty' || e.type === 'parasiteStatus' || e.type === 'purgeSelfBuff'
+            : e.type === 'convertCorpse' || e.type === 'exhaustStatusCard' || e.type === 'choose' || e.type === 'redraw' || e.type === 'reshuffle' || e.type === 'exhaustCards' || e.type === 'blockByIntent' || e.type === 'lifeOverload' || e.type === 'mentalOverload' || e.type === 'goldIfKill' || e.type === 'gainPotion' || e.type === 'playTop' || e.type === 'parasiteBurst' || e.type === 'spreadParasite' || e.type === 'meltBlock' || e.type === 'loseBlock' || e.type === 'blockFromDamage' || e.type === 'overdraft' || e.type === 'addCard' || e.type === 'penalty' || e.type === 'parasiteStatus' || e.type === 'purgeSelfBuff'
               ? 0
               : e.type === 'devourParasite'
                 ? e.per
@@ -313,6 +363,7 @@ function forge(card: CardDef): CardDef {
   const def: CardDef = { ...rest, ...upgraded, name: card.name + UPGRADE_SUFFIX }
   // 升级版去掉消耗时，要显式清掉标记
   if (upgraded.exhaust === false) delete def.exhaust
+  if (upgraded.ethereal === false) delete def.ethereal
   return def
 }
 
@@ -338,7 +389,9 @@ export function resolveCards(
     const base = cards[rawId(id)]
     if (!base) continue
     const def = isUpgraded(id) ? forge(base) : base
-    result[id] = { ...(enchant ? applyEnchant(def, enchant) : def), id }
+    const enchanted = enchant ? applyEnchant(def, enchant) : def
+    const mastered = !base.evolve && progressOf(id) >= MASTER_PLAYS && canMaster(enchanted)
+    result[id] = { ...(mastered ? masterCard(enchanted) : enchanted), id }
   }
   return result
 }

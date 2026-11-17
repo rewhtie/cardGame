@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import Emoji from '@/ui/Emoji.vue'
-import { computed, ref } from 'vue'
-import { cards } from '@/data/cards'
+import { computed, ref, watch } from 'vue'
+import { cards, colorlessAllIds } from '@/data/cards'
 import { characters } from '@/data/characters'
 import { potions, relics } from '@/data/items'
 import type { Rarity } from '@/engine/types'
@@ -14,11 +14,12 @@ import UpgradableCard from './UpgradableCard.vue'
 
 defineEmits<{ close: [] }>()
 
-type Tab = Rarity | 'relic' | 'potion'
+type Tab = Rarity | 'colorless' | 'relic' | 'potion'
 const TABS: { value: Tab; label: string }[] = [
   { value: 'gold', label: '金卡' },
   { value: 'blue', label: '蓝卡' },
   { value: 'white', label: '白卡' },
+  { value: 'colorless', label: '无色' },
   { value: 'status', label: '状态' },
   { value: 'curse', label: '诅咒' },
   { value: 'relic', label: '遗物' },
@@ -26,21 +27,42 @@ const TABS: { value: Tab; label: string }[] = [
 ]
 
 const tab = ref<Tab>('gold')
-/** 左侧职业栏的筛选：null 为全部；状态牌 / 诅咒牌 / 药水不属于任何职业，不受影响 */
+/** 左侧职业栏的筛选：null 为全部，COLORLESS 为无色牌；状态牌 / 诅咒牌 / 药水不属于任何职业，不受影响 */
+const COLORLESS = 'colorless'
 const charId = ref<string | null>(null)
 useDevHotState(import.meta.hot, 'codex', { tab, charId })
 const character = computed(() => characters.find((c) => c.id === charId.value))
-const cardsOf = (t: Rarity) =>
-  Object.values(cards).filter(
+const colorlessSet = new Set(colorlessAllIds)
+/**
+ * 无色牌不分金蓝白，只出现在「无色」分页；金 / 蓝 / 白分页只放职业牌。
+ * 选了职业时只放本职业的牌（职业卡池里混着的无色牌不算）
+ */
+const cardsOf = (t: Rarity | 'colorless') => {
+  if (t === 'colorless') return Object.values(cards).filter((c) => colorlessSet.has(c.id))
+  return Object.values(cards).filter(
     (c) =>
       c.rarity === t &&
-      (!character.value || t === 'status' || t === 'curse' || character.value.allCards.includes(c.id)),
+      (t === 'status' || t === 'curse' ||
+        (!colorlessSet.has(c.id) && (!character.value || character.value.allCards.includes(c.id)))),
   )
+}
+/** 分页随左侧栏变化：无色栏不显示金蓝白和遗物；职业栏不显示无色分页 */
+const visibleTabs = computed(() =>
+  TABS.filter((t) => {
+    if (charId.value === COLORLESS) return !['gold', 'blue', 'white', 'relic'].includes(t.value)
+    if (character.value) return t.value !== 'colorless'
+    return true
+  }),
+)
+watch(visibleTabs, (list) => {
+  if (!list.some((t) => t.value === tab.value)) tab.value = list[0]!.value
+})
 const relicsOfAll = () =>
-  Object.values(relics).filter(
-    (r) =>
-      !character.value || [...character.value.relics, ...(character.value.exclusiveRelics ?? [])].includes(r.id),
-  )
+  Object.values(relics).filter((r) => {
+    // 无色栏没有专属遗物
+    if (charId.value === COLORLESS) return false
+    return !character.value || [...character.value.relics, ...(character.value.exclusiveRelics ?? [])].includes(r.id)
+  })
 const cardList = computed(() =>
   tab.value === 'relic' || tab.value === 'potion' ? [] : cardsOf(tab.value),
 )
@@ -96,12 +118,16 @@ function grant(kind: 'card' | 'potion' | 'relic', id: string) {
         <span class="rail-icon"><Emoji :e="c.icon" /></span>
         <span class="rail-name">{{ c.name }}</span>
       </button>
+      <button class="rail-item" :class="{ active: charId === COLORLESS }" @click="charId = COLORLESS">
+        <span class="rail-icon"><Emoji e="🃏" /></span>
+        <span class="rail-name">无色</span>
+      </button>
     </nav>
     <!-- 固定高度：切换分页时弹框尺寸不跳动 -->
     <CardPanel title="图鉴" class="w-[1100px] h-full" closable @close="$emit('close')">
       <template #toolbar>
         <button
-          v-for="t in TABS"
+          v-for="t in visibleTabs"
           :key="t.value"
           class="tab"
           :class="{ active: tab === t.value }"

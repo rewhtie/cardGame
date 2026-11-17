@@ -17,6 +17,8 @@ export type Effect =
   | { type: 'sapStrength'; amount: number }
   /** 熔化：移除目标敌人的全部格挡 */
   | { type: 'meltBlock' }
+  /** 自己失去所有格挡 */
+  | { type: 'loseBlock' }
   /** 获得等同于本张牌刚造成的伤害（含被格挡吸收的部分）的格挡 */
   | { type: 'blockFromDamage' }
   /** 透支：立刻失去 amount 点力量，直到下个回合结束前（下回合结束时恢复） */
@@ -136,6 +138,8 @@ export interface CardDef {
   freeIfParasiteTotal?: number
   /** 玩家身上有剑意时，这张牌免费打出（不消耗剑意；伤害随剑意层数的牌自己会消耗） */
   freeIfSwordIntent?: boolean
+  /** 玩家每有 1 层剑意，这张牌费用 -N（最低 0，不消耗剑意） */
+  swordIntentDiscount?: number
   /** 无法打出（状态牌 / 诅咒牌） */
   unplayable?: boolean
   /** 手牌中有此类牌时，只能打出同样带此标记的牌 */
@@ -148,7 +152,7 @@ export interface CardDef {
   /** 卡面文字；X 牌用 {x} 占位，显示时由 cardText 展开 */
   text: string
   /** 手写的升级版：火堆锻造时覆盖到原卡上；缺省则按通用规则自动加数值 */
-  upgraded?: Partial<Pick<CardDef, 'cost' | 'target' | 'kind' | 'exhaust' | 'oneShot' | 'retain' | 'retainGrow' | 'effects' | 'text'>>
+  upgraded?: Partial<Pick<CardDef, 'cost' | 'target' | 'kind' | 'exhaust' | 'oneShot' | 'ethereal' | 'retain' | 'retainGrow' | 'effects' | 'text'>>
   /** 增量：每打出一次，卡面数值 +grow（战斗实例各自累积） */
   grow?: number
   /** 固有：每场战斗第一回合必定抽上手，不改费用 */
@@ -159,22 +163,31 @@ export interface CardDef {
   xBonus?: number
   /** 进化：这张牌累计打出 plays 次后（战斗胜利时结算）变成 into；只由卡牌自己声明 */
   evolve?: { plays: number; into: string }
+  /** 熟练：没有 evolve 的牌累计打出 MASTER_PLAYS 次后，伤害 +2、格挡 +2（由 resolveCards 按 ~N 进度补上） */
+  mastered?: boolean
 }
 
 /** 一个回合里的单个动作 */
 export type IntentAction =
   /** hits：多段攻击，每段独立结算伤害（缺省 1 段） */
   | { type: 'attack'; damage: number; hits?: number; grow?: number; selfStun?: number; addCards?: { cardId: string; count: number } }
-  | { type: 'defend'; block: number; target?: 'self' | 'allAllies' }
-  | { type: 'heal'; amount: number; target?: 'self' | 'allAllies' }
+  /** selfAndAlly：自身与相邻队友（右侧优先，没有则左侧） */
+  | { type: 'defend'; block: number; target?: 'self' | 'allAllies' | 'selfAndAlly' }
+  | { type: 'heal'; amount: number; target?: 'self' | 'allAllies' | 'selfAndAlly' }
   | { type: 'shareLife' }
   | { type: 'sacrificeExplosion' }
   | { type: 'explode'; damage: number }
   | { type: 'revive' }
+  /** 保护相邻队友：它受到的伤害全部转由自身承担，持续到自身下次行动前 */
+  | { type: 'protect' }
+  /** 同族死亡后追加的遗志重击：攻击后自身碎裂（运行时追加，不在数据里配置） */
+  | { type: 'deathStrike'; damage: number }
+  /** 死亡分裂的分身有同伴阵亡后改为合体：本体按 ratio 复活（运行时替换，不在数据里配置） */
+  | { type: 'regroup'; ratio: number }
   /** 给玩家上状态 */
   | { type: 'debuff'; status: string; stacks: number }
-  /** 给自己上状态 */
-  | { type: 'buff'; status: string; stacks: number }
+  /** 给自己上状态；selfAndAlly 同时给相邻队友；untilNextAction 表示持续到持有者下次行动前 */
+  | { type: 'buff'; status: string; stacks: number; target?: 'self' | 'selfAndAlly'; untilNextAction?: boolean }
   /** 往玩家指定牌堆塞牌；缺省为弃牌堆，抽牌堆随机插入 */
   | { type: 'addCards'; cardId: string; count: number; to?: 'discard' | 'draw' }
   /** 什么都不做（蓄力） */
@@ -233,6 +246,10 @@ export interface EnemyDef {
   /** 数值较大的敌人先行动，同优先级保持队列顺序 */
   actionPriority?: number
   nativeStage?: number
+  /** 同族有成员真正死亡时，存活的自己在本次意图后追加这么多伤害的重击，然后碎裂 */
+  deathStrike?: number
+  /** 按预算组怪时只单独出场：不补其他怪，也不被补进别的组合（固定遭遇不受限） */
+  solo?: boolean
   family?: string
   deathHealFamily?: boolean
   delayedExplosion?: boolean
@@ -241,11 +258,15 @@ export interface EnemyDef {
   splitInto?: EnemyDef[]
   /** 死亡时分裂出的敌人（各带自己的满血，本体不留尸体）；见 effects 的 deathSplits */
   splitOnDeath?: EnemyDef[]
+  /** 死亡分裂的合体：分身有同伴阵亡后改为合体意图，轮到它行动时分身全部消失，本体按 hpRatio + 每只存活分身 perClone 复活并从第一个意图重来；每次分裂少一只，分不出来时真正死亡 */
+  regroup?: { hpRatio: number; perClone?: number }
 }
 
 /** 固定遭遇：楼层在 [minFloor, maxFloor] 内的普通战斗有一定概率直接出这一组 */
 export interface EncounterDef {
   stage?: number
+  /** 命中楼层时直接出这一组的概率；缺省 0.5 */
+  chance?: number
   role?: 'monster' | 'elite' | 'boss'
   id: string
   name: string
@@ -284,6 +305,10 @@ export interface EnemyState {
   deathOrder?: number
   revivesUsed?: number
   revivedTurn?: number
+  /** 已追加遗志重击，下次行动打完后碎裂 */
+  strikePending?: boolean
+  /** 正在保护的队友下标（保护持续到自身下次行动前） */
+  guarding?: number
   /** 本张牌结算期间被玩家攻击命中过（时机据此判断），出牌结算完清除 */
   struck?: boolean
   hp: number
@@ -295,6 +320,10 @@ export interface EnemyState {
   vanishOnDeath?: boolean
   /** 已执行过死亡分裂，避免重复触发 */
   deathSplit?: boolean
+  /** 合体机制：本体已分裂的次数（决定下次分裂少几只） */
+  splitsDone?: number
+  /** 合体机制：分身所属本体的下标 */
+  splitParent?: number
   /** 已切换生命阶段；不会因回血退回 */
   phaseChanged?: boolean
   stunPhaseChanged?: boolean
@@ -362,6 +391,8 @@ export interface BattleState {
   discoverPool?: string[]
   /** 本回合被「发现」置零费用的牌实例，回合结束时恢复 */
   discovered?: string[]
+  /** 杂货店塞进手牌、第一次打出免费的牌实例；打出后恢复原费用 */
+  freeOnce?: string[]
   /** 本场由玩家卡牌、自身状态或遗物生成的状态牌累计张数，不含敌方塞牌 */
   playerGeneratedStatuses?: number
   /** 战斗中生成的牌实例计数 */

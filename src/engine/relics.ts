@@ -1,6 +1,7 @@
-import { addCardsToDiscard, addStatus, applyBlock, applyDamage, countWounds, drawCards, heal, isAlive, WOUND } from './effects'
+import { addCardsToDiscard, addStatus, applyBlock, applyDamage, countWounds, drawCards, heal, isAlive, loseHp, spawnCardInstance, WOUND } from './effects'
 import { isForgeable, isUpgraded, rawId, resolveCards, upgradedId, withEnchant } from './enchant'
 import { canEnchant } from './enchants'
+import { nextRandom } from './rng'
 import { sample, type Rng } from './seed'
 import type { RunState } from './run'
 import type { BattleState, CardDef, Effect, GameEvent } from './types'
@@ -67,6 +68,14 @@ export interface RelicRule extends Partial<BattleHooks> {
 /** 遗物的计数 / 标记存放处：BattleState.relicState[id] */
 const getState = (s: BattleState, id: string) => s.relicState[id] ?? 0
 
+/** 每场战斗一次的标记：relicState 跨战斗保留，所以战斗开始时清掉 */
+const resetFlag = (s: BattleState, id: string) => {
+  s.relicState = { ...s.relicState, [id]: 0 }
+}
+const markFlag = (s: BattleState, id: string) => {
+  if (!getState(s, id)) s.relicState = { ...s.relicState, [id]: 1 }
+}
+
 /** 计数 +1；到达 every 时清零并返回 true */
 function tickCounter(s: BattleState, id: string, every: number): boolean {
   const n = getState(s, id) + 1
@@ -76,6 +85,7 @@ function tickCounter(s: BattleState, id: string, every: number): boolean {
 }
 
 const PEN_NIB_EVERY = 10
+const CLOAK_EVERY = 10
 const WHETSTONE_CARDS = 2
 const WAR_PAINT_CARDS = 2
 
@@ -99,13 +109,34 @@ function upgradeRandomCards(kind: CardDef['kind'], count: number): NonNullable<R
   }
 }
 const STRAWBERRY_HP = 7
+export const ANCESTOR_HEART_HP = 25
+export const SOUL_FORGE_CARDS = 4
+/** 启蒙卷轴：relicState 记已用掉的卡牌奖励组数，满 SCROLL_REWARDS 置灰 */
+export const SCROLL_ID = 'enlightenScroll'
+export const SCROLL_REWARDS = 2
 
-/** 树枝：relicState.branch 未用 → 休息后待发动 → 开战发动后用完 */
+/** 灵魂熔炉：获得时随机升级牌组里 count 张可锻造的牌（不限种类） */
+function upgradeAnyCards(count: number): NonNullable<RelicRule['onAcquire']> {
+  return (run, rng) => {
+    const idx = run.content.deck
+      .map((_, i) => i)
+      .filter((i) => isForgeable(run.content.cards, run.content.deck[i] as string))
+    const picked = new Set(sample(idx, count, rng))
+    const cards: { from: string; to: string }[] = []
+    const deck = run.content.deck.map((c, i) => {
+      if (!picked.has(i)) return c
+      cards.push({ from: c, to: upgradedId(c) })
+      return upgradedId(c)
+    })
+    return { run: { ...run, content: { ...run.content, deck } }, cards }
+  }
+}
+
+
+/** 树枝：relicState.branch 未用 → 第一次休息时发动后用完置灰 */
 export const BRANCH_ID = 'branch'
-export const BRANCH_ARMED = 1
 export const BRANCH_SPENT = 2
-export const BRANCH_REST_HEAL_RATIO = 0.05
-const BRANCH_ENERGY = 2
+export const BRANCH_MAX_HP = 5
 const woundsIn = (pile: readonly string[]) => pile.filter((c) => c === WOUND).length
 
 const withGold = (amount: number) => (run: RunState) => ({
@@ -133,15 +164,34 @@ export function relicNeedsPick(run: RunState, id: string): boolean {
 }
 
 /** 选牌界面用的规则 */
-export const relicPickSpec = (id: string) => RELIC_RULES[id]?.pick
+/** 武器库：战斗胜利后的奖励选牌（升级 1 张攻击牌）；不是获得遗物时的选牌，单独登记 */
+export const REWARD_PICKS: Readonly<Record<string, PickSpec>> = {
+  armory: {
+    hint: '选择 1 张攻击牌升级',
+    count: 1,
+    eligible: (c, cards) => isForgeable(cards, c) && cards[rawId(c)]?.kind === 'attack',
+    apply: upgradedId,
+  },
+}
+
+/** reward 为 true 时取战斗奖励的选牌规则（REWARD_PICKS），否则取遗物获得时的 */
+export const relicPickSpec = (id: string, reward = false) =>
+  reward ? REWARD_PICKS[id] : RELIC_RULES[id]?.pick
+
+/** 牌组里是否有可供该奖励选牌的牌 */
+export const rewardPickAvailable = (run: RunState, id: string) => {
+  const spec = REWARD_PICKS[id]
+  return !!spec && eligibleIndices(run, spec).length > 0
+}
 
 /** 玩家选完牌后结算该遗物（含 onAcquire 以外的变换）；选择不合法返回 undefined */
 export function resolveRelicPick(
   run: RunState,
   id: string,
   indices: number[],
+  reward = false,
 ): AcquireResult | undefined {
-  const spec = RELIC_RULES[id]?.pick
+  const spec = relicPickSpec(id, reward)
   if (!spec) return undefined
   const eligible = eligibleIndices(run, spec)
   if (
@@ -433,6 +483,53 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
     }),
   },
   potionBelt: { potionSlots: 2 },
+  // 先古三：启蒙卷轴 / 先祖之心 / 灵魂熔炉
+  // 启蒙卷轴：接下来 2 组卡牌奖励全部升级（结算在 run.ts 的战斗奖励），用完置灰
+  enlightenScroll: {
+    showCounter: true,
+    spent: (st) => (st[SCROLL_ID] ?? 0) >= SCROLL_REWARDS,
+  },
+  // 二阶段先古三：炼金箱（结算在 run.ts 的 startBattle）
+  alchemyChest: {},
+  // 武器库：打出的攻击牌本场升级，只升级打出的那一张（攻击牌按实例编号，见 createBattle）；战斗奖励多一项升级攻击牌（见 run.ts 的 generateRewards）
+  armory: {
+    onCardPlayed: (s, _ev, card) => {
+      if (card.kind !== 'attack' || isUpgraded(card.id)) return
+      const cur = s.cards[card.id]
+      if (!cur || cur.name.endsWith('+')) return
+      const raw = rawId(card.id)
+      if (!isForgeable(s.cards, raw)) return
+      const up = resolveCards(s.cards, [upgradedId(card.id)])[upgradedId(card.id)]
+      if (up) s.cards = { ...s.cards, [card.id]: { ...up, id: card.id } }
+    },
+  },
+  // 杂货店：回合开始时从奖励卡池随机 1 张加入手牌，第一次打出费用为 0（恢复见 battle.ts 的 freeOnce）
+  groceryStore: {
+    onTurnStart: (s, ev) => {
+      const pool = (s.discoverPool ?? []).filter((id) => s.cards[id])
+      if (!pool.length) return
+      const r = nextRandom(s.rngState)
+      s.rngState = r[1]
+      const base = pool[Math.floor(r[0] * pool.length)]!
+      const free = s.cards[base]!.cost !== 'X'
+      const id = spawnCardInstance(s, base, 'm', free ? { cost: 0 } : {})
+      if (free) s.freeOnce = [...(s.freeOnce ?? []), id]
+      s.hand.push(id)
+      ev.push({ type: 'cardAdded', cardId: id, count: 1, to: 'hand' })
+    },
+  },
+  // 贤者水晶：药水效果翻 3 倍（见 battle.ts 的 usePotion、run.ts 的战斗外回血）
+  sageCrystal: {},
+  ancestorHeart: {
+    onAcquire: (run) => ({
+      run: {
+        ...run,
+        player: { hp: run.player.hp + ANCESTOR_HEART_HP, maxHp: run.player.maxHp + ANCESTOR_HEART_HP },
+      },
+      heal: ANCESTOR_HEART_HP,
+    }),
+  },
+  soulForge: { onAcquire: upgradeAnyCards(SOUL_FORGE_CARDS) },
   whetstone: { onAcquire: upgradeRandomCards('attack', WHETSTONE_CARDS) },
   // 战争涂料：获得时升级牌组中的 2 张技能牌
   warPaint: { onAcquire: upgradeRandomCards('skill', WAR_PAINT_CARDS) },
@@ -472,17 +569,76 @@ export const RELIC_RULES: Readonly<Record<string, RelicRule>> = {
         if (isAlive(e)) applyDamage(s, 'enemy', 3, ev, i)
       }),
   },
-  // 计数与结算在 effects.ts 的 applyDamage / applyBlock 里（需要拿到实际伤害与格挡数值）
-  legendVest: { showCounter: true },
-  // 树枝：休息时额外恢复（见 run.ts 的 rest），下一场战斗第一回合获得能量后用完；不进奖池
-  branch: {
-    spent: (st) => st[BRANCH_ID] === BRANCH_SPENT,
-    onTurnStart: (s, ev) => {
-      if (s.turn !== 1 || getState(s, BRANCH_ID) !== BRANCH_ARMED) return
-      gainEnergy(s, BRANCH_ENERGY, ev)
-      s.relicState = { ...s.relicState, [BRANCH_ID]: BRANCH_SPENT }
+  // 火把：每个回合开始时，给予所有敌人 8 层灼伤
+  torch: {
+    onTurnStart: (s, ev) =>
+      s.enemies.forEach((e, i) => {
+        if (isAlive(e)) addStatus(s, 'enemy', i, 'burn', 8, ev)
+      }),
+  },
+  // 幸运护符：问号节点不会抽到含战斗的事件（见 event.ts 的 pickEvent）
+  luckyCharm: {},
+  multiTool: {},
+  // 二重长矛：每场战斗打出的第一张攻击牌重放 2 次并消耗（结算在 battle.ts 的 playCard；relicState 标记本场已用）
+  doubleSpear: {
+    onBattleStart: (s) => {
+      s.relicState = { ...s.relicState, doubleSpear: 0 }
     },
   },
+  // 羽毛扫：X 费用的牌 X 额外 +3（见 battle.ts 的 relicXBonus）
+  featherDuster: {},
+  // 战士专属
+  // 重甲：每场战斗第一张带格挡的牌，格挡数值翻倍（翻倍基数，敏捷照常加在后面，与钢笔尖同规则）
+  heavyArmor: {
+    onBattleStart: (s) => resetFlag(s, 'heavyArmor'),
+    modifyEffect: (s, _card, effect) =>
+      effect.type === 'block' && !getState(s, 'heavyArmor') ? { ...effect, amount: effect.amount * 2 } : effect,
+    onCardPlayed: (s, _ev, card) => {
+      if (card.effects.some((e) => e.type === 'block')) markFlag(s, 'heavyArmor')
+    },
+  },
+  // 轻甲：每场战斗第一张攻击牌伤害翻倍（同钢笔尖：翻倍基数，力量加在后面；卡面预览同步显示）
+  lightArmor: {
+    onBattleStart: (s) => resetFlag(s, 'lightArmor'),
+    modifyEffect: (s, card, effect) =>
+      card.kind === 'attack' && effect.type === 'damage' && !getState(s, 'lightArmor')
+        ? { ...effect, amount: effect.amount * 2 }
+        : effect,
+    onCardPlayed: (s, _ev, card) => {
+      if (card.kind === 'attack') markFlag(s, 'lightArmor')
+    },
+  },
+  // 披风：每打出 10 张技能牌，下一张技能牌格挡翻倍；翻倍的那张不计数（同钢笔尖，计数跨战斗累计）
+  cloak: {
+    showCounter: true,
+    modifyEffect: (s, card, effect) =>
+      card.kind === 'skill' && effect.type === 'block' && getState(s, 'cloak') >= CLOAK_EVERY
+        ? { ...effect, amount: effect.amount * 2 }
+        : effect,
+    onCardPlayed: (s, _ev, card) => {
+      if (card.kind !== 'skill') return
+      const n = getState(s, 'cloak')
+      s.relicState = { ...s.relicState, cloak: n >= CLOAK_EVERY ? 0 : n + 1 }
+    },
+  },
+  // 长枪：战斗开始时，所有敌人获得 2 层脆弱
+  longSpear: {
+    onBattleStart: (s, ev) =>
+      s.enemies.forEach((e, i) => {
+        if (isAlive(e)) addStatus(s, 'enemy', i, 'frail', 2, ev)
+      }),
+  },
+  // 器皿：战斗开始时失去 2 点生命，获得 3 层再生
+  vessel: {
+    onBattleStart: (s, ev) => {
+      loseHp(s, 'player', 0, 2, ev)
+      addStatus(s, 'player', 0, 'regen', 3, ev)
+    },
+  },
+  // 计数与结算在 effects.ts 的 applyDamage / applyBlock 里（需要拿到实际伤害与格挡数值）
+  legendVest: { showCounter: true },
+  // 树枝：第一次休息时最大生命提升后用完（见 run.ts 的 rest）；不进奖池
+  branch: { spent: (st) => st[BRANCH_ID] === BRANCH_SPENT },
   trainingGuide: pickRelic({
     hint: '选择一张牌附魔「增量」：每打出一次，卡面数值 +5，仅本场战斗生效',
     count: 1,

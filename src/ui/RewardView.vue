@@ -6,7 +6,7 @@ import { potions, relics } from '@/data/items'
 import { type Reward, type RunState } from '@/engine/run'
 import CardPanel from './CardPanel.vue'
 import UpgradableCard from './UpgradableCard.vue'
-import { upgradeCard } from '@/engine/enchant'
+import { isForgeable, resolveCards, upgradeCard } from '@/engine/enchant'
 
 const props = defineProps<{ run: RunState }>()
 const emit = defineEmits<{ claim: [index: number, pick?: number]; finish: [] }>()
@@ -37,6 +37,12 @@ function describe(r: Reward) {
       }
     case 'cards':
       return { icon: '🃏', title: '添加一张卡牌到牌组', text: '从 3 张中选 1 张' }
+    case 'upgrade':
+      return {
+        icon: relics[r.id]?.icon ?? '🗡️',
+        title: '升级一张攻击牌',
+        text: relics[r.id]?.name ?? '',
+      }
   }
 }
 
@@ -59,6 +65,8 @@ function choose(pick: number) {
   emit('claim', picking.value, pick)
   picking.value = null
 }
+/** 奖励里可能有已升级的牌（启蒙卷轴），按 id 补出定义 */
+const choiceCards = computed(() => resolveCards(cards, pickingReward.value?.choices ?? []))
 </script>
 
 <template>
@@ -71,11 +79,11 @@ function choose(pick: number) {
         <UpgradableCard
           v-for="(id, i) in pickingReward.choices"
           :key="id"
-          :card="cards[id]!"
+          :card="choiceCards[id]!"
           :upgraded="
-            cards[id]!.rarity === 'curse' || cards[id]!.rarity === 'status'
+            !isForgeable(cards, id)
               ? undefined
-              : upgradeCard(cards[id]!)
+              : upgradeCard(choiceCards[id]!)
           "
           @click="choose(i)"
         />

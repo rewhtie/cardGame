@@ -8,7 +8,7 @@ const parasiteRatio = (divisor: number) => (divisor === 1 ? '' : ` 1/${divisor} 
 
 /** 把效果列表拼成一句话；相邻、比例相同的寄生状态效果合并（"虚弱和易伤"） */
 /** 可置入的状态牌 / 诅咒牌的牌名（卡面文字用） */
-const CARD_NAMES: Record<string, string> = { wound: '伤口', stun: '晕眩', slimed: '粘液', burn: '灼伤' }
+const CARD_NAMES: Record<string, string> = { wound: '伤口', stun: '晕眩', slimed: '粘液', debris: '碎屑', burn: '灼伤' }
 
 export function joinEffectTexts(effects: readonly Effect[], allEnemies = false): string {
   const parts: string[] = []
@@ -56,6 +56,8 @@ function allEnemiesText(e: Effect, text: string): string {
   if (e.type === 'damage' && text.startsWith('造成')) return `对所有敌人${text}`
   if ((e.type === 'applyStatus' || e.type === 'woundStatus') && e.to === 'target')
     return text.replace('给予', '给予所有敌人')
+  if (e.type === 'sapStrength') return text.replace('目标', '所有敌人')
+  if (e.type === 'parasiteBurst' || e.type === 'devourParasite') return text.replace('消耗目标', '消耗每个敌人')
   return text
 }
 
@@ -79,6 +81,10 @@ export function effectText(e: Effect): string {
         const name = statusById[e.perTargetStatus.status]?.name ?? e.perTargetStatus.status
         const after = e.perTargetStatus.after ?? 'double'
         const tail = after === 'double' ? `，并使${name}层数翻倍` : after === 'clear' ? `，并清除${name}` : ''
+        if (e.amount === 0) {
+          const times = e.perTargetStatus.per === 1 ? '' : ` ×${e.perTargetStatus.per}`
+          return `造成等同于目标${name}层数${times}的伤害${tail}`
+        }
         return `造成 ${e.amount} 点伤害，目标每有 1 层${name}，伤害 +${e.perTargetStatus.per}${tail}`
       }
       return e.woundBonus
@@ -150,6 +156,8 @@ export function effectText(e: Effect): string {
       return `直到下个回合结束前失去 ${e.amount} 点力量`
     case 'meltBlock':
       return '熔化敌人格挡（熔化：移除所有格挡值）'
+    case 'loseBlock':
+      return '失去所有格挡'
     case 'sapStrength':
       return `目标失去 ${e.amount} 点力量（敌人回合结束时恢复）`
     case 'purgeSelfBuff':
@@ -242,6 +250,7 @@ export class Card {
   private _evolve?: { plays: number; into: string }
   private _freeParasite?: number
   private _freeIntent = false
+  private _intentDiscount = 0
   private _innate = false
   private _grow = 0
 
@@ -279,6 +288,7 @@ export class Card {
     if (spec.evolve) c.evolve(spec.evolve.plays, spec.evolve.into)
     if (spec.freeIfParasiteTotal) c.freeIfParasiteTotal(spec.freeIfParasiteTotal)
     if (spec.freeIfSwordIntent) c.freeIfSwordIntent()
+    if (spec.swordIntentDiscount) c.swordIntentDiscount(spec.swordIntentDiscount)
     const up = spec.upgrade
     if (up) {
       c.upgrade((u) => {
@@ -287,6 +297,8 @@ export class Card {
         else if (up.exhaust === false) u.noExhaust()
         if (up.oneShot === true) u.oneShot()
         else if (up.oneShot === false) u.noOneShot()
+        if (up.ethereal === true) u.ethereal()
+        else if (up.ethereal === false) u.noEthereal()
         if (up.retain === true) u.retain()
         else if (up.retain === false) u.noRetain()
         up.effects?.forEach((e) => u.effect(e))
@@ -327,6 +339,7 @@ export class Card {
       ...(this._evolve && { evolve: this._evolve }),
       ...(this._freeParasite && { freeIfParasiteTotal: this._freeParasite }),
       ...(this._freeIntent && { freeIfSwordIntent: true }),
+      ...(this._intentDiscount > 0 && { swordIntentDiscount: this._intentDiscount }),
     }
   }
 
@@ -338,12 +351,14 @@ export class Card {
     u._power = this._power
     u._exhaust = this._exhaust
     u._oneShot = this._oneShot
+    u._ethereal = this._ethereal
     u._retain = this._retain
     const r = this._upgrade(u)
     return {
       ...(r._cost !== this._cost && { cost: r._cost }),
       ...(r._exhaust !== this._exhaust && { exhaust: r._exhaust }),
       ...(r._oneShot !== this._oneShot && { oneShot: r._oneShot }),
+      ...(r._ethereal !== this._ethereal && { ethereal: r._ethereal }),
       ...(r._retain !== this._retain && { retain: r._retain }),
       ...(r._effects.length > 0 && { effects: r._effects }),
       ...(r._text && { text: r._text }),
@@ -616,6 +631,10 @@ export class Card {
   meltBlock() {
     return this.effect({ type: 'meltBlock' })
   }
+  /** 自己失去所有格挡 */
+  loseBlock() {
+    return this.effect({ type: 'loseBlock' })
+  }
   spreadParasite() {
     return this.effect({ type: 'spreadParasite' })
   }
@@ -627,6 +646,11 @@ export class Card {
   /** 玩家有剑意时，这张牌免费 */
   freeIfSwordIntent() {
     this._freeIntent = true
+    return this
+  }
+  /** 玩家每有 1 层剑意，这张牌费用 -n（最低 0，不消耗剑意） */
+  swordIntentDiscount(n: number) {
+    this._intentDiscount = n
     return this
   }
   stealMaxHp(amount: number) {
@@ -678,6 +702,11 @@ export class Card {
   }
 
   /** 取消保留（升级时去掉"保留"用） */
+  /** 升级用：去掉虚无 */
+  noEthereal() {
+    this._ethereal = false
+    return this
+  }
   noRetain() {
     this._retain = false
     this._retainGrow = 0
@@ -725,16 +754,18 @@ export class Card {
     u._retainGrow = this._retainGrow
     u._innate = this._innate
     u._freeIntent = this._freeIntent
+    u._intentDiscount = this._intentDiscount
     u._skill = this._skill
     const result = this._upgrade(u)
     result._effects = result._effects.length > 0 ? result._effects : this._effects
-    const { cost, target, kind, exhaust, oneShot, retain, retainGrow, effects, text } = result.snapshot()
+    const { cost, target, kind, exhaust, oneShot, ethereal, retain, retainGrow, effects, text } = result.snapshot()
     return {
       cost,
       target,
       kind,
       ...(exhaust ? { exhaust } : { exhaust: false }),
       oneShot: !!oneShot,
+      ...(ethereal !== this._ethereal && { ethereal: !!ethereal }),
       ...(retain && { retain }),
       ...(retainGrow && { retainGrow }),
       effects,
@@ -774,10 +805,11 @@ export class Card {
       ...(this._evolve && { evolve: this._evolve }),
       ...(this._freeParasite && { freeIfParasiteTotal: this._freeParasite }),
       ...(this._freeIntent && { freeIfSwordIntent: true }),
+      ...(this._intentDiscount > 0 && { swordIntentDiscount: this._intentDiscount }),
       effects: this._effects,
       text:
         (this._text ??
-        `${this._innate ? '固有\n' : ''}${this._ethereal ? '虚无\n' : ''}${this._retain ? '保留\n' : ''}${this._freeIntent ? '有剑意时免费\n' : ''}${effectsText}${exhaust ? '\n消耗' : ''}`) +
+        `${this._innate ? '固有\n' : ''}${this._ethereal ? '虚无\n' : ''}${this._retain ? '保留\n' : ''}${this._freeIntent ? '有剑意时免费\n' : ''}${this._intentDiscount > 0 ? `每层剑意使费用 -${this._intentDiscount}\n` : ''}${effectsText}${exhaust ? '\n消耗' : ''}`) +
         (this._oneShot && !this._text?.includes('一次性') ? '\n一次性' : ''),
     }
   }

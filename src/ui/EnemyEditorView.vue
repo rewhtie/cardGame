@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Emoji from '@/ui/Emoji.vue'
+import { enemySprite } from '@/ui/enemySprites'
 import { useDevHotState } from '@/composables/useDevHotState'
 import { computed, ref } from 'vue'
 import { attackBonusAt, intentIndexAt } from '@/engine/intents'
@@ -38,6 +39,7 @@ const INTENT_LABEL: Record<IntentSpec['type'], string> = {
   summon: '召唤',
   steal: '偷金币',
   flee: '逃跑',
+  protect: '保护相邻队友',
 }
 const INTENT_TYPES = Object.keys(INTENT_LABEL) as IntentSpec['type'][]
 
@@ -219,6 +221,7 @@ function blankIntent(type: IntentSpec['type']): IntentSpec {
       return { type, amount: 10 }
     case 'idle':
     case 'flee':
+    case 'protect':
       return { type }
   }
 }
@@ -281,9 +284,9 @@ function describe(it: ActionSpec): string {
     case 'attack':
       return `攻击 ${it.damage}${(it.hits ?? 1) > 1 ? `×${it.hits}` : ''}${it.addCards ? `，塞 ${it.addCards.count} 张 ${it.addCards.cardId}` : ''}`
     case 'defend':
-      return `${it.target === 'allAllies' ? '自身与队友各' : ''}防御 ${it.block}`
+      return `${it.target === 'allAllies' ? '自身与队友各' : it.target === 'selfAndAlly' ? '自身与相邻队友各' : ''}防御 ${it.block}`
     case 'heal':
-      return `${it.target === 'allAllies' ? '自身与队友各' : '自身'}恢复 ${it.amount}`
+      return `${it.target === 'allAllies' ? '自身与队友各' : it.target === 'selfAndAlly' ? '自身与相邻队友各' : '自身'}恢复 ${it.amount}`
     case 'shareLife':
       return '与存活队友均分生命，双方获得转移量的格挡'
     case 'sacrificeExplosion':
@@ -295,7 +298,7 @@ function describe(it: ActionSpec): string {
     case 'debuff':
       return `给你 ${it.status} ×${it.stacks}`
     case 'buff':
-      return `自身 ${it.status} ×${it.stacks}`
+      return `${it.target === 'selfAndAlly' ? '自身与相邻队友' : '自身'} ${it.status} ×${it.stacks}${it.untilNextAction ? '（到下次行动前）' : ''}`
     case 'addCards':
       return `往${it.to === 'draw' ? '抽牌堆' : '弃牌堆'}塞 ${it.count} 张 ${it.cardId}`
     case 'summon':
@@ -306,6 +309,8 @@ function describe(it: ActionSpec): string {
       return '蓄力'
     case 'flee':
       return '逃跑'
+    case 'protect':
+      return '保护相邻队友：单体无法选中它，全体攻击可破，到下次行动前'
   }
 }
 /** 意图列表走一遍的直接伤害合计（计入多段与追加动作，不含递增），粗略看强度 */
@@ -438,7 +443,7 @@ function revert() {
             :class="{ active: e.id === selectedId }"
             @click="selectedId = e.id"
           >
-            <span><Emoji :e="e.icon || '👾'" /></span>
+            <span><img v-if="enemySprite(e.id)" :src="enemySprite(e.id)" alt="" class="emoji" style="width:1.6em;height:1.6em;vertical-align:middle" /><Emoji v-else :e="e.icon || '👾'" /></span>
             <span class="ed-item-name">{{ e.name }}</span>
             <span class="ed-item-sub">{{ e.maxHp }}血<template v-if="e.threat"> · 威胁{{ e.threat }}</template></span>
           </div>
@@ -496,12 +501,19 @@ function revert() {
             <label class="ed-field"><span>原生大层（不受该大层数值放大）</span><input v-model.number="current.nativeStage" type="number" min="1" class="ed-ctl" /></label>
             <label class="ed-field"><span>文字模型颜色（可空）</span><input v-model="current.iconColor" class="ed-ctl" placeholder="#4ade80" /></label>
           </div>
+          <label class="ed-inline"><input v-model="current.solo" type="checkbox" /> 只单独出场（随机组怪时不与其他怪组合）</label>
           <label class="ed-inline"><input v-model="current.deathHealFamily" type="checkbox" /> 死亡时将其他存活同族恢复至满血</label>
+          <label class="ed-field"><span>遗志重击：同族死亡后追加的重击伤害，打完自身碎裂（空表示无）</span><input :value="current.deathStrike" type="number" min="0" class="ed-ctl ed-num" @change="current.deathStrike = ($event.target as HTMLInputElement).value === '' ? undefined : Number(($event.target as HTMLInputElement).value)" /></label>
           <label class="ed-inline"><input v-model="current.delayedExplosion" type="checkbox" /> 生命归零进入不可选择的待爆炸状态，下一回合爆炸后真正死亡</label>
           <label class="ed-inline"><input type="checkbox" :checked="!!current.revival" @change="current.revival = ($event.target as HTMLInputElement).checked ? { limit: 3, hpRatio: 0.5 } : undefined" /> 有同族尸体时优先复活</label>
           <div v-if="current.revival" class="ed-grid">
             <label class="ed-field"><span>本场成功复活上限</span><input v-model.number="current.revival.limit" type="number" min="1" class="ed-ctl" /></label>
             <label class="ed-field"><span>复活生命比例</span><input v-model.number="current.revival.hpRatio" type="number" min="0.01" max="1" step="0.01" class="ed-ctl" /></label>
+          </div>
+          <label class="ed-inline"><input type="checkbox" :checked="!!current.regroup" @change="current.regroup = ($event.target as HTMLInputElement).checked ? { hpRatio: 0.2, perClone: 0.1 } : undefined" /> 死亡分裂可合体：分身有同伴阵亡后改为合体意图，行动时本体复活，每次分裂少一只（需配置死亡分裂）</label>
+          <div v-if="current.regroup" class="ed-grid">
+            <label class="ed-field"><span>合体基础生命比例</span><input v-model.number="current.regroup.hpRatio" type="number" min="0.01" max="1" step="0.01" class="ed-ctl" /></label>
+            <label class="ed-field"><span>每只存活分身加成</span><input v-model.number="current.regroup.perClone" type="number" min="0" max="1" step="0.01" class="ed-ctl" /></label>
           </div>
           <div class="ed-note">族群效果不绑定具体敌人。复活排除具有复活机制的同族与待爆炸单位，复活后力量和意图重置；待爆炸免疫所有作用且不会提前结束战斗。</div>
         </section>
@@ -567,7 +579,7 @@ function revert() {
               <template v-else-if="a.type === 'defend' || a.type === 'heal'">
                 <label v-if="a.type === 'defend'" class="ed-inline">格挡 <input v-model.number="a.block" type="number" min="0" class="ed-ctl ed-num" /></label>
                 <label v-else class="ed-inline">恢复 <input v-model.number="a.amount" type="number" min="0" class="ed-ctl ed-num" /></label>
-                <select v-model="a.target" class="ed-ctl"><option :value="undefined">自身（默认）</option><option value="self">自身</option><option value="allAllies">自身与所有存活队友</option></select>
+                <select v-model="a.target" class="ed-ctl"><option :value="undefined">自身（默认）</option><option value="self">自身</option><option value="allAllies">自身与所有存活队友</option><option value="selfAndAlly">自身与相邻队友</option></select>
               </template>
               <span v-else-if="a.type === 'shareLife'">与生命差最大的存活队友均分生命，双方获得转移量的格挡</span>
               <span v-else-if="a.type === 'sacrificeExplosion'">支付全部当前生命，下一回合强制爆炸；需要开启延迟爆炸机制</span>
@@ -576,7 +588,12 @@ function revert() {
               <template v-else-if="a.type === 'debuff' || a.type === 'buff'">
                 <input v-model="a.status" class="ed-ctl ed-id" placeholder="状态 id，如 weak" />
                 <label class="ed-inline">层数 <input v-model.number="a.stacks" type="number" class="ed-ctl ed-num" /></label>
+                <template v-if="a.type === 'buff'">
+                  <select v-model="a.target" class="ed-ctl"><option :value="undefined">自身（默认）</option><option value="self">自身</option><option value="selfAndAlly">自身与相邻队友</option></select>
+                  <label class="ed-inline"><input type="checkbox" :checked="!!a.untilNextAction" @change="a.untilNextAction = ($event.target as HTMLInputElement).checked || undefined" /> 只到下次行动前</label>
+                </template>
               </template>
+              <span v-else-if="a.type === 'protect'">保护相邻队友（右侧优先）：它无法被单体攻击和单体技能选中，自动打出、随机目标也会跳过它；全体攻击照常命中；持续到自身下次行动前</span>
               <template v-else-if="a.type === 'addCards'">
                 <select v-model="a.to" class="ed-ctl"><option :value="undefined">弃牌堆（默认）</option><option value="discard">弃牌堆</option><option value="draw">抽牌堆（随机位置）</option></select>
                 <input v-model="a.cardId" class="ed-ctl ed-id" placeholder="卡牌 id" />
@@ -717,6 +734,10 @@ function revert() {
             <label class="ed-field">
               <span>指定大层（空表示全部）</span>
               <input v-model.number="currentEnc.stage" type="number" min="1" class="ed-ctl" />
+            </label>
+            <label class="ed-field">
+              <span>出现概率（空为 0.5）</span>
+              <input v-model.number="currentEnc.chance" type="number" min="0" max="1" step="0.05" class="ed-ctl" />
             </label>
             <label class="ed-field">
               <span>最早楼层</span>

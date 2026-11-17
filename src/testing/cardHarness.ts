@@ -29,7 +29,8 @@ export function setupScenario(opts: ScenarioOpts = {}): BattleState {
     discardPile: [],
     player: {
       ...base.player,
-      energy: opts.energy ?? base.player.energy,
+      // 未指定能量时至少够打出手里最贵的牌（剑葬这类高费牌）
+      energy: opts.energy ?? Math.max(base.player.energy, ...hand.map((id) => (typeof cards[id]?.cost === 'number' ? (cards[id]!.cost as number) : 0))),
       hp: opts.playerHp ?? base.player.hp,
       statuses: { ...opts.playerStatuses },
     },
@@ -94,14 +95,15 @@ export function smokeCheck(cardId: string): string[] {
   const def = cards[cardId]
   if (!def) return [`未知卡牌 ${cardId}`]
   const problems: string[] = []
-  const before = setupScenario({ hand: [cardId], energy: 3 })
+  const energy = typeof def.cost === 'number' ? Math.max(3, def.cost) : 3
+  const before = setupScenario({ hand: [cardId], energy })
   const { state, events } = playCard(before, cardId)
 
   // 无法打出的牌（诅咒）：必须被拒绝，且牌和能量原样保留
   if (def.unplayable) {
     if (!events.some((e) => e.type === 'invalidAction')) problems.push('无法打出的牌应被拒绝')
     if (!state.hand.includes(cardId)) problems.push('被拒绝后牌应留在手牌中')
-    if (state.player.energy !== 3) problems.push('被拒绝后不应扣能量')
+    if (state.player.energy !== energy) problems.push('被拒绝后不应扣能量')
     return problems
   }
 
@@ -109,7 +111,7 @@ export function smokeCheck(cardId: string): string[] {
   if (invalid) problems.push(`打出被拒绝：${'reason' in invalid ? invalid.reason : ''}`)
 
   const gained = def.effects.reduce((n, e) => n + (e.type === 'gainEnergy' ? e.amount : 0), 0)
-  const expectedEnergy = (def.cost === 'X' ? 0 : 3 - def.cost) + gained
+  const expectedEnergy = (def.cost === 'X' ? 0 : energy - def.cost) + gained
   if (state.player.energy !== expectedEnergy)
     problems.push(`能量应为 ${expectedEnergy}，实际 ${state.player.energy}`)
 
@@ -153,7 +155,7 @@ export function effectSnapshot(cardId: string): { actual: Snapshot; expected: Sn
   const before = primeParasite(
     setupScenario({
       hand: [cardId],
-      energy: SNAPSHOT_ENERGY,
+      energy: typeof def.cost === 'number' ? Math.max(SNAPSHOT_ENERGY, def.cost) : SNAPSHOT_ENERGY,
       playerHp: SNAPSHOT_HP,
       enemies: twoSlimes(),
     }),
@@ -202,8 +204,11 @@ export function effectSnapshot(cardId: string): { actual: Snapshot; expected: Sn
         }
       }
       else if (e.type === 'sapStrength') {
-        stack(expected.enemyStatuses[0]!, 'strength', -e.amount)
-        stack(expected.enemyStatuses[0]!, 'restore:strength', e.amount)
+        // 群体牌：每只敌人各失去一次
+        for (const st of hitAll ? expected.enemyStatuses : [expected.enemyStatuses[0]!]) {
+          stack(st, 'strength', -e.amount)
+          stack(st, 'restore:strength', e.amount)
+        }
       }
       else if (e.type === 'purgeSelfBuff') expected.playerBlock += PRIMED_BUFF // 预置的力量被移除、换成格挡
       else if (e.type === 'block') expected.playerBlock += e.perX ? e.amount * x : e.amount
@@ -266,10 +271,11 @@ export function effectSnapshot(cardId: string): { actual: Snapshot; expected: Sn
           // 临时层数另记一笔 temp: 键，回合结束扣除
           if (e.temp) stack(expected.playerStatuses, 'temp:' + e.status, e.stacks)
         }
-        else if (e.to === 'target') stack(expected.enemyStatuses[0]!, e.status, e.stacks)
+        // 群体牌给「目标」的状态会施加到每只敌人
+        else if (e.to === 'target' && !hitAll) stack(expected.enemyStatuses[0]!, e.status, e.stacks)
         else expected.enemyStatuses.forEach((st) => stack(st, e.status, e.stacks))
         if (e.status === 'gash' && e.to !== 'self') gashOn[0]! += e.stacks
-        if (e.status === 'gash' && e.to === 'allEnemies') gashOn[1]! += e.stacks
+        if (e.status === 'gash' && (e.to === 'allEnemies' || hitAll)) gashOn[1]! += e.stacks
       }
     }
   const actual: Snapshot = {
