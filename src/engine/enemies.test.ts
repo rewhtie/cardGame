@@ -575,15 +575,15 @@ describe('寄生种子', () => {
 
 describe('生命共享', () => {
   const sharer = () => dummy({ id: 'sharer', startStatuses: { lifeShare: 1 }, intents: [{ type: 'shareLife' }] })
+  /** 打死第一只（cheatDamage 只打第一只可选中敌人） */
+  const killFirst = (s: BattleState) => dispatch(s, { type: 'cheatDamage', amount: 99 }).state
   it('队友全部阵亡后失去分享能力', () => {
-    const s = fight([dummy({ maxHp: 10 }), sharer()])
-    const r = dispatch(s, { type: 'cheatDamage', amount: 99, target: 0 })
-    expect(r.state.enemies[0]!.hp).toBe(0)
-    expect(r.state.enemies[1]!.statuses.lifeShare).toBeUndefined()
+    const after = killFirst(fight([dummy({ maxHp: 10 }), sharer()]))
+    expect(after.enemies[0]!.hp).toBe(0)
+    expect(after.enemies[1]!.statuses.lifeShare).toBeUndefined()
   })
   it('只剩被分享者时优先级不再触发', () => {
-    const s = fight([dummy({ maxHp: 10 }), sharer()])
-    const after = dispatch(s, { type: 'cheatDamage', amount: 99, target: 0 }).state
+    const after = killFirst(fight([dummy({ maxHp: 10 }), sharer()]))
     after.enemies[1]!.hp = 10
     const hp0 = after.player.hp
     const r = dispatch(after, { type: 'endTurn' })

@@ -53,23 +53,27 @@ function pressUp() {
 function clickGuard(e: MouseEvent) {
   if (!longPressed) return
   longPressed = false
-  e.stopPropagation()
+  // 捕获阶段在同元素上先于冒泡的 @click，必须用 immediate 才能挡住外层传入的 click
+  e.stopImmediatePropagation()
   e.preventDefault()
 }
 
 </script>
 
 <template>
-  <div class="w-36 h-52" @contextmenu.prevent="comparing = canCompare">
+  <div
+    class="w-36 h-52"
+    @contextmenu.prevent="comparing = canCompare"
+    @pointerdown="pressDown"
+    @pointerup="pressUp"
+    @pointercancel="pressUp"
+    @click.capture="clickGuard"
+  >
     <CardView
       :card="card"
       :playable="true"
       :progress="progress"
       :selected="selected"
-      @pointerdown="pressDown"
-      @pointerup="pressUp"
-      @pointercancel="pressUp"
-      @click.capture="clickGuard"
     />
 
     <!-- stage 带 transform，fixed 实际相对舞台铺满，不受外层滚动区裁剪 -->
