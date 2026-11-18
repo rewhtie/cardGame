@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { enchantOf, evolvedId, migrateLegacyId, rawId, upgradedId, withEnchant } from './enchant'
+import { enchantOf, evolvedId, migrateLegacyId, rawId, resolveCards, upgradeCard, upgradedId, withEnchant } from './enchant'
 import { applyEnchant, canEnchant } from './enchants'
 import type { CardDef } from './types'
 
@@ -47,5 +47,19 @@ describe('附魔与锻造机制重叠', () => {
     expect(d.retain).toBe(true)
     expect(d.enchant).toBe('retain')
     expect(d.text).toBe(resolveCards(cards, ['legendCloak+'])['legendCloak+']!.text)
+  })
+})
+
+describe('锻造后卡面', () => {
+  it('连斩：伤害 5 → 8，仍是两段', async () => {
+    const { cards } = await import('@/data/cards')
+    const d = resolveCards(cards, ['twinSlash+'])['twinSlash+']!
+    expect(d.effects).toEqual([{ type: 'damage', amount: 8, hits: 2 }])
+    expect(d.text).toBe('造成 8 点伤害 ×2。')
+  })
+  it('炼金：升级为 0 费，预览与战斗一致', async () => {
+    const { cards } = await import('@/data/cards')
+    expect(upgradeCard(cards.alchemy!).cost).toBe(0)
+    expect(resolveCards(cards, ['alchemy+'])['alchemy+']!.cost).toBe(0)
   })
 })

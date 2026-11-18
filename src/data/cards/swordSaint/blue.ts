@@ -17,7 +17,7 @@ export const swordSaintBlue: Card[] = [
     .damageHits(5, 2)
     .reward()
     .evolve(10, 'frenzySlash')
-    .upgrade((u) => u.damage(8).damage(8)),
+    .upgrade((u) => u.damageHits(8, 2)),
   // 进化目标，不进奖励
   Card.blue('frenzySlash', '乱舞')
     .icon('💫')
@@ -85,7 +85,7 @@ export const swordSaintBlue: Card[] = [
     .applyStatus('shock', 1)
     .draw(1)
     .reward()
-    .upgrade((u) => u.loseHp(2).applyStatus('shock', 1).draw(1)),
+    .upgrade((u) => u.applyStatus('shock', 2).draw(1)),
   Card.blue('swordStrike', '剑击')
     .icon('🗡️')
     .cost(1)

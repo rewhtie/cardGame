@@ -34,6 +34,7 @@ import {
   guardOnAttack,
   beginExplosion,
   onEnemyDeath,
+  dropOrphanedLifeShare,
   isCombatRemaining,
   releaseHolds,
   HOLD_PREFIX,
@@ -995,6 +996,7 @@ function endTurn(state: BattleState): DispatchResult {
         enemy.fled = true
         events.push({ type: 'enemyFled', enemyIndex })
         if (!s.enemies.some(isCombatRemaining)) s.escaped = true
+        else dropOrphanedLifeShare(s, events)
         break
     }
     }

@@ -346,6 +346,11 @@ const effectNumber = (e: Effect) =>
  * 卡面文字里的数字与 effects 一一对应（按出现顺序），逐个替换；对不上时整体 +1 兜底。
  */
 export function upgradeCard(card: CardDef): CardDef {
+  return forge(card)
+}
+
+/** 通用升级规则：有手写升级版的牌不走这里 */
+function autoUpgrade(card: CardDef): CardDef {
   const effects = card.effects.map(upgradeEffect)
   const nums = card.text.match(/\d+/g) ?? []
   let i = 0
@@ -358,7 +363,7 @@ export function upgradeCard(card: CardDef): CardDef {
 
 /** 锻造：有手写升级版就覆盖到原卡上，否则按通用规则自动加数值 */
 function forge(card: CardDef): CardDef {
-  if (!card.upgraded) return upgradeCard(card)
+  if (!card.upgraded) return autoUpgrade(card)
   const { upgraded, ...rest } = card
   const def: CardDef = { ...rest, ...upgraded, name: card.name + UPGRADE_SUFFIX }
   // 升级版去掉消耗时，要显式清掉标记

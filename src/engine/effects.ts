@@ -1,5 +1,5 @@
 import { nextRandom, shuffle } from './rng'
-import { attackBonusAt } from './intents'
+import { attackBonusAt, lifeShareTarget } from './intents'
 import { POTION_RULES } from './potions'
 import { attackerOf, attackMods, attacksThisTurn, enemyAttack } from './blades'
 import { fireRelics, relicKeepsWounds } from './relics'
@@ -256,6 +256,19 @@ export function onEnemyDeath(s: BattleState, enemyIndex: number, events: GameEve
         heal(s, 'enemy', index, ally.maxHpOverride ?? ally.def.maxHp, events)
     })
   }
+  dropOrphanedLifeShare(s, events)
+}
+
+/**
+ * 生命共享是「与存活队友」的联动能力：最后一个队友倒下（或逃跑）后，
+ * 剩下的人再挂着这个状态既没用又误导玩家，直接移除。
+ */
+export function dropOrphanedLifeShare(s: BattleState, events: GameEvent[]) {
+  s.enemies.forEach((enemy, index) => {
+    if (!isAlive(enemy) || (enemy.statuses.lifeShare ?? 0) <= 0) return
+    if (lifeShareTarget(enemy, s.enemies)) return
+    loseStatusStacks(s, 'enemy', index, 'lifeShare', enemy.statuses.lifeShare!, events)
+  })
 }
 
 /** 「到下次行动前」的记账键：值 = 下次行动前要扣掉的层数 */

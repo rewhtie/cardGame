@@ -55,6 +55,8 @@ async function renderCards(server: ViteDevServer): Promise<string> {
     ids.map((id) => {
       const c = idx.cards[id]!
       const u = up[upgradedId(id)]
+      // 只降费、卡面文字不变的手写升级版，也要在“升级后”一栏交代费用变化
+      const upText = u ? (u.cost !== c.cost ? `费用 ${u.cost}\n${u.text}` : u.text) : ''
       return [
         id,
         {
@@ -64,7 +66,7 @@ async function renderCards(server: ViteDevServer): Promise<string> {
           kind: c.kind,
           rarity: c.rarity,
           text: c.text,
-          upgradedText: u && u.text !== c.text ? u.text : '',
+          upgradedText: upText !== c.text ? upText : '',
         },
       ]
     }),

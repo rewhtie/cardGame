@@ -11,6 +11,8 @@ const props = defineProps<{
   upgraded?: CardDef
   /** 进化进度（战斗牌堆里按实例记的计数） */
   progress?: number
+  /** 选牌界面中被选中：上浮并显示金色高亮 */
+  selected?: boolean
 }>()
 
 /** 成长牌：成长后会变成的牌（保留升级 / 附魔标记） */
@@ -21,14 +23,54 @@ const evolved = computed(() => {
   return resolveCards(allCards, [id])[id]
 })
 
-/** 右键：弹出对比；成长牌是 左边初始，右上锻造、右下成长 */
+/** 右键：弹出对比；成长牌是 左边初始，右上锻造、右下成长。触屏长按同右键 */
 const comparing = ref(false)
 const canCompare = computed(() => !!props.upgraded || !!evolved.value)
+
+const LONG_PRESS_MS = 450
+let pressTimer: ReturnType<typeof setTimeout> | undefined
+/** 这次按下已经用长按弹过对比：抬起后要吞掉 click */
+let longPressed = false
+
+function pressDown(e: PointerEvent) {
+  if (e.button !== 0) return
+  longPressed = false
+  clearTimeout(pressTimer)
+  pressTimer = setTimeout(() => {
+    pressTimer = undefined
+    if (!canCompare.value) return
+    longPressed = true
+    comparing.value = true
+  }, LONG_PRESS_MS)
+}
+
+function pressUp() {
+  clearTimeout(pressTimer)
+  pressTimer = undefined
+}
+
+/** 长按弹过对比后，本次 click 不再选中这张牌 */
+function clickGuard(e: MouseEvent) {
+  if (!longPressed) return
+  longPressed = false
+  e.stopPropagation()
+  e.preventDefault()
+}
+
 </script>
 
 <template>
   <div class="w-36 h-52" @contextmenu.prevent="comparing = canCompare">
-    <CardView :card="card" :playable="true" :progress="progress" />
+    <CardView
+      :card="card"
+      :playable="true"
+      :progress="progress"
+      :selected="selected"
+      @pointerdown="pressDown"
+      @pointerup="pressUp"
+      @pointercancel="pressUp"
+      @click.capture="clickGuard"
+    />
 
     <!-- stage 带 transform，fixed 实际相对舞台铺满，不受外层滚动区裁剪 -->
     <div

@@ -76,7 +76,7 @@ export const events: EventDef[] = [
     requires: (run) => hasEnchantable(run, 'replay') || run.content.deck.length >= 2,
     options: [
       {
-        label: '留下回响：为一张攻击牌或技能牌附魔【重放】，打出时额外打出一次',
+        label: '留下回响：为一张攻击牌或技能牌附魔【重放】',
         requires: (run) => hasEnchantable(run, 'replay') ? null : '没有可附魔的攻击牌或技能牌',
         outcomes: [{ type: 'enchantCard', enchant: 'replay' }],
       },

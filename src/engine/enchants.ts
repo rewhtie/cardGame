@@ -63,7 +63,7 @@ export class CardMod {
   }
   replay() {
     this.def.replay = true
-    this.def.text += '\n重放：额外打出一次，不再扣费，沿用首次出牌的 X 值'
+    this.def.text += '\n重放 1'
     return this
   }
   done(): CardDef {

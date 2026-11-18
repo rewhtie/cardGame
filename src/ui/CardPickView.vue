@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { resolveCards } from '@/engine/enchant'
+import { isForgeable, resolveCards, upgradeCard } from '@/engine/enchant'
 import type { CardDef } from '@/engine/types'
 import CardPanel from './CardPanel.vue'
-import CardView from './CardView.vue'
+import UpgradableCard from './UpgradableCard.vue'
 
 /**
  * 通用选牌界面：从牌组中选 count 张满足 eligible 的牌（可选牌不足时选全部），点确认提交。
@@ -25,7 +25,10 @@ const items = computed(() => {
   const defs = resolveCards(props.cards, props.deck)
   return props.deck.flatMap((id, index) => {
     const card = defs[id]
-    return card && props.eligible(id) ? [{ card, index }] : []
+    if (!card || !props.eligible(id)) return []
+    // 右键 / 长按看升级后的牌面；诅咒、状态牌没有升级版
+    const upgraded = isForgeable(props.cards, id) ? upgradeCard(card) : undefined
+    return [{ card, upgraded, index }]
   })
 })
 const need = computed(() => Math.min(props.count, items.value.length))
@@ -47,11 +50,11 @@ function toggle(index: number) {
   >
     <CardPanel :title="title" :hint="`${hint}（已选 ${selected.length}/${need}）`">
       <div class="flex flex-wrap justify-center gap-4">
-        <CardView
+        <UpgradableCard
           v-for="item in items"
           :key="item.index"
           :card="item.card"
-          :playable="true"
+          :upgraded="item.upgraded"
           :selected="selected.includes(item.index)"
           @click="toggle(item.index)"
         />
