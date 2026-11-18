@@ -58,7 +58,6 @@ function value(s: BattleState): number {
     else if (k === 'strength' || k === 'dexterity') v += 4 * (n ?? 0)
     else v += 2 * Math.min(n ?? 0, 5)
   }
-  v += (s.powers?.length ?? 0) * 6
   return v
 }
 
@@ -166,7 +165,7 @@ function playRun(cid: string, seed: string) {
         break
       case 'forge': if (!go({ type: 'forgeCard', deckIndex: 0 })) go({ type: 'leave' }); break
       case 'shop':
-        go({ type: 'buyShop', kind: 'relic', index: 0 }) || go({ type: 'buyShop', kind: 'card', index: 0 }) || go({ type: 'buyShop', kind: 'potion', index: 0 })
+        if (!go({ type: 'buyShop', kind: 'relic', index: 0 }) && !go({ type: 'buyShop', kind: 'card', index: 0 })) go({ type: 'buyShop', kind: 'potion', index: 0 })
         go({ type: 'leave' })
         break
       case 'event': {

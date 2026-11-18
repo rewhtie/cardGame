@@ -37,7 +37,7 @@ const fileOf = (dir: string, rarity: string) => resolve(CARDS_DIR, dir, `${rarit
 function findBlock(lines: string[], id: string): [number, number] | null {
   const start = lines.findIndex((l) => l.startsWith('  Card.') && l.includes(`('${id}'`))
   if (start < 0) return null
-  let end = lines.findIndex((l, i) => i > start && /^(  Card\.|  \/\/|\])/.test(l))
+  let end = lines.findIndex((l, i) => i > start && /^( {2}Card\.| {2}\/\/|\])/.test(l))
   if (end < 0) end = lines.length
   while (end > start + 1 && lines[end - 1]!.trim() === '') end--
   return [start, end]

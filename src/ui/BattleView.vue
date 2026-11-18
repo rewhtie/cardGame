@@ -713,7 +713,7 @@ const enemies = computed(() =>
       hp: e.hp + (lag.enemyHp[i] ?? 0),
       pendingExplosion: e.hp + (lag.enemyHp[i] ?? 0) > 0 ? undefined : (lag.explosionPreview[i] ?? e.pendingExplosion),
       block: e.block + (lag.enemyBlock[i] ?? 0),
-      statuses: { ...e.statuses, stunned: Math.max(0, (e.statuses.stunned ?? 0) + (lag.enemyStunned[i] ?? 0)) },
+      statuses: { ...e.statuses, stunned: Math.max(0, (e.statuses.stunned ?? 0) + (lag.enemyStunned[i] ?? 0)) } as Record<string, number>,
       turns,
       intentIndex: intentIndexAt(e.def, turns),
     }

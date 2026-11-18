@@ -123,6 +123,8 @@ interface Entry {
 /** 战斗界面注册的事件播放器：返回的 Promise 兑现即代表这个事件的动画演完 */
 type FxHandler = (event: GameEvent, prev?: GameEvent) => Promise<void> | void
 let handler: FxHandler | null = null
+/** 放行正在等待的旧 handler 动画：界面卸载 / 换 handler 后，旧 Promise 可能因计时器被清而永不兑现 */
+let releaseCurrent: (() => void) | null = null
 let queue: Entry[] = []
 let running = false
 let epoch = 0
@@ -139,11 +141,14 @@ function playEventSfx(e: GameEvent, prev?: GameEvent) {
 }
 
 export function setFxHandler(h: FxHandler | null) {
+  if (handler !== h) releaseCurrent?.()
   handler = h
 }
 /** 仅当注册的还是自己时才注销，避免新旧界面交接时误删对方 */
 export function clearFxHandler(h: FxHandler) {
-  if (handler === h) handler = null
+  if (handler !== h) return
+  handler = null
+  releaseCurrent?.()
 }
 
 function flushWaiters(batch: Entry['batch']) {
@@ -162,7 +167,11 @@ async function drain() {
     const entry = queue.shift() as Entry
     try {
       playEventSfx(entry.event, entry.prev)
-      await handler?.(entry.event, entry.prev)
+      const played = handler?.(entry.event, entry.prev)
+      if (played) {
+        await Promise.race([played, new Promise<void>((resolve) => (releaseCurrent = resolve))])
+        releaseCurrent = null
+      }
     } catch {
       // 动画失败不能卡住整个队列
     }

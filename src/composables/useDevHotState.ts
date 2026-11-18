@@ -55,7 +55,9 @@ export function useDevHotState(
     hot.off('vite:beforeUpdate', beforeUpdate)
     hot.off('vite:afterUpdate', clear)
     hot.off('vite:beforeFullReload', beforeUpdate)
-    if (!updating) {
+    // 热更新窗口内卸载：用卸载时的最新值覆盖 beforeUpdate 的快照，用户主动关闭不会被恢复
+    if (updating) save()
+    else {
       try {
         sessionStorage.removeItem(key)
       } catch {

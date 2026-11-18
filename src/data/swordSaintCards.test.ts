@@ -19,8 +19,8 @@ describe('剑圣卡牌与职业', () => {
       expect(target, `${id} → ${evolve.into}`).toBeDefined()
       expect(target!.upgraded, evolve.into).toBeDefined()
     }
-    expect(cards.swordStrike0!.evolve).toEqual({ plays: 20, into: 'swordStrike' })
-    expect(cards.twinSlash!.evolve).toEqual({ plays: 20, into: 'frenzySlash' })
+    expect(cards.swordStrike0!.evolve).toEqual({ plays: 10, into: 'swordStrike' })
+    expect(cards.twinSlash!.evolve).toEqual({ plays: 10, into: 'frenzySlash' })
   })
 
   it('角色：剑圣起手 4 打击 + 4 防御，带剑心', () => {

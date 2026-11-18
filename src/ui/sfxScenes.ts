@@ -15,7 +15,7 @@ export interface BattlePlan {
   events: GameEvent[]
 }
 
-export type RunComponent = 'hud-gold' | 'relic-reveal' | 'card-add' | 'hurt' | 'shop' | 'treasure'
+export type RunComponent = 'hud-gold' | 'relic-reveal' | 'card-add' | 'card-remove' | 'hurt' | 'shop' | 'treasure'
 
 export type Scene =
   | { kind: 'battle'; build: () => BattlePlan }
@@ -239,6 +239,13 @@ const SCENES: Record<string, () => Scene> = {
     runScene('relic-reveal', {
       events: [{ type: 'cardsUpgraded', cards: [{ from: 'strike', to: upgradedId('strike') }] }],
     }),
+  // 删牌：RunView 收到 cardRemoved 挂 CardRemoveFx，火烧动画和音效都由它发出
+  'run.cardRemoved': () => runScene('card-remove', { events: [{ type: 'cardRemoved', cardId: 'strike' }] }),
+  // 成长：RelicReveal 演出进化 / 训练，useSfxEvents 按事件发声
+  'run.evolve': () =>
+    runScene('relic-reveal', { events: [{ type: 'cardsEvolved', cards: [{ from: 'swordStrike0~9', to: 'swordStrike' }] }] }),
+  'run.train': () =>
+    runScene('relic-reveal', { events: [{ type: 'cardsTrained', cards: [{ from: 'swordStrike0~5', to: 'swordStrike0~6' }] }] }),
   'run.enchant': () =>
     runScene('relic-reveal', {
       events: [

@@ -311,7 +311,7 @@ describe('Card 构建器', () => {
   it('痛击：攻击牌 + 给予易伤', () => {
     expect(cards.bash).toMatchObject({ kind: 'attack', text: '造成 8 点伤害，给予 2 层易伤。' })
   })
-  it('附魔后状态层数与文案同步 +1', () => {
+  it('附魔后状态层数与文案同步 +5', () => {
     const s = createBattle({
       seed: 1,
       deck: ['inflame@grow', 'defend', 'defend', 'defend', 'defend'],
@@ -321,7 +321,7 @@ describe('Card 构建器', () => {
     const id = s.hand.find((c) => c.startsWith('inflame@grow'))!
     const { state } = dispatch({ ...s, hand: [id] }, { type: 'playCard', handIndex: 0 })
     expect(state.player.statuses.strength).toBe(2)
-    expect(state.cards[id]!.text).toBe('获得 3 层力量。')
+    expect(state.cards[id]!.text).toBe('获得 7 层力量。')
   })
 })
 

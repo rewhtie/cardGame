@@ -10,6 +10,7 @@ import * as items from '../src/data/items'
 import * as runEngine from '../src/engine/run'
 import * as save from '../src/engine/save'
 import * as seed from '../src/engine/seed'
+import * as relicsEngine from '../src/engine/relics'
 import type { useRun } from '../src/composables/useRun'
 import type { useDevHotState } from '../src/composables/useDevHotState'
 
@@ -65,6 +66,7 @@ function loadRun(hot?: ReturnType<typeof hotContext>, fx?: typeof import('../src
     '@/engine/run': runEngine,
     '@/engine/save': save,
     '@/engine/seed': seed,
+    '@/engine/relics': relicsEngine,
   }
   return evaluate<{ useRun: typeof useRun }>('../src/composables/useRun.ts', hot, dependencies).useRun()
 }
@@ -267,6 +269,7 @@ describe('面板恢复与正常关闭', () => {
     const hot = hotContext()
     const old = panel(hot, true)
     hot.emit('vite:beforeUpdate')
+    old.state.value = false
     old.unmount()
     hot.emit('vite:afterUpdate')
     await vue.nextTick()

@@ -113,7 +113,7 @@ describe('run 战斗', () => {
     expect(run.screen).toBe('defeat')
   })
 
-  it('通关：击败 Boss 进入胜利界面', () => {
+  it('击败第一阶段 Boss 进入第二阶段，击败第二阶段 Boss 进入胜利界面', () => {
     let run = send(newRun(), { type: 'chooseNode', id: '0-0' })
     run = leaveRewards(winBattle(run))
     run = send(run, { type: 'chooseNode', id: '1-1' })
@@ -123,8 +123,12 @@ describe('run 战斗', () => {
     expect(reachableIds(run)).toEqual(['boss'])
     run = send(run, { type: 'chooseNode', id: 'boss' })
     expect(run.battle).not.toBeNull()
-    run = leaveRewards(winBattle(run))
-    expect(run.screen).toBe('victory')
+    const bossWon = winBattle(run)
+    const next = leaveRewards(bossWon)
+    expect(next.screen).toBe('map')
+    expect(next.stage).toBe(2)
+    expect(next.player.hp).toBe(next.player.maxHp)
+    expect(leaveRewards({ ...bossWon, stage: 2 }).screen).toBe('victory')
   })
 
   it('同种子同节点的战斗初始手牌相同，不同种子通常不同', () => {
@@ -189,7 +193,8 @@ describe('createRun', () => {
 
 describe('先古房', () => {
   function atAncient(): RunState {
-    const real = createRun({ seed: 'ANCIENT1', cards, deck: starterDeck, enemy: slime })
+    // ANCIENT2 的种子会遇到「古老硬币 / 训练指南 / 圆盾」这位先古
+    const real = createRun({ seed: 'ANCIENT2', cards, deck: starterDeck, enemy: slime })
     return send(real, { type: 'chooseNode', id: real.map.floors[0]![0]!.id })
   }
 
@@ -197,13 +202,13 @@ describe('先古房', () => {
     const run = atAncient()
     expect(run.screen).toBe('ancient')
     expect(run.battle).toBeNull()
-    expect(run.ancientChoices).toEqual(['goldPouch', 'trainingGuide', 'roundShield'])
+    expect(run.ancientChoices).toEqual(['ancientCoin', 'trainingGuide', 'roundShield'])
   })
 
-  it('金钱袋：获得 150 金币和遗物，回到地图', () => {
-    const run = send(atAncient(), { type: 'chooseAncient', id: 'goldPouch' })
-    expect(run.gold).toBe(150)
-    expect(run.relics).toEqual(['goldPouch'])
+  it('古老硬币：获得 300 金币和遗物，回到地图', () => {
+    const run = send(atAncient(), { type: 'chooseAncient', id: 'ancientCoin' })
+    expect(run.gold).toBe(300)
+    expect(run.relics).toEqual(['ancientCoin'])
     expect(run.screen).toBe('map')
   })
 
@@ -249,9 +254,9 @@ describe('先古房', () => {
 
   it('已拥有的遗物可重复选择', () => {
     const base = atAncient()
-    const run = send({ ...base, relics: ['goldPouch'] }, { type: 'chooseAncient', id: 'goldPouch' })
-    expect(run.relics).toEqual(['goldPouch', 'goldPouch'])
-    expect(run.gold).toBe(base.gold + 150)
+    const run = send({ ...base, relics: ['ancientCoin'] }, { type: 'chooseAncient', id: 'ancientCoin' })
+    expect(run.relics).toEqual(['ancientCoin', 'ancientCoin'])
+    expect(run.gold).toBe(base.gold + 300)
   })
 
   it('作弊获得训练指南：有牌可附魔需在地图上选牌；无牌可附魔直接获得', () => {

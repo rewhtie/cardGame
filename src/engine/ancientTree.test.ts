@@ -18,7 +18,8 @@ const dummy = (over: Partial<EnemyDef> = {}): EnemyDef => ({
 function fight(enemies: EnemyDef[], deck = ['convert', 'convert', 'strike', 'strike', 'strike']): BattleState {
   return createBattle({ seed: 1, deck, enemies, cards }).state
 }
-const handIdx = (s: BattleState, id: string) => s.hand.indexOf(id)
+/** 按原始 id 找手牌：可成长的牌在战斗里是实例 id（如 blow#0） */
+const handIdx = (s: BattleState, id: string) => s.hand.findIndex((h) => h === id || h.startsWith(`${id}#`))
 
 describe('尸体转随从', () => {
   const ready = (n = 2) => {
@@ -171,7 +172,7 @@ describe('消耗寄生层数', () => {
     seeds.forEach((n, i) => (s.enemies[i]!.statuses.parasite = n))
     return s
   }
-  const at = (s: BattleState, id: string) => s.hand.indexOf(id)
+  const at = handIdx
 
   it('层数足够：扣层，不触发回血', () => {
     const s = setup([5])
@@ -183,7 +184,7 @@ describe('消耗寄生层数', () => {
   it('层数不足：被拒绝，不花能量', () => {
     const s = setup([2])
     const r = dispatch(s, { type: 'playCard', handIndex: at(s, 'eat'), target: 0 })
-    expect(r.events[0]).toMatchObject({ type: 'invalidAction' })
+    expect(r.events[0]).toMatchObject({ type: 'invalidAction', reason: '寄生层数不足' })
     expect(r.state.player.energy).toBe(s.player.energy)
   })
   it('全场合计达到阈值：能量为 0 也能免费打出，不扣能量', () => {
@@ -197,7 +198,7 @@ describe('消耗寄生层数', () => {
     const s = setup([3, 1])
     s.player.energy = 1
     const r = dispatch(s, { type: 'playCard', handIndex: at(s, 'gift') })
-    expect(r.events[0]).toMatchObject({ type: 'invalidAction' })
+    expect(r.events[0]).toMatchObject({ type: 'invalidAction', reason: '能量不足' })
   })
 })
 
@@ -206,7 +207,7 @@ describe('参天古树 · 寄生 / 营养', () => {
   const nourish: CardDef = { ...base, id: 'nourish', name: '营养', kind: 'skill', target: 'enemy', effects: [{ type: 'applyStatus', status: 'nutrient', stacks: 1, to: 'target' }] }
   const setup = () =>
     createBattle({ seed: 1, deck: ['nourish', 'parasitize', 'parasitize', 'parasitize', 'parasitize'], enemies: [dummy()], cards: { parasitize, nourish } }).state
-  const at = (s: BattleState, id: string) => s.hand.indexOf(id)
+  const at = handIdx
   const play = (s: BattleState, id: string) => dispatch(s, { type: 'playCard', handIndex: at(s, id), target: 0 }).state
 
   it('寄生：给目标 6 层', () => {
@@ -276,7 +277,7 @@ describe('参天古树 · 寄生卡组效果', () => {
   }
   const play = (s: BattleState, id: string, target = 0) => {
     if (!s.hand.includes(id)) s.hand.push(id)
-    return dispatch(s, { type: 'playCard', handIndex: s.hand.indexOf(id), target })
+    return dispatch(s, { type: 'playCard', handIndex: handIdx(s, id), target })
   }
 
   it('催熟：消耗全部层数造成等量伤害，不触发寄生回血', () => {
@@ -329,7 +330,7 @@ describe('参天古树 · 寄生卡组效果', () => {
     it('古树之躯：我方回合开始获得 floor(寄生合计/4) 层荆棘', () => {
       let s = start([9, 6])
       s.hand.push('body')
-      s = dispatch(s, { type: 'playCard', handIndex: s.hand.indexOf('body') }).state
+      s = dispatch(s, { type: 'playCard', handIndex: handIdx(s, 'body') }).state
       s = dispatch(s, { type: 'endTurn' }).state
       // 敌方回合开始寄生各 +1 → 合计 17 → 4 层
       expect(s.player.statuses.thorns).toBe(4)
@@ -337,7 +338,7 @@ describe('参天古树 · 寄生卡组效果', () => {
     it('生根：敌方回合开始寄生额外增长', () => {
       let s = start([5])
       s.hand.push('root')
-      s = dispatch(s, { type: 'playCard', handIndex: s.hand.indexOf('root') }).state
+      s = dispatch(s, { type: 'playCard', handIndex: handIdx(s, 'root') }).state
       s = dispatch(s, { type: 'endTurn' }).state
       expect(s.enemies[0]!.statuses.parasite).toBe(7)
     })
@@ -354,7 +355,7 @@ describe('蚕食（吞食寄生层数）', () => {
     if (layers > 0) s.enemies[0]!.statuses.parasite = layers
     return s
   }
-  const play = (s: BattleState) => dispatch(s, { type: 'playCard', handIndex: s.hand.indexOf('devour'), target: 0 })
+  const play = (s: BattleState) => dispatch(s, { type: 'playCard', handIndex: handIdx(s, 'devour'), target: 0 })
 
   it('层数多于上限：吃 4 层打 12，剩余层数保留，不触发回血', () => {
     const s = setup(10)

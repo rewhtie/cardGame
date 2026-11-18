@@ -13,10 +13,10 @@ const use = (run: RunState) => dispatchRun(run, { type: 'campfireSpecial' })
 describe('剑圣火堆：训练', () => {
   const deck = ['swordStrike0', 'swordStrike0~5', 'swordStrike0~19', 'defend']
 
-  it('所有可进化的牌 +1，其余不变，回到地图', () => {
-    const s = use(rest('swordSaint', deck.slice(0, 2).concat('defend'))).state
+  it('所有可成长的牌 +1，不能成长的牌不变，回到地图', () => {
+    const s = use(rest('swordSaint', deck.slice(0, 2).concat('defend', 'wound'))).state
     expect(s.screen).toBe('map')
-    expect(s.content.deck).toEqual(['swordStrike0~1', 'swordStrike0~6', 'defend'])
+    expect(s.content.deck).toEqual(['swordStrike0~1', 'swordStrike0~6', 'defend~1', 'wound'])
   })
 
   it('进度达标立即进化并发事件', () => {
@@ -25,8 +25,8 @@ describe('剑圣火堆：训练', () => {
     expect(r.events.some((e) => e.type === 'cardsEvolved')).toBe(true)
   })
 
-  it('没有可进化的牌不能训练', () => {
-    expect(use(rest('swordSaint', ['defend'])).state.screen).toBe('rest')
+  it('没有可成长的牌不能训练', () => {
+    expect(use(rest('swordSaint', ['wound'])).state.screen).toBe('rest')
   })
 })
 

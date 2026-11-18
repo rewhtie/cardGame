@@ -72,9 +72,9 @@ describe('一次性：永久副本归属与结算', () => {
     expect(next.state.removedDeckIndices).toEqual([0])
   })
   it('普通卡仍正常入弃牌堆，不被永久删除', () => {
-    const s = runPlay(run(['normal']), 'normal')
+    const s = runPlay(run(['normal']), 'normal#0')
     expect(s.content.deck).toEqual(['normal'])
-    expect(s.battle!.discardPile).toEqual(['normal'])
+    expect(s.battle!.discardPile).toEqual(['normal#0'])
   })
   it('一次性附魔只删除对应附魔副本', () => {
     const s = runPlay(run(['normal@oneShot', 'normal']), 'normal@oneShot#0')

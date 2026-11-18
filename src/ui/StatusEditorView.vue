@@ -142,10 +142,10 @@ const hookDetails = computed(() => {
 
       <main v-if="current && preview" class="ed-form">
         <div class="ed-card">
-          <h3><Emoji :e="current.icon" /> {{ current.name }}　<span class="ed-item-sub">{{ current.id }}</span></h3>
+          <h3><Emoji :e="current.icon" /> {{ current.name }}&#x3000;<span class="ed-item-sub">{{ current.id }}</span></h3>
           <div>{{ current.text }}</div>
           <div class="ed-item-sub" style="margin-top: 6px">
-            {{ current.kind === 'buff' ? '正面' : '负面' }}　显示：{{ DISPLAY_LABEL[current.display ?? 'number'] }}
+            {{ current.kind === 'buff' ? '正面' : '负面' }}&#x3000;显示：{{ DISPLAY_LABEL[current.display ?? 'number'] }}
           </div>
         </div>
 

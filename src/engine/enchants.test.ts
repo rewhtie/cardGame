@@ -25,7 +25,7 @@ describe('附魔 id', () => {
 
 describe('附魔机制', () => {
   it('链式调用落到机制字段，固有不改费用', () => {
-    expect(applyEnchant(def, 'grow')).toMatchObject({ grow: 1, enchant: 'grow' })
+    expect(applyEnchant(def, 'grow')).toMatchObject({ grow: 5, enchant: 'grow' })
     const i = applyEnchant(def, 'innate')
     expect(i.innate).toBe(true)
     expect(i.cost).toBe(1)

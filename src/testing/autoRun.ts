@@ -101,6 +101,9 @@ export function describeEvent(state: BattleState, e: GameEvent): string | null {
                   sacrificeExplosion: '牺牲引爆',
                   explode: '自爆',
                   revive: '复活',
+                  protect: '保护',
+                  deathStrike: '遗志重击',
+                  regroup: '合体',
                 }[i.type]
       return `${who(state, 'enemy', e.enemyIndex)} ${detail}`
     }

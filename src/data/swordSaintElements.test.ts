@@ -26,9 +26,9 @@ describe('属性剑新牌', () => {
       expect(cards[id]!.cost).toBe(cost)
     }
   })
-  it('打击与连斩的进化次数均为 20', () => {
-    expect(cards.swordStrike0!.evolve!.plays).toBe(20)
-    expect(cards.twinSlash!.evolve!.plays).toBe(20)
+  it('打击与连斩的进化次数均为 10', () => {
+    expect(cards.swordStrike0!.evolve!.plays).toBe(10)
+    expect(cards.twinSlash!.evolve!.plays).toBe(10)
   })
   it('搏命：满血 8，半血以下 16', () => {
     expect(play(fight(['desperate'])).enemies[0]!.hp).toBe(92)

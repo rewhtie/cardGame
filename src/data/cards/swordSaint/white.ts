@@ -10,7 +10,7 @@ export const swordSaintWhite: Card[] = [
     .starter(4)
     .evolve(10, 'swordStrike')
     .upgrade((u) => u.damage(9)),
-  // 进化目标，不进奖励；数字只写伤害（附魔成长会把所有数字 +1）
+  // 进化目标，不进奖励；数字只写伤害（附魔成长会把所有数字 +5）
   Card.white('glint', '掠影')
     .icon('✨')
     .cost(0)

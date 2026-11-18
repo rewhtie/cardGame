@@ -41,6 +41,7 @@ const TIP_ICON: Record<Intent['type'], string> = {
   flee: '💨',
   protect: '🛡',
   deathStrike: '💥',
+  regroup: '👻',
 }
 const stunned = computed(() => (props.enemy.statuses.stunned ?? 0) > 0)
 
@@ -133,6 +134,7 @@ const mainIntentTip = computed(() => {
       }
     }
   }
+  return null
 })
 const intentTip = computed(() => {
   const main = mainIntentTip.value

@@ -217,13 +217,13 @@ describe('附魔牌（训练指南）', () => {
     }).state
   }
 
-  it('每打出一次，数值与卡面文字 +1，并持续累积', () => {
+  it('每打出一次，数值与卡面文字 +5，并持续累积', () => {
     let s = withHand(enchanted(), ['strike@grow#0', 'strike@grow#0', 'strike@grow#0'])
     s.player.energy = 3
     const hp = s.enemies[0]!.hp
     for (let i = 0; i < 3; i++) s = dispatch(s, { type: 'playCard', handIndex: 0 }).state
-    expect(hp - s.enemies[0]!.hp).toBe(6 + 7 + 8)
-    expect(s.cards['strike@grow#0']?.text).toBe('造成 9 点伤害。')
+    expect(hp - s.enemies[0]!.hp).toBe(6 + 11 + 16)
+    expect(s.cards['strike@grow#0']?.text).toBe('造成 21 点伤害。')
   })
 
   it('不影响未附魔的同名牌，也不污染下一场战斗', () => {
@@ -233,13 +233,13 @@ describe('附魔牌（训练指南）', () => {
     expect(enchanted().cards['strike@grow#0']?.effects).toEqual([{ type: 'damage', amount: 6 }])
   })
 
-  it('防御类同理：5 点格挡打出后变 6 点', () => {
+  it('防御类同理：5 点格挡打出后变 10 点', () => {
     const base = createBattle({ seed: 1, deck: ['defend@grow', 'strike'], enemy: slime, cards }).state
     let s = withHand(base, ['defend@grow#0', 'defend@grow#0'])
     s = dispatch(s, { type: 'playCard', handIndex: 0 }).state
     expect(s.player.block).toBe(5)
     s = dispatch(s, { type: 'playCard', handIndex: 0 }).state
-    expect(s.player.block).toBe(5 + 6)
+    expect(s.player.block).toBe(5 + 10)
   })
 })
 
@@ -263,17 +263,19 @@ describe('X 费牌', () => {
     expect(r.player.block).toBe(18)
   })
 
-  it('附魔的 X 牌：X 每次 +1，而不是 6 变成 7', () => {
+  it('附魔的 X 牌：X 每次 +5，而不是 6 变成 11', () => {
     let s = withHand(xBattle(['spinStrike@grow']), ['spinStrike@grow#0', 'spinStrike@grow#0'])
     expect(s.cards['spinStrike@grow#0']?.enchant).toBe('grow')
     expect(s.cards['spinStrike@grow#0']?.name).toBe('旋身打击')
 
     s = dispatch(s, { type: 'playCard', handIndex: 0 }).state
     expect(s.enemies[0]!.hp).toBe(slime.maxHp - 6 * 3)
-    expect(s.cards['spinStrike@grow#0']?.xBonus).toBe(1)
+    expect(s.cards['spinStrike@grow#0']?.xBonus).toBe(5)
     s.player.energy = 2
+    // 第二次 X=2+5 会打出 42 点，超过史莱姆血量，先把血量调高再比较伤害
+    s.enemies[0] = { ...s.enemies[0]!, hp: 100 }
     s = dispatch(s, { type: 'playCard', handIndex: 0 }).state
-    expect(s.enemies[0]!.hp).toBe(slime.maxHp - 6 * 3 - 6 * (2 + 1))
+    expect(100 - s.enemies[0]!.hp).toBe(6 * (2 + 5))
   })
 })
 
@@ -289,7 +291,7 @@ describe('多张附魔牌互相独立', () => {
 
     let s = withHand(base, ['strike@grow#0', 'strike@grow#1'])
     s = dispatch(s, { type: 'playCard', handIndex: 0 }).state
-    expect(s.cards['strike@grow#0']?.effects).toEqual([{ type: 'damage', amount: 7 }])
+    expect(s.cards['strike@grow#0']?.effects).toEqual([{ type: 'damage', amount: 11 }])
     expect(s.cards['strike@grow#1']?.effects).toEqual([{ type: 'damage', amount: 6 }])
 
     // 另一张第一次打出仍是 6 点

@@ -118,8 +118,10 @@ export function smokeCheck(cardId: string): string[] {
   const inDiscard = state.discardPile.includes(cardId)
   const inExhaust = state.exhaustPile.includes(cardId)
   if (def.kind === 'power' && (inDiscard || inExhaust)) problems.push('能力牌不应进入弃牌/消耗堆')
-  if (def.kind !== 'power' && def.exhaust && !inExhaust) problems.push('消耗牌应进入消耗堆')
-  if (def.kind !== 'power' && !def.exhaust && !inDiscard) problems.push('普通牌应进入弃牌堆')
+  // 一次性优先于消耗：打出后从牌组永久移除，不进任何牌堆
+  if (def.oneShot && (inDiscard || inExhaust)) problems.push('一次性牌不应进入弃牌/消耗堆')
+  if (!def.oneShot && def.kind !== 'power' && def.exhaust && !inExhaust) problems.push('消耗牌应进入消耗堆')
+  if (!def.oneShot && def.kind !== 'power' && !def.exhaust && !inDiscard) problems.push('普通牌应进入弃牌堆')
   if (state.hand.includes(cardId)) problems.push('打出后牌仍在手牌中')
   return problems
 }
@@ -221,6 +223,13 @@ export function effectSnapshot(cardId: string): { actual: Snapshot; expected: Sn
       }
       else if (e.type === 'draw') expected.handSize += e.count
       else if (e.type === 'loseHp') expected.playerHp -= e.amount
+      else if (e.type === 'lifeOverload') {
+        expected.playerHp = 1
+        expected.playerBlock = 999
+      } else if (e.type === 'mentalOverload') {
+        expected.playerHp = 1
+        expected.handSize += 1 // 自带俱焚，打出后抽 1
+      }
       else if (e.type === 'consumeParasite') {
         layers -= e.amount
         if (layers > 0) expected.enemyStatuses[0]!.parasite = layers

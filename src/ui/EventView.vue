@@ -45,7 +45,7 @@ function term(name: string): Term | undefined {
   if (enemy) {
     const statuses = Object.keys(enemy.startStatuses ?? {})
       .map((id) => statusById[id])
-      .filter((st) => st?.text)
+      .filter((st): st is NonNullable<typeof st> => !!st?.text)
       .map((st) => `【${st.name}】${st.text}`)
     return { info: { icon: enemy.icon, name: `${enemy.name}（生命 ${enemy.maxHp}）`, lines: [...statuses, ...(note ? [note] : [])] } }
   }

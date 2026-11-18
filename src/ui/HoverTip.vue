@@ -15,7 +15,7 @@ withDefaults(
     /** 为 true 时强制隐藏提示（如右键菜单打开时） */
     suppress?: boolean
   }>(),
-  { color: '#fbbf24', align: 'center' },
+  { lore: '', tag: '', hint: '', color: '#fbbf24', align: 'center' },
 )
 </script>
 

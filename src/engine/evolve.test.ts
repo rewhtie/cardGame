@@ -64,12 +64,13 @@ describe('进化 id 后缀', () => {
 })
 
 describe('toInstanceIds', () => {
-  it('可进化的牌各自编号，普通牌不编', () => {
-    const ids = toInstanceIds(['strike0', 'strike0', 'defend'], cards)
+  it('可成长的牌（进化牌与可熟练的牌）各自编号，不能成长的牌不编', () => {
+    const ids = toInstanceIds(['strike0', 'strike0', 'defend', 'wound'], cards)
     expect(ids[0]).toBe('strike0#0')
     expect(ids[1]).toBe('strike0#1')
     expect(ids[0]).not.toBe(ids[1])
-    expect(ids[2]).toBe('defend')
+    expect(ids[2]).toBe('defend#2')
+    expect(ids[3]).toBe('wound')
   })
 })
 

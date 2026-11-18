@@ -786,20 +786,11 @@ export function calcAttack(
   defender: Statuses,
   extra: Mod[] = [],
 ): number {
-  const dealtMods = collect(attacker, 'modifyDamageDealt')
-  let dmg = fold(base, [
-    ...dealtMods,
+  const dmg = fold(base, [
+    ...collect(attacker, 'modifyDamageDealt'),
     ...collect(defender, 'modifyDamageTaken'),
     ...extra,
   ])
-  if ((defender.vulnerable ?? 0) > 0) {
-    const withoutVulnerable = fold(base, [
-      ...dealtMods,
-      ...collect({ ...defender, vulnerable: 0 }, 'modifyDamageTaken'),
-      ...extra,
-    ])
-    if (withoutVulnerable > 0) dmg = Math.max(dmg, withoutVulnerable + 1)
-  }
   // 无实体：防御者每次受到的伤害降为 1（0 伤害保持 0）。放在这里，意图预览 / 卡面数字 / 实际结算口径一致
   return dmg > 0 && (defender.incorporeal ?? 0) > 0 ? 1 : dmg
 }

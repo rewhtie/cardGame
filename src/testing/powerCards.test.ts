@@ -36,7 +36,8 @@ describe('能力牌：卡池批量校验', () => {
       })
 
       it('打出两次：层数叠加', () => {
-        const s = setupScenario({ hand: [id, id], energy: 6 })
+        const cost = typeof cards[id]!.cost === 'number' ? (cards[id]!.cost as number) : 0
+        const s = setupScenario({ hand: [id, id], energy: Math.max(6, cost * 2) })
         const { state } = playSequence(s, [id, id])
         for (const [status, stacks] of grants(id))
           expect(state.player.statuses[status]).toBe(stacks * 2)

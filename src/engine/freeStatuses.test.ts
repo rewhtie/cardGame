@@ -43,7 +43,7 @@ describe('下一张某类牌免费', () => {
   })
 
   it('突击：每回合开始获得 1 层攻击免费，回合结束清空', () => {
-    let s = setupScenario({ hand: [] })
+    const s = setupScenario({ hand: [] })
     s.player.statuses = { freeAttackEachTurn: 1 }
     expect(s.player.statuses.freeAttack).toBeUndefined()
   })
